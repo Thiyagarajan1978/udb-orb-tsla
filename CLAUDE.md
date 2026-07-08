@@ -19,8 +19,9 @@ top of the port (all cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_
 3. **`adaptive_tp_scale` 1.25** (port was 1.0) — wider primary TP lets winners run (more net,
    slightly lower win rate).
 
-Built but **NOT adopted** (marginal / regime-dependent OOS, default OFF): `reenter_after_whipsaw`
-— re-enter the original direction after both primary and reversal stop. Kept as an opt-in.
+Built but **NOT adopted** (default OFF, opt-in): `reenter_after_whipsaw` (marginal/regime-dependent
+OOS) and `pdh_pdl_filter` (require close beyond prior-day high/low when it's near the break level —
+barely triggers on TSLA; see `docs/BE_STOP_ANALYSIS.md` §6).
 
 To reproduce the **exact Pine v12.4.3 numbers**, use `config/faithful_be035.yaml` (BE 0.35,
 reversal_capture OFF). `tests/test_params.py` asserts both: the tuned default AND the port.

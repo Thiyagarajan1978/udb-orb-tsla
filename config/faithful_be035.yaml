@@ -104,6 +104,10 @@ enhancements:
     target_or_mult: 0.0
     reenter_after_whipsaw: false
 
+  pdh_pdl_filter:
+    enabled: false
+    proximity_pct: 14.0
+
 # ---- Data / storage ------------------------------------------------
 data:
   provider: fmp              # fmp | local_parquet

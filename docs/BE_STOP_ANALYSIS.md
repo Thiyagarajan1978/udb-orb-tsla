@@ -123,3 +123,27 @@ robust lever is letting **winners run further** (TP scale), which trades win-rat
 ### 6-month 2026 with all adopted tunings (BE 0.55 + reversal capture + tp_scale 1.25)
 157 trades · 52.9% WR · **net +$510.47** · best day +$33.84 · worst −$3.22 (vs faithful port
 +$450.01). Re-entry stays OFF.
+
+## 6. PDH/PDL confirmation filter — tested, left OFF
+
+Hypothesis (desk observation): failures are immediate reversals off prior-day high/low
+(PDH/PDL). Fix: when PDH/PDL sits within `proximity_pct` of the OR width of the break level,
+require a close BEYOND PDH (longs) / PDL (shorts) before entering. Built as
+`enhancements.pdh_pdl_filter` (default OFF).
+
+**Validation (June 2026 failures):** partly true but not actionable.
+- The *turn points* of 2–3 of 8 failures were right at PDH/PDL — Jun 15 short bounced $0.44
+  above PDH, Jun 25 short $1.81 above PDL, Jun 16 long stalled $2.58 below PDH.
+- But the *entries* were far from PDH/PDL (the break levels sat $5–21 away, i.e. 1–5× the OR
+  width). Price only reaches PDH/PDL deep into the trade, not at entry — so an entry-proximity
+  filter cannot see it.
+- The other 5 failures reversed nowhere near PDH/PDL.
+
+**Sweep (train + holdout, proximity 10–30%):** the filter barely activates on TSLA (OR breakout
+levels are rarely near prior-day extremes) and does not help — holdout net 510.5 → 508.9 (10–14%)
+and worse at wider bands. No setting improved results.
+
+**Verdict:** the observation is real on a minority of days, but this specific rule doesn't
+trigger enough on TSLA to matter and can't catch these failures (the entry isn't near PDH/PDL).
+Kept as an opt-in (default OFF) — prior-day levels are meaningful S/R generally and may help on
+other instruments/regimes. Not adopted.

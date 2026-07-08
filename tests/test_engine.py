@@ -137,6 +137,29 @@ def test_no_base_sl_when_be_on():
     assert res.trades[0].reason in ("BE Stop", "BE Trail")
 
 
+def test_pdh_pdl_filter_requires_close_beyond_level():
+    """When PDH sits near the long break level, entry waits for a close ABOVE PDH."""
+    prior = [  # 2024-06-02: sets PDH = 101.3
+        (9, 30, 100.5, 101.3, 100.5, 101.0, 1000),
+        (9, 35, 101.0, 101.2, 100.5, 100.8, 1000),
+        (15, 50, 100.8, 101.0, 100.5, 100.9, 1000),
+    ]
+    day = [  # 2024-06-03: OR high 101 low 99 -> long_brk 101.2; PDH 101.3 is within 14% band
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.3, 100.8, 101.25, 1000),   # closes above buffer(101.2) but below PDH(101.3)
+        (9, 40, 101.25, 101.6, 101.2, 101.5, 1000),  # closes above PDH -> entry here
+        (15, 50, 101.5, 101.7, 101.3, 101.5, 1000),
+    ]
+    rows = {"2024-06-02": prior, "2024-06-03": day}
+
+    off = _run(rows)                                   # filter OFF -> enters 09:35 @101.25
+    on = _run(rows, enh_overrides={"pdh_pdl_filter": {"enabled": True, "proximity_pct": 14.0}})
+    day_trades_off = [t for t in off.trades if t.day == "2024-06-03"]
+    day_trades_on = [t for t in on.trades if t.day == "2024-06-03"]
+    assert abs(day_trades_off[0].entry_price - 101.25) < 1e-9   # entered on the buffer break
+    assert abs(day_trades_on[0].entry_price - 101.5) < 1e-9     # waited for close above PDH 101.3
+
+
 def test_no_trade_day_reason_no_setup():
     rows = [
         (9, 30, 100, 101.0, 99.0, 100.0, 1000),

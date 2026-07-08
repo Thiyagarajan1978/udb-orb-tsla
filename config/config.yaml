@@ -113,6 +113,14 @@ enhancements:
     reenter_after_whipsaw: false  # after BOTH primary AND reversal stop out (a whipsaw day),
                                 # re-enter ONCE in the ORIGINAL direction on a fresh raw OR break
 
+  # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
+  #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the
+  #    breakout level (within proximity_pct of the OR width), require the bar to CLOSE BEYOND
+  #    PDH (longs) / PDL (shorts) before entering, instead of just beyond the OR buffer.
+  pdh_pdl_filter:
+    enabled: false
+    proximity_pct: 14.0   # PDH/PDL is "near" if within this % of OR width of the break level
+
 # ---- Data / storage ------------------------------------------------
 data:
   provider: fmp              # fmp | local_parquet

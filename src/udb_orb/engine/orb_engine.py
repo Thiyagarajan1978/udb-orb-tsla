@@ -152,6 +152,7 @@ class _DayState:
         self.or_too_narrow = False
         self.or_too_wide = False
         self.vwap_blocked = False
+        self.pdhpdl_blocked = False
 
         # day review accumulation
         self.has_trades = False
@@ -204,6 +205,28 @@ class OrbEngine:
     def _reenter_on(self) -> bool:
         return self._rev_on and bool(self._rev_cfg.get("reenter_after_whipsaw", False))
 
+    # ---- PDH/PDL confirmation filter (default OFF) ----------------------
+    @property
+    def _pdhpdl_cfg(self) -> dict[str, Any]:
+        return self.enh.get("pdh_pdl_filter", {})
+
+    @property
+    def _pdhpdl_on(self) -> bool:
+        return bool(self._pdhpdl_cfg.get("enabled", False))
+
+    def _effective_triggers(self, st: _DayState, long_brk, short_brk, pdh, pdl):
+        """When PDH/PDL sits within proximity_pct of the OR width of the break level, raise the
+        long trigger to PDH (require close ABOVE it) / lower the short trigger to PDL."""
+        long_trig, short_trig = long_brk, short_brk
+        if not self._pdhpdl_on or not st.or_width:
+            return long_trig, short_trig
+        band = st.or_width * float(self._pdhpdl_cfg.get("proximity_pct", 14.0)) / 100.0
+        if long_brk is not None and pdh is not None and abs(pdh - long_brk) <= band:
+            long_trig = max(long_brk, pdh)
+        if short_brk is not None and pdl is not None and abs(pdl - short_brk) <= band:
+            short_trig = min(short_brk, pdl)
+        return long_trig, short_trig
+
     def _reversal_tp_dist(self, or_size: float) -> Optional[float]:
         """Distance for the reversal TP, or None to disable TP (trail to EOD)."""
         if self._rev_on and self._rev_cfg.get("trail_to_eod", False):
@@ -231,6 +254,11 @@ class OrbEngine:
         df = df.sort_index()
         vwap = indicators.session_vwap(df)
         rvol = indicators.relative_volume(df, int(self.enh.get("rvol_filter", {}).get("lookback_bars", 20)))
+
+        # Prior-day high/low (PDH/PDL) per date, from the RTH session data itself.
+        _daily = df.groupby(df.index.date).agg(hi=("high", "max"), lo=("low", "min"))
+        pdh_map = _daily["hi"].shift(1).to_dict()
+        pdl_map = _daily["lo"].shift(1).to_dict()
 
         st = _DayState()
         cur_date = None
@@ -275,6 +303,13 @@ class OrbEngine:
             else:
                 long_brk = short_brk = None
 
+            # PDH/PDL confirmation: raise/lower the effective trigger to PDH/PDL when near
+            _pdh = pdh_map.get(d)
+            _pdl = pdl_map.get(d)
+            pdh = None if _pdh is None or pd.isna(_pdh) else float(_pdh)
+            pdl = None if _pdl is None or pd.isna(_pdl) else float(_pdl)
+            long_trig, short_trig = self._effective_triggers(st, long_brk, short_brk, pdh, pdl)
+
             # ---- no-trade reason tracking (bars after OR bar) ----
             if t > p.market_open and st.has_or:
                 raw_long = h > st.or_high
@@ -292,6 +327,12 @@ class OrbEngine:
                         st.vwap_blocked = True
                     if bsc and not (vw is not None and c < vw):
                         st.vwap_blocked = True
+                # PDH/PDL guard: a buffered close break happened but did not clear PDH/PDL
+                if self._pdhpdl_on:
+                    if blc and long_trig > long_brk and c <= long_trig:
+                        st.pdhpdl_blocked = True
+                    if bsc and short_trig < short_brk and c >= short_trig:
+                        st.pdhpdl_blocked = True
 
             entry_ok_common = (
                 p and st.has_or and st.or_high is not None and t > p.market_open
@@ -305,11 +346,11 @@ class OrbEngine:
             vwap_short_ok = (not p.use_vwap_filter) or (vw is not None and c < vw)
 
             can_long = (
-                p.allow_longs and long_brk is not None and c > long_brk
+                p.allow_longs and long_trig is not None and c > long_trig
                 and min_ok and max_ok and vwap_long_ok and self._rvol_ok(rv)
             )
             can_short = (
-                p.allow_shorts and short_brk is not None and c < short_brk
+                p.allow_shorts and short_trig is not None and c < short_trig
                 and min_ok and max_ok and vwap_short_ok and self._rvol_ok(rv)
             )
 
@@ -675,6 +716,8 @@ class OrbEngine:
             return "Buffer Not Reached"
         if st.post_buffered_touch and not st.post_buffered_close_break:
             return "No Close Break"
+        if st.pdhpdl_blocked:
+            return "PDH/PDL Guard"
         if st.vwap_blocked:
             return "VWAP Blocked"
         return "No Close Break"
