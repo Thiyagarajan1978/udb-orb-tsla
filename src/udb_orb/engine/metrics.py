@@ -80,7 +80,10 @@ def summarize(result: Result) -> Summary:
             s.base_sl_exits += 1
         elif "BE Stop" in r:
             s.be_stop_exits += 1
-            s.be_stop_failures += 1
+            # a BE-stop EXIT can still be a net win if a partial was banked first;
+            # only count it as a failure when the trade actually lost money.
+            if t.pnl_total <= 0:
+                s.be_stop_failures += 1
             s.be_saves += 1
         elif "BE Trail" in r:
             s.be_trail_exits += 1

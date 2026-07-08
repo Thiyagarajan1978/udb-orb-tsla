@@ -115,7 +115,7 @@ def _summary_from_frames(trades: pd.DataFrame, days: pd.DataFrame):
         s.trades = len(trades)
         s.wins = int((trades["pnl_total"] > 0).sum())    # BE Stop @ $0 is NOT a win
         s.losses = int((trades["pnl_total"] <= 0).sum())
-        s.be_stop_fails = int(trades["reason"].str.contains("BE Stop").sum())
+        s.be_stop_fails = int((trades["reason"].str.contains("BE Stop") & (trades["pnl_total"] <= 0)).sum())
         s.net_pnl = float(trades["pnl_total"].sum())
         s.win_rate = s.wins * 100.0 / s.trades if s.trades else 0.0
         gp = float(trades.loc[trades["pnl_total"] >= 0, "pnl_total"].sum())

@@ -31,7 +31,8 @@ def build_report(run_row, trades: pd.DataFrame, days: pd.DataFrame):
     net = float(trades["pnl_total"].sum()) if not trades.empty else 0.0
     wins = int((trades["pnl_total"] > 0).sum()) if not trades.empty else 0   # BE Stop @ $0 is NOT a win
     fails = n_fail = int((trades["pnl_total"] <= 0).sum()) if not trades.empty else 0
-    be_stop_fails = int((trades["reason"].str.contains("BE Stop")).sum()) if not trades.empty else 0
+    # BE-stop EXITS that actually lost money (a BE-stop after a banked partial can be a net win)
+    be_stop_fails = int((trades["reason"].str.contains("BE Stop") & (trades["pnl_total"] <= 0)).sum()) if not trades.empty else 0
     n = len(trades)
     wr = (wins * 100.0 / n) if n else 0.0
     revs = int(trades["is_reversal"].sum()) if not trades.empty else 0

@@ -104,6 +104,27 @@ def test_summary_counts_be_stop_as_failure():
     assert s.trades == s.successes + s.failures
 
 
+def test_partial_then_be_stop_is_net_win_not_failure():
+    """A partial banked at TP, then a BE-stop on the remainder, is a NET WIN — not a
+    BE-stop failure."""
+    from udb_orb.engine.metrics import summarize
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),      # OR width 2 -> TP 103.64, BE lvl 100.3
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),     # long @101.5
+        (9, 40, 101.5, 103.7, 101.4, 103.5, 1000),   # TP -> 25% partial (+0.535)
+        (9, 45, 101, 101.6, 99.0, 100.0, 1000),      # retrace: BE fires, remainder BE-stops @entry
+    ]
+    res = _run({"2024-06-03": rows})
+    t = res.trades[0]
+    assert t.reason == "BE Stop"
+    assert t.pnl_total > 0                         # partial made it a net win
+    assert t.outcome == "success"
+    s = summarize(res)
+    assert s.be_stop_exits == 1
+    assert s.be_stop_failures == 0                 # a winning BE-stop is not a failure
+    assert s.successes == 1 and s.failures == 0
+
+
 def test_no_base_sl_when_be_on():
     """With BE retrace on and be_level above the base stop, a hard Base SL cannot fire."""
     rows = [
