@@ -1,0 +1,118 @@
+# ============================================================
+#  UDB-ORB-TSLA configuration
+#  Every value here traces to the v12.4.3 Pine Script
+#  "Adaptive TP + Reversal (Best Combined)" profile on TSLA 5m.
+#  Do not edit the `profile` block unless you intend to diverge
+#  from the verified port — the tests assert these values.
+# ============================================================
+
+symbol: TSLA
+timeframe_minutes: 5
+timezone: America/New_York
+
+session:
+  # Regular trading hours (ET). The opening range is the first bar (09:30-09:35).
+  rth_start: "09:30"
+  rth_end:   "16:00"
+  market_open:  "09:30"   # opening-range bar start (specificTime in Pine)
+  eod_exit:     "15:50"   # forced close alert time (v11.20 default for 5m)
+
+# ---- Faithful port of the Adaptive TP + Reversal profile -----------
+# These resolve exactly what the Pine PROFILE_ADAPTIVE_REVERSAL branch computes,
+# with Auto-Tune ON for a 5-minute chart.
+profile:
+  name: "Adaptive TP + Reversal (Best Combined)"
+
+  # Position sizing
+  trade_qty: 1.0
+  slippage_per_unit: 0.0
+
+  # Breakout buffer (% of opening-range width)
+  use_breakout_buffer: true
+  buffer_pct_or: 10.0
+
+  # Stop loss: "Candle High/Low" -> SL at OR low (long) / OR high (short)
+  sl_mode: "Candle High/Low"
+  sl_offset: 0.0
+  fixed_sl: 3.0            # only used by Fixed/Max-Cap SL modes (not this profile)
+
+  # Take profit: Adaptive (% of OR width)
+  tp_mode: "Adaptive"      # Adaptive | Fixed
+  adaptive_tp_scale: 1.0   # TP distance = max(floor, OR_width * scale)
+  adaptive_tp_min: 2.14    # floor
+  fixed_tp: 2.14           # only used when tp_mode == Fixed
+
+  # BE Retrace Shift (auto-tuned for 5m)
+  use_be_retrace: true
+  be_retrace_trigger: 0.35   # % of OR width
+  be_trail_amount: 0.25      # price units
+  be_retrace_use_close: false  # false = wick-based (Adaptive+Reversal is NOT Pure Trail)
+
+  # Partial exit + VWAP trail (auto-tuned for 5m)
+  use_partial_exit: true
+  partial_qty_pct: 25.0      # close 25% at TP, 75% trails
+  partial_activation: 1.00   # profit threshold before VWAP trail arms
+
+  # Reversal trades (2x size after primary SL)
+  use_reversal: true
+  reversal_qty_mult: 2.0
+  reversal_target: 5.0       # fixed TP distance for reversal leg
+  apply_be_to_reversal: true
+
+  # Filters unused by this profile (kept for completeness / Custom experiments)
+  min_or_width_enabled: false
+  min_or_width: 2.50
+  max_or_width_enabled: false
+  max_or_width: 20.0
+  use_vwap_filter: false
+
+  # Trade side
+  trade_side_mode: "Both"    # Both | Long Only | Short Only
+
+# ---- ENHANCEMENTS (default OFF so the port stays verifiable) --------
+# Turn these on one at a time and compare against the faithful baseline.
+enhancements:
+  # 1) Require volume confirmation on the breakout bar.
+  rvol_filter:
+    enabled: false
+    lookback_bars: 20        # avg volume window (same session + prior sessions)
+    min_rvol: 1.2            # breakout bar volume must be >= min_rvol * avg
+
+  # 2) Skip / flag days by opening-range width regime.
+  or_width_regime:
+    enabled: false
+    skip_below: 0.0          # skip if OR width < this (0 = no floor)
+    skip_above: 0.0          # skip if OR width > this (0 = no cap)
+
+  # 3) Time-of-day entry window (ET). Only enter within [start, end].
+  time_window:
+    enabled: false
+    start: "09:35"
+    end:   "14:00"
+
+# ---- Data / storage ------------------------------------------------
+data:
+  provider: fmp              # fmp | local_parquet
+  cache_dir: data/cache
+  db_path: data/udb_orb.db
+
+# ---- Alerts --------------------------------------------------------
+alerts:
+  enabled: true
+  channels: [email, webhook]  # any of: email, webhook  (each also needs env vars)
+  events:                     # which events to notify on
+    - primary_entry
+    - reversal_entry
+    - be_retrace_fired
+    - tp_full
+    - partial_exit
+    - be_trail_exit
+    - be_stop_exit
+    - vwap_cross_exit
+    - base_sl_exit
+    - eod_exit
+
+# ---- Live loop -----------------------------------------------------
+live:
+  poll_seconds: 30           # how often to poll FMP for the latest closed bar
+  lookback_days: 3           # history to pull on each live refresh (for VWAP/RVOL)
