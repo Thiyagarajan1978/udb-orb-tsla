@@ -44,7 +44,7 @@ def main():
     # order columns for readability
     tcols = ["id", "day", "direction", "is_reversal", "entry_ts", "entry_price",
              "exit_ts", "exit_price", "qty", "part1_pnl", "pnl_total", "pnl_per_unit",
-             "reason", "outcome", "duration_bars"]
+             "reason", "outcome", "risk_amount", "duration_bars"]
     trades = trades[[c for c in tcols if c in trades.columns]]
     trades.to_csv(outdir / "trades.csv", index=False)
     events.to_csv(outdir / "events.csv", index=False)

@@ -75,6 +75,8 @@ def test_be_stop_is_failure_and_costs_slippage():
     assert t.outcome == "failure"
     assert t.pnl_total < 0                          # not $0 — slippage makes it a real loss
     assert abs(t.pnl_total - (-0.02)) < 1e-9        # 1 unit * $0.02
+    # "proper" failure size = what was risked without BE: entry 101.5 - base SL (OR low 99.0)
+    assert abs(t.risk_amount - 2.5) < 1e-9
 
 
 def test_summary_counts_be_stop_as_failure():

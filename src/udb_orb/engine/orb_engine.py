@@ -54,6 +54,8 @@ class TradeLeg:
     reason: str               # "TP", "BE Trail", "BE Stop", "Base SL", "VWAP Cross", "EOD" (+ "Rev ")
     duration_bars: int
     outcome: str = "failure"  # "success" if pnl_total > 0 else "failure" (BE Stop @ ~$0 = failure)
+    risk_amount: float = 0.0  # |entry - initial base SL| * qty = the $ you were exposed to
+                              # (for BE Stops, the loss you'd have taken without BE protection)
 
 
 @dataclass
@@ -125,6 +127,7 @@ class _DayState:
         # BE / partial state
         self.be_triggered = False
         self.be_level: Optional[float] = None
+        self.init_stop: Optional[float] = None   # base SL at entry (risk basis)
         self.part1_closed = False
         self.eff_qty: Optional[float] = None
         self.trail_active = False
@@ -354,6 +357,7 @@ class OrbEngine:
                 st.be_level = st.or_high - (p.be_retrace_trigger * or_size) if or_size else None
             st.qty_total = p.trade_qty * p.reversal_qty_mult
 
+        st.init_stop = st.stop   # record base SL as the risk basis (before any BE ratchet)
         st.be_triggered = False
         st.part1_closed = False
         st.eff_qty = st.qty_total
@@ -502,6 +506,7 @@ class OrbEngine:
             qty=st.qty_total, part1_pnl=st.part1_pnl, pnl_total=pnl_total, pnl_per_unit=per_unit,
             reason=reason_out, duration_bars=bar_i - st.entry_bar,
             outcome=("success" if pnl_total > 0 else "failure"),
+            risk_amount=(abs(st.entry_price - st.init_stop) * st.qty_total) if st.init_stop is not None else 0.0,
         )
         self.result.trades.append(leg)
 
@@ -551,6 +556,7 @@ class OrbEngine:
             qty=st.qty_total, part1_pnl=st.part1_pnl, pnl_total=pnl_total, pnl_per_unit=per_unit,
             reason=reason_out, duration_bars=bar_i - st.entry_bar,
             outcome=("success" if pnl_total > 0 else "failure"),
+            risk_amount=(abs(st.entry_price - st.init_stop) * st.qty_total) if st.init_stop is not None else 0.0,
         )
         self.result.trades.append(leg)
         self.result.events.append(Event(ts, EV_EOD_EXIT, dir_label, c, eod_qty, pnl_total, reason_out))

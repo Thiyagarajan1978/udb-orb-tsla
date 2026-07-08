@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS trades (
     pnl_total    REAL, pnl_per_unit REAL,
     reason       TEXT, duration_bars INTEGER,
     outcome      TEXT,                    -- 'success' | 'failure' (BE Stop @ ~$0 = failure)
+    risk_amount  REAL,                    -- $ exposed = |entry - base SL| * qty
     FOREIGN KEY (run_id) REFERENCES runs(id)
 );
 
@@ -104,6 +105,8 @@ class Database:
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(trades)").fetchall()}
         if "outcome" not in cols:
             self.conn.execute("ALTER TABLE trades ADD COLUMN outcome TEXT")
+        if "risk_amount" not in cols:
+            self.conn.execute("ALTER TABLE trades ADD COLUMN risk_amount REAL")
 
     def close(self) -> None:
         self.conn.close()
@@ -169,8 +172,12 @@ class Database:
         df = pd.read_sql_query(q, self.conn, params=args)
         if df.empty:
             return df
-        df["ts"] = pd.to_datetime(df["ts"])
-        return df.set_index("ts")
+        # ts strings carry per-row offsets (EST/EDT); parse as UTC then convert to ET so
+        # DST boundaries don't trip "mixed timezones".
+        idx = pd.to_datetime(df["ts"], utc=True).dt.tz_convert("America/New_York")
+        df = df.drop(columns=["ts"]).set_index(idx)
+        df.index.name = "ts"
+        return df
 
     # ---- writing engine output -----------------------------------------
     def write_result(self, run_id: int, symbol: str, result) -> None:
@@ -182,11 +189,12 @@ class Database:
         self.conn.executemany(
             """INSERT INTO trades(run_id, symbol, day, direction, is_reversal, entry_ts,
                  entry_price, exit_ts, exit_price, qty, part1_pnl, pnl_total, pnl_per_unit,
-                 reason, duration_bars, outcome)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 reason, duration_bars, outcome, risk_amount)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(run_id, symbol, t.day, t.direction, int(t.is_reversal),
               _iso(t.entry_ts), t.entry_price, _iso(t.exit_ts), t.exit_price, t.qty,
-              t.part1_pnl, t.pnl_total, t.pnl_per_unit, t.reason, t.duration_bars, t.outcome)
+              t.part1_pnl, t.pnl_total, t.pnl_per_unit, t.reason, t.duration_bars, t.outcome,
+              t.risk_amount)
              for t in result.trades],
         )
         self.conn.executemany(
