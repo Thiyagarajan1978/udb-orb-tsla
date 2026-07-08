@@ -1,11 +1,16 @@
-"""The resolved profile must match the Pine v12.4.3 Adaptive TP + Reversal @ 5m."""
+"""Profile resolution: the production default (tuned BE 0.55) and the exact Pine port."""
+from pathlib import Path
+
 from conftest import base_config
 
+from udb_orb.config import load_config
 from udb_orb.engine.params import Params
 
+_ROOT = Path(__file__).resolve().parents[1]
 
-def test_adaptive_reversal_profile_values():
-    p = Params.from_config(base_config())
+
+def _assert_common_profile(p: Params):
+    """Everything that is identical between the default and the faithful port."""
     assert p.use_adaptive_tp is True
     assert p.adaptive_tp_scale == 1.0
     assert p.adaptive_tp_min == 2.14
@@ -13,7 +18,6 @@ def test_adaptive_reversal_profile_values():
     assert p.use_partial_exit is True
     assert p.use_be_retrace is True
     assert p.be_retrace_use_close is False          # NOT Pure Trail -> wick based
-    assert p.be_retrace_trigger == 0.35             # 5m auto-tune
     assert p.be_trail_amount == 0.25
     assert p.partial_activation == 1.00
     assert p.use_reversal is True
@@ -23,3 +27,18 @@ def test_adaptive_reversal_profile_values():
     assert p.buffer_pct_or == 10.0
     assert p.trade_side_mode == "Both"
     assert p.allow_longs and p.allow_shorts
+
+
+def test_default_profile_uses_tuned_be_055():
+    """The shipped default adopts the tuned BE trigger (validated train+holdout)."""
+    p = Params.from_config(base_config())
+    _assert_common_profile(p)
+    assert p.be_retrace_trigger == 0.55             # adopted tuned default
+
+
+def test_faithful_port_config_preserves_035():
+    """The faithful-port config reproduces the exact Pine v12.4.3 value."""
+    cfg = load_config(_ROOT / "config" / "faithful_be035.yaml")
+    p = Params.from_config(cfg)
+    _assert_common_profile(p)
+    assert p.be_retrace_trigger == 0.35             # exact Pine port

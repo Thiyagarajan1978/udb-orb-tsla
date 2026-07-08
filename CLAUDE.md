@@ -10,9 +10,19 @@ defines the range; a buffered close-break triggers the trade; adaptive TP + 25% 
 **This system is ALERTS-ONLY.** It computes signals and logs every event to SQLite; it
 never places broker orders.
 
+## Defaults vs the faithful port
+`config/config.yaml` is the **production default** and now carries two *validated* tunings on
+top of the port (both cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_ANALYSIS.md`):
+1. **BE trigger 0.55** (port was 0.35) — cuts premature BE-Stop failures.
+2. **`reversal_capture` ON** (`trigger_on_be_stop` + `trail_to_eod`) — captures false-breakout
+   reversal days in full.
+
+To reproduce the **exact Pine v12.4.3 numbers**, use `config/faithful_be035.yaml` (BE 0.35,
+reversal_capture OFF). `tests/test_params.py` asserts both: the tuned default AND the port.
+
 ## Golden rule — faithful port first
 `src/udb_orb/engine/orb_engine.py` reproduces the Pine bar-by-bar state machine *exactly*
-for this profile, including:
+for this profile (with `faithful_be035.yaml`), including:
 - Auto-Tune @ 5m: BE trigger 0.35, BE trail $0.25, partial activation $1.00.
 - Adaptive TP distance = `max($2.14, OR_width × 1.0)`, used as a fixed distance from entry.
 - Wick-based BE Retrace (this profile is NOT Pure Trail), BE trail = `high − 0.25` (long).
@@ -28,11 +38,12 @@ The tests in `tests/` assert the resolved profile params and known single-day tr
 outcomes. **Do not change engine math to make an enhancement look good** — enhancements are
 separate, toggleable, and default OFF.
 
-## Enhancements (default OFF, config `enhancements:`)
-1. **RVOL filter** — breakout bar volume ≥ `min_rvol × avg`.
-2. **OR-width regime gate** — skip days by opening-range width buckets.
-3. **Time-of-day window** — only enter within `[start, end]` ET.
-4. **Walk-forward tuning** (`tuning/`) — re-fit `adaptive_tp_scale` etc. from stored trades.
+## Enhancements (config `enhancements:`)
+1. **RVOL filter** (default OFF) — breakout bar volume ≥ `min_rvol × avg`.
+2. **OR-width regime gate** (default OFF) — skip days by opening-range width buckets.
+3. **Time-of-day window** (default OFF) — only enter within `[start, end]` ET.
+4. **Reversal capture** (default **ON** — adopted) — `trigger_on_be_stop` + `trail_to_eod`.
+5. **Walk-forward tuning** (`tuning/`) — re-fit `adaptive_tp_scale` etc. from stored trades.
 
 Enable one at a time and compare to the baseline before trusting it.
 

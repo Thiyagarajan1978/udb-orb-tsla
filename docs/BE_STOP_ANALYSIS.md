@@ -54,20 +54,44 @@ larger worst day (−$4.58 vs −$1.25) because a deeper retrace occasionally be
 base-SL loss instead of a scratch. That is the honest trade-off, and it is still tiny next to
 the ~$7 already risked per trade.
 
-**Recommendation:** adopt **BE trigger 0.55, trail $0.25** as a tuned variant. It is provided
-as `config/tuned_be055.yaml` so the verified 0.35 baseline stays intact for comparison:
+**Adopted:** **BE trigger 0.55** is now the default in `config/config.yaml`. The exact Pine
+port (0.35) is preserved in `config/faithful_be035.yaml` for reproduction:
 
 ```
-python cli.py backtest --config config/tuned_be055.yaml --start 2026-01-01 --end 2026-07-08
+python cli.py backtest --start 2026-01-01 --end 2026-07-08                     # default (tuned)
+python cli.py --config config/faithful_be035.yaml backtest --start ... --end ... # exact Pine port
 ```
 
-## 4. Better alternative-trade capture (next step, not yet built)
+## 4. Better alternative-trade capture — BUILT & ADOPTED
 
-The false-breakout days close opposite 74% of the time, yet the reversal only rescues 13. The
-reversal often BE-stops itself or never triggers (needs a fresh opposite *buffered* close-break).
-Candidate improvements to test next:
-- Let the reversal **trail to EOD** (no self-BE choke) on trend-reversal days.
-- Trigger the reversal off the **BE-stop event** directly rather than a second buffer break.
-- Size the reversal target to OR width instead of a fixed $5.
+The false-breakout days close opposite 74% of the time, yet the default reversal (fresh
+*buffered* close-break + fixed $5 TP + its own BE) only rescued a few. Two changes, gated by
+`enhancements.reversal_capture`, fix that:
 
-These are proposals — each must clear the same train/holdout bar before adoption.
+- **`trigger_on_be_stop`** — enter the reversal on a **raw** opposite OR break (earlier /
+  more often) instead of waiting for a buffered break.
+- **`trail_to_eod`** — the reversal rides the full move (no fixed $5 TP, no partial), exiting
+  on BE-trail or EOD, so trend-reversal days are captured in full.
+
+A/B over 2024→2026, train + holdout (default now BE 0.55):
+
+| Reversal setting | Train net | Holdout net | Holdout rev P&L | Holdout worst |
+|------------------|----------:|------------:|----------------:|--------------:|
+| off (default reversal) | +687 | +467 | +140 | −4.6 |
+| trigger_on_be_stop | +709 | +495 | +168 | −3.2 |
+| **trigger + trail_to_eod (adopted)** | **+733** | **+502** | **+176** | **−3.2** |
+
+Both changes clear the train/holdout bar, so they are **adopted as defaults** in
+`config/config.yaml`. `target_or_mult` (OR-scaled reversal TP) was tested and left OFF — it
+did not beat trail_to_eod.
+
+### Combined effect of both adopted changes (YTD 2026)
+| | Faithful port (BE 0.35) | Adopted (BE 0.55 + reversal capture) |
+|--|------------------------:|-------------------------------------:|
+| Net P&L | +$450.01 | **+$501.91** (+11.5%) |
+| Win rate | 51.6% | **55.1%** |
+| BE-Stop failures | 68 | **55** |
+| Best day | +$27.86 | **+$33.84** |
+| Worst day | −$1.25 | −$3.22 |
+
+Reproduce the exact Pine port (no tuning) with `config/faithful_be035.yaml`.

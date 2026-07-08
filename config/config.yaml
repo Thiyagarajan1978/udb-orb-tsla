@@ -46,9 +46,12 @@ profile:
   adaptive_tp_min: 2.14    # floor
   fixed_tp: 2.14           # only used when tp_mode == Fixed
 
-  # BE Retrace Shift (auto-tuned for 5m)
+  # BE Retrace Shift (5m). NOTE: default adopted as 0.55 (tuned) — validated train(2024-25)
+  # + holdout(2026) to cut premature BE-Stop failures (WR 51.6->55.2%, BE-stops 68->56, more
+  # net). The exact Pine port value was 0.35 — reproduce it with config/faithful_be035.yaml.
+  # See docs/BE_STOP_ANALYSIS.md.
   use_be_retrace: true
-  be_retrace_trigger: 0.35   # % of OR width
+  be_retrace_trigger: 0.55   # % of OR width  [adopted tuned default; Pine port = 0.35]
   be_trail_amount: 0.25      # price units
   be_retrace_use_close: false  # false = wick-based (Adaptive+Reversal is NOT Pure Trail)
 
@@ -93,6 +96,18 @@ enhancements:
     enabled: false
     start: "09:35"
     end:   "14:00"
+
+  # 4) Improved reversal capture on false-breakout days (they close opposite ~74% of the
+  #    time). ADOPTED default = trigger_on_be_stop + trail_to_eod — validated train(2024-25)
+  #    +holdout(2026): net +7% both, more reversal P&L, better worst day. See BE_STOP_ANALYSIS.md.
+  #    (faithful_be035.yaml keeps this OFF to reproduce the exact Pine reversal.)
+  reversal_capture:
+    enabled: true
+    trigger_on_be_stop: true    # enter reversal on a RAW opposite OR break (earlier) instead
+                                # of waiting for a fresh *buffered* close-break
+    trail_to_eod: true          # reversal rides the full move (no fixed $5 TP, no partial) —
+                                # BE-trail + EOD only, to capture the whole reverse trend
+    target_or_mult: 0.0         # >0: reversal TP = mult * OR_width (adaptive) instead of fixed $5
 
 # ---- Data / storage ------------------------------------------------
 data:

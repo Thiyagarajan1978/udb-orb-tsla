@@ -132,6 +132,7 @@ class _DayState:
         self.eff_qty: Optional[float] = None
         self.trail_active = False
         self.part1_pnl = 0.0
+        self.suppress_partial = False   # reversal trail_to_eod: no partial, ride full move
 
         # reversal state machine
         self.prim_dir = 0
@@ -181,6 +182,26 @@ class OrbEngine:
         sh, sm = map(int, str(cfg.get("start", "09:35")).split(":"))
         eh, em = map(int, str(cfg.get("end", "16:00")).split(":"))
         return time(sh, sm) <= t <= time(eh, em)
+
+    # ---- reversal-capture enhancement (default OFF) ---------------------
+    @property
+    def _rev_cfg(self) -> dict[str, Any]:
+        return self.enh.get("reversal_capture", {})
+
+    @property
+    def _rev_on(self) -> bool:
+        return bool(self._rev_cfg.get("enabled", False))
+
+    def _rev_trigger_raw(self) -> bool:
+        return self._rev_on and bool(self._rev_cfg.get("trigger_on_be_stop", False))
+
+    def _reversal_tp_dist(self, or_size: float) -> Optional[float]:
+        """Distance for the reversal TP, or None to disable TP (trail to EOD)."""
+        if self._rev_on and self._rev_cfg.get("trail_to_eod", False):
+            return None
+        if self._rev_on and float(self._rev_cfg.get("target_or_mult", 0.0) or 0.0) > 0:
+            return float(self._rev_cfg["target_or_mult"]) * or_size
+        return self.p.reversal_target
 
     def _regime_skip(self, or_width: float) -> bool:
         cfg = self.enh.get("or_width_regime", {})
@@ -293,12 +314,16 @@ class OrbEngine:
                     self.result.events.append(Event(ts, EV_PRIMARY_ENTRY, "S", c, st.qty_total, None, "entry"))
 
             # ---- REVERSAL ENTRY ----
+            # trigger_on_be_stop uses the RAW OR boundary (earlier/more frequent) instead of
+            # requiring a fresh *buffered* close-break past the opposite trigger.
+            rev_long_level = st.or_high if self._rev_trigger_raw() else long_brk
+            rev_short_level = st.or_low if self._rev_trigger_raw() else short_brk
             if (p.use_reversal and st.prim_stopped and not st.active and entry_ok_common):
-                if st.prim_dir == 1 and short_brk is not None and c < short_brk and max_ok and vwap_short_ok and self._rvol_ok(rv):
+                if st.prim_dir == 1 and rev_short_level is not None and c < rev_short_level and max_ok and vwap_short_ok and self._rvol_ok(rv):
                     self._enter(st, ts, bar_i, direction=-1, c=c, reversal=True)
                     st.prim_stopped = False
                     self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "S (Rev)", c, st.qty_total, None, "reversal entry"))
-                elif st.prim_dir == -1 and long_brk is not None and c > long_brk and max_ok and vwap_long_ok and self._rvol_ok(rv):
+                elif st.prim_dir == -1 and rev_long_level is not None and c > rev_long_level and max_ok and vwap_long_ok and self._rvol_ok(rv):
                     self._enter(st, ts, bar_i, direction=1, c=c, reversal=True)
                     st.prim_stopped = False
                     self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "L (Rev)", c, st.qty_total, None, "reversal entry"))
@@ -346,14 +371,16 @@ class OrbEngine:
                 st.be_level = st.or_low + (p.be_retrace_trigger * or_size) if or_size else None
             st.qty_total = p.trade_qty
         else:
-            # reversal: fixed TP = reversal_target, SL at OR boundary opposite direction
+            # reversal: TP per _reversal_tp_dist (fixed $5, OR-scaled, or None=trail to EOD),
+            # SL at the OR boundary opposite the reversal direction.
+            tp_dist = self._reversal_tp_dist(or_size)
             if direction == -1:  # short reversal after long primary
                 st.stop = st.or_high + p.sl_offset
-                st.tp = c - p.reversal_target
+                st.tp = None if tp_dist is None else c - tp_dist
                 st.be_level = st.or_low + (p.be_retrace_trigger * or_size) if or_size else None
             else:                # long reversal after short primary
                 st.stop = st.or_low - p.sl_offset
-                st.tp = c + p.reversal_target
+                st.tp = None if tp_dist is None else c + tp_dist
                 st.be_level = st.or_high - (p.be_retrace_trigger * or_size) if or_size else None
             st.qty_total = p.trade_qty * p.reversal_qty_mult
 
@@ -363,6 +390,8 @@ class OrbEngine:
         st.eff_qty = st.qty_total
         st.trail_active = False
         st.part1_pnl = 0.0
+        # reversal 'trail_to_eod' rides the full move: no partial scale-out
+        st.suppress_partial = bool(reversal and self._rev_on and self._rev_cfg.get("trail_to_eod", False))
         if st.entry_ts_day is None:
             st.entry_ts_day = ts
 
@@ -422,7 +451,7 @@ class OrbEngine:
             reason = "BE Trail" if (st.be_triggered and exit_px > st.entry_price) else ("BE Stop" if st.be_triggered else "Base SL")
             self._close_leg(st, ts, bar_i, exit_px, reason, long=True)
         elif tp_hit:
-            if p.use_partial_exit and not st.part1_closed:
+            if p.use_partial_exit and not st.suppress_partial and not st.part1_closed:
                 self._partial(st, ts, long=True)
             else:
                 self._close_leg(st, ts, bar_i, st.tp, "TP", long=True)
@@ -469,7 +498,7 @@ class OrbEngine:
             reason = "BE Trail" if (st.be_triggered and exit_px < st.entry_price) else ("BE Stop" if st.be_triggered else "Base SL")
             self._close_leg(st, ts, bar_i, exit_px, reason, long=False)
         elif tp_hit:
-            if p.use_partial_exit and not st.part1_closed:
+            if p.use_partial_exit and not st.suppress_partial and not st.part1_closed:
                 self._partial(st, ts, long=False)
             else:
                 self._close_leg(st, ts, bar_i, st.tp, "TP", long=False)

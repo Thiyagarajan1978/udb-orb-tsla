@@ -1,11 +1,11 @@
 # ============================================================
-#  UDB-ORB-TSLA  —  TUNED VARIANT (BE trigger 0.55)
-#  Derived from config/config.yaml. The ONLY change vs the verified
-#  port is be_retrace_trigger: 0.35 -> 0.55, which reduces premature
-#  BE-Stop failures. Validated train (2024-25) AND holdout (2026):
-#  higher win rate, fewer BE-stops, more net, at a modestly larger
-#  worst day. See docs/BE_STOP_ANALYSIS.md. Use via:
-#    python cli.py backtest --config config/tuned_be055.yaml ...
+#  UDB-ORB-TSLA  —  FAITHFUL PORT (exact Pine v12.4.3)
+#  Reproduces the pure "Adaptive TP + Reversal" profile with the
+#  original be_retrace_trigger: 0.35. The production default
+#  (config/config.yaml) adopts the tuned 0.55; this file exists to
+#  reproduce the exact Pine numbers. tests/test_params.py asserts
+#  these values via load_config("config/faithful_be035.yaml").
+#    python cli.py --config config/faithful_be035.yaml backtest ...
 # ============================================================
 
 symbol: TSLA
@@ -23,7 +23,7 @@ session:
 # These resolve exactly what the Pine PROFILE_ADAPTIVE_REVERSAL branch computes,
 # with Auto-Tune ON for a 5-minute chart.
 profile:
-  name: "Adaptive TP + Reversal (Tuned BE 0.55)"
+  name: "Adaptive TP + Reversal (Best Combined)"
 
   # Position sizing
   trade_qty: 1.0
@@ -48,9 +48,9 @@ profile:
   adaptive_tp_min: 2.14    # floor
   fixed_tp: 2.14           # only used when tp_mode == Fixed
 
-  # BE Retrace Shift  (TUNED: 0.55 instead of the port's 0.35 — fewer premature BE stops)
+  # BE Retrace Shift — exact Pine port value (Auto-Tune @ 5m)
   use_be_retrace: true
-  be_retrace_trigger: 0.55   # % of OR width  [tuned variant]
+  be_retrace_trigger: 0.35   # % of OR width  [faithful Pine port]
   be_trail_amount: 0.25      # price units
   be_retrace_use_close: false  # false = wick-based (Adaptive+Reversal is NOT Pure Trail)
 
@@ -95,6 +95,13 @@ enhancements:
     enabled: false
     start: "09:35"
     end:   "14:00"
+
+  # 4) Improved reversal capture (all sub-options default OFF; see config/config.yaml).
+  reversal_capture:
+    enabled: false
+    trigger_on_be_stop: false
+    trail_to_eod: false
+    target_or_mult: 0.0
 
 # ---- Data / storage ------------------------------------------------
 data:
