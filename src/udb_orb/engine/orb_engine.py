@@ -53,6 +53,7 @@ class TradeLeg:
     pnl_per_unit: float
     reason: str               # "TP", "BE Trail", "BE Stop", "Base SL", "VWAP Cross", "EOD" (+ "Rev ")
     duration_bars: int
+    outcome: str = "failure"  # "success" if pnl_total > 0 else "failure" (BE Stop @ ~$0 = failure)
 
 
 @dataclass
@@ -500,6 +501,7 @@ class OrbEngine:
             entry_ts=st.entry_ts, entry_price=st.entry_price, exit_ts=ts, exit_price=exit_px,
             qty=st.qty_total, part1_pnl=st.part1_pnl, pnl_total=pnl_total, pnl_per_unit=per_unit,
             reason=reason_out, duration_bars=bar_i - st.entry_bar,
+            outcome=("success" if pnl_total > 0 else "failure"),
         )
         self.result.trades.append(leg)
 
@@ -548,6 +550,7 @@ class OrbEngine:
             entry_ts=st.entry_ts, entry_price=st.entry_price, exit_ts=ts, exit_price=c,
             qty=st.qty_total, part1_pnl=st.part1_pnl, pnl_total=pnl_total, pnl_per_unit=per_unit,
             reason=reason_out, duration_bars=bar_i - st.entry_bar,
+            outcome=("success" if pnl_total > 0 else "failure"),
         )
         self.result.trades.append(leg)
         self.result.events.append(Event(ts, EV_EOD_EXIT, dir_label, c, eod_qty, pnl_total, reason_out))

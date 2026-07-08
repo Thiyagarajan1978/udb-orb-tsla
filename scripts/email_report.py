@@ -29,7 +29,9 @@ def _fmt_ts(ts):
 
 def build_report(run_row, trades: pd.DataFrame, days: pd.DataFrame):
     net = float(trades["pnl_total"].sum()) if not trades.empty else 0.0
-    wins = int((trades["pnl_total"] >= 0).sum()) if not trades.empty else 0
+    wins = int((trades["pnl_total"] > 0).sum()) if not trades.empty else 0   # BE Stop @ $0 is NOT a win
+    fails = n_fail = int((trades["pnl_total"] <= 0).sum()) if not trades.empty else 0
+    be_stop_fails = int((trades["reason"].str.contains("BE Stop")).sum()) if not trades.empty else 0
     n = len(trades)
     wr = (wins * 100.0 / n) if n else 0.0
     revs = int(trades["is_reversal"].sum()) if not trades.empty else 0
@@ -41,32 +43,38 @@ def build_report(run_row, trades: pd.DataFrame, days: pd.DataFrame):
         f"UDB-ORB TSLA - Trade Report (run #{run_row['id']})",
         f"Profile : {run_row['profile']}",
         f"Range   : {rng_text}",
-        f"Result  : {n} trades | {wr:.1f}% WR | Net {net:+.2f} | {revs} reversal(s)",
+        f"Result  : {n} trades | {wins} success / {fails} failure | {wr:.1f}% WR | "
+        f"Net {net:+.2f} | {be_stop_fails} BE-Stop fails | {revs} reversal(s)",
         "",
-        f"{'Day':<11}{'Dir':<9}{'Entry':<20}{'@':<9}{'Exit':<20}{'@':<9}{'Qty':<5}{'PnL':<9}{'Reason':<10}",
-        "-" * 110,
+        f"{'Day':<11}{'Dir':<9}{'Entry':<20}{'@':<9}{'Exit':<20}{'@':<9}{'Qty':<5}{'PnL':<9}{'Outcome':<9}{'Reason':<10}",
+        "-" * 120,
     ]
     for _, t in trades.iterrows():
+        outcome = t.get("outcome") or ("success" if t["pnl_total"] > 0 else "failure")
         lines.append(
             f"{t['day']:<11}{t['direction']:<9}{_fmt_ts(t['entry_ts']):<20}{t['entry_price']:<9.2f}"
             f"{_fmt_ts(t['exit_ts']):<20}{t['exit_price']:<9.2f}{t['qty']:<5.2f}"
-            f"{t['pnl_total']:<+9.2f}{t['reason']:<10}"
+            f"{t['pnl_total']:<+9.2f}{outcome:<9}{t['reason']:<10}"
         )
     text = "\n".join(lines)
 
     # ---- HTML ----
     rows = ""
     for _, t in trades.iterrows():
-        color = "#07aa4b" if t["pnl_total"] >= 0 else "#e53935"
+        success = t["pnl_total"] > 0
+        color = "#07aa4b" if success else "#e53935"
+        outcome = t.get("outcome") or ("success" if success else "failure")
         rev = " 🔁" if t["is_reversal"] else ""
+        rowbg = "" if success else " style='background:#fdecea'"
         rows += (
-            f"<tr>"
+            f"<tr{rowbg}>"
             f"<td>{t['day']}</td>"
             f"<td>{t['direction']}{rev}</td>"
             f"<td>{_fmt_ts(t['entry_ts'])}</td><td style='text-align:right'>{t['entry_price']:.2f}</td>"
             f"<td>{_fmt_ts(t['exit_ts'])}</td><td style='text-align:right'>{t['exit_price']:.2f}</td>"
             f"<td style='text-align:right'>{t['qty']:.2f}</td>"
             f"<td style='text-align:right;color:{color};font-weight:600'>{t['pnl_total']:+.2f}</td>"
+            f"<td style='color:{color};font-weight:600'>{outcome}</td>"
             f"<td>{t['reason']}</td>"
             f"</tr>"
         )
@@ -78,16 +86,23 @@ def build_report(run_row, trades: pd.DataFrame, days: pd.DataFrame):
   <div style="color:#555;margin-bottom:10px">Range: {rng}</div>
   <div style="font-size:15px;margin:12px 0">
     <b>{n}</b> trades ·
+    <b style="color:#07aa4b">{wins}</b> success /
+    <b style="color:#e53935">{fails}</b> failure ·
     <b>{wr:.1f}%</b> win rate ·
     Net <b style="color:{net_color}">{net:+.2f}</b> ·
+    <b>{be_stop_fails}</b> BE-Stop fails ·
     <b>{revs}</b> reversal(s)
+  </div>
+  <div style="color:#888;font-size:12px;margin-bottom:8px">
+    Success = net profit &gt; $0. BE&nbsp;Stop exits fill at entry minus slippage, so they are
+    counted as <b>failures</b>, not $0 scratches.
   </div>
   <table cellpadding="6" cellspacing="0"
          style="border-collapse:collapse;width:100%;font-size:13px;border:1px solid #ddd">
     <thead>
       <tr style="background:#1e88e5;color:#fff;text-align:left">
         <th>Day</th><th>Dir</th><th>Entry</th><th>@</th><th>Exit</th><th>@</th>
-        <th>Qty</th><th>PnL</th><th>Reason</th>
+        <th>Qty</th><th>PnL</th><th>Outcome</th><th>Reason</th>
       </tr>
     </thead>
     <tbody>{rows}</tbody>

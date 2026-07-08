@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS trades (
     qty          REAL, part1_pnl REAL,
     pnl_total    REAL, pnl_per_unit REAL,
     reason       TEXT, duration_bars INTEGER,
+    outcome      TEXT,                    -- 'success' | 'failure' (BE Stop @ ~$0 = failure)
     FOREIGN KEY (run_id) REFERENCES runs(id)
 );
 
@@ -95,7 +96,14 @@ class Database:
         self.conn = sqlite3.connect(str(self.path))
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a DB was first created."""
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(trades)").fetchall()}
+        if "outcome" not in cols:
+            self.conn.execute("ALTER TABLE trades ADD COLUMN outcome TEXT")
 
     def close(self) -> None:
         self.conn.close()
@@ -174,11 +182,11 @@ class Database:
         self.conn.executemany(
             """INSERT INTO trades(run_id, symbol, day, direction, is_reversal, entry_ts,
                  entry_price, exit_ts, exit_price, qty, part1_pnl, pnl_total, pnl_per_unit,
-                 reason, duration_bars)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 reason, duration_bars, outcome)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(run_id, symbol, t.day, t.direction, int(t.is_reversal),
               _iso(t.entry_ts), t.entry_price, _iso(t.exit_ts), t.exit_price, t.qty,
-              t.part1_pnl, t.pnl_total, t.pnl_per_unit, t.reason, t.duration_bars)
+              t.part1_pnl, t.pnl_total, t.pnl_per_unit, t.reason, t.duration_bars, t.outcome)
              for t in result.trades],
         )
         self.conn.executemany(

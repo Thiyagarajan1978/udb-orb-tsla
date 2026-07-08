@@ -84,13 +84,14 @@ def main():
     from udb_orb.engine.metrics import Summary
     s = _summary_from_frames(trades, days)
 
-    c = st.columns(6)
+    c = st.columns(7)
     c[0].metric("Net P&L", _fmt(s.net_pnl, True))
     c[1].metric("Trades", f"{s.trades}")
-    c[2].metric("Win rate", f"{s.win_rate:.1f}%")
-    c[3].metric("Profit factor", _fmt(s.profit_factor))
-    c[4].metric("Worst day", _fmt(s.worst_day, True))
-    c[5].metric("Reversals", f"{s.reversal_entries}")
+    c[2].metric("Success / Fail", f"{s.wins} / {s.losses}")
+    c[3].metric("Win rate", f"{s.win_rate:.1f}%")
+    c[4].metric("BE-Stop fails", f"{s.be_stop_fails}")
+    c[5].metric("Worst day", _fmt(s.worst_day, True))
+    c[6].metric("Reversals", f"{s.reversal_entries}")
 
     tabs = st.tabs(["Equity", "Trade log", "Daily review", "No-trade days", "Events / alerts"])
 
@@ -109,11 +110,12 @@ def main():
 def _summary_from_frames(trades: pd.DataFrame, days: pd.DataFrame):
     from types import SimpleNamespace
     s = SimpleNamespace(net_pnl=0.0, trades=0, wins=0, losses=0, win_rate=0.0,
-                        profit_factor=None, worst_day=None, reversal_entries=0)
+                        profit_factor=None, worst_day=None, reversal_entries=0, be_stop_fails=0)
     if not trades.empty:
         s.trades = len(trades)
-        s.wins = int((trades["pnl_total"] >= 0).sum())
-        s.losses = int((trades["pnl_total"] < 0).sum())
+        s.wins = int((trades["pnl_total"] > 0).sum())    # BE Stop @ $0 is NOT a win
+        s.losses = int((trades["pnl_total"] <= 0).sum())
+        s.be_stop_fails = int(trades["reason"].str.contains("BE Stop").sum())
         s.net_pnl = float(trades["pnl_total"].sum())
         s.win_rate = s.wins * 100.0 / s.trades if s.trades else 0.0
         gp = float(trades.loc[trades["pnl_total"] >= 0, "pnl_total"].sum())
@@ -145,8 +147,9 @@ def _trade_log_tab(trades: pd.DataFrame):
     if trades.empty:
         st.info("No trades.")
         return
-    show = trades[["day", "direction", "entry_ts", "entry_price", "exit_ts", "exit_price",
-                   "qty", "part1_pnl", "pnl_total", "reason", "duration_bars"]].copy()
+    cols = ["day", "direction", "entry_ts", "entry_price", "exit_ts", "exit_price",
+            "qty", "part1_pnl", "pnl_total", "outcome", "reason", "duration_bars"]
+    show = trades[[c for c in cols if c in trades.columns]].copy()
     show = show.sort_values("exit_ts", ascending=False)
     st.dataframe(show, use_container_width=True, height=520)
     st.download_button("Download CSV", show.to_csv(index=False), "trades.csv", "text/csv")

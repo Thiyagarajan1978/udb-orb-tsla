@@ -30,9 +30,15 @@ class Summary:
     total_days: int = 0
     trade_day_pct: float = 0.0
     reversal_entries: int = 0
+    # success / failure (BE Stop @ ~$0 and any pnl<=0 counts as FAILURE)
+    successes: int = 0
+    failures: int = 0
+    be_stop_failures: int = 0
     # exit-reason counts
     tp_exits: int = 0
     base_sl_exits: int = 0
+    be_trail_exits: int = 0
+    be_stop_exits: int = 0
     be_saves: int = 0
     partial_exits: int = 0
     vwap_trail_exits: int = 0
@@ -51,11 +57,15 @@ def summarize(result: Result) -> Summary:
 
     for t in result.trades:
         s.trades += 1
-        if t.pnl_total >= 0:
+        # A trade is a SUCCESS only if it netted a real profit. BE Stop exits at ~$0
+        # (and any non-positive leg) are FAILURES — you cannot exit exactly at break-even.
+        if t.pnl_total > 0:
             s.wins += 1
+            s.successes += 1
             s.gross_profit += t.pnl_total
         else:
             s.losses += 1
+            s.failures += 1
             s.gross_loss_abs += abs(t.pnl_total)
         s.net_pnl += t.pnl_total
         s.biggest_win = t.pnl_total if s.biggest_win is None else max(s.biggest_win, t.pnl_total)
@@ -68,7 +78,12 @@ def summarize(result: Result) -> Summary:
             s.tp_exits += 1
         elif "Base SL" in r:
             s.base_sl_exits += 1
-        elif "BE" in r:
+        elif "BE Stop" in r:
+            s.be_stop_exits += 1
+            s.be_stop_failures += 1
+            s.be_saves += 1
+        elif "BE Trail" in r:
+            s.be_trail_exits += 1
             s.be_saves += 1
         elif "VWAP" in r:
             s.vwap_trail_exits += 1

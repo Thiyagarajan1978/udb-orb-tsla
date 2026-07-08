@@ -25,7 +25,11 @@ profile:
 
   # Position sizing
   trade_qty: 1.0
-  slippage_per_unit: 0.0
+  # Realistic per-unit exit cost (spread/slippage). Applied to EVERY exit incl. partials.
+  # This is why a "BE Stop" is a small real loss, not a costless $0 scratch — a stop resting
+  # at entry fills at entry minus this. The verified Pine baseline used 0.0; set >0 for a
+  # realistic success/failure validation (ORB doc suggests ~0.02 for liquid equities).
+  slippage_per_unit: 0.02
 
   # Breakout buffer (% of opening-range width)
   use_breakout_buffer: true

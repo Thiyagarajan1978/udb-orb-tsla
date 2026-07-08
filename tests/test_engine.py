@@ -6,8 +6,9 @@ from udb_orb.engine.orb_engine import run_engine
 from udb_orb.engine.params import Params
 
 
-def _run(rows_by_day):
+def _run(rows_by_day, slippage=0.0):
     cfg = base_config()
+    cfg["profile"]["slippage_per_unit"] = slippage   # geometry tests use 0; realism test sets >0
     p = Params.from_config(cfg)
     frames = [build_bars(rows, day=day) for day, rows in rows_by_day.items()]
     bars = pd.concat(frames).sort_index()
@@ -50,7 +51,8 @@ def test_be_stop_protects_then_reversal_short():
     primary = res.trades[0]
     assert primary.direction == "L"
     assert primary.reason == "BE Stop"
-    assert abs(primary.pnl_total) < 1e-9          # breakeven, no loss (BE protection)
+    assert abs(primary.pnl_total) < 1e-9          # geometry only (no slippage) -> exactly break-even
+    assert primary.outcome == "failure"           # BE Stop is a FAILURE, never a $0 win
 
     rev = res.trades[1]
     assert rev.is_reversal is True
@@ -58,6 +60,39 @@ def test_be_stop_protects_then_reversal_short():
     assert rev.reason == "Rev EOD"
     assert rev.qty == 2.0
     assert abs(rev.pnl_total - 10.0) < 1e-6
+
+
+def test_be_stop_is_failure_and_costs_slippage():
+    """With a realistic exit cost, a BE Stop is a small real LOSS, classified as failure."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),   # primary long @101.5
+        (9, 40, 101, 101.6, 98.5, 99.0, 1000),     # BE fires, stop->entry -> BE Stop
+    ]
+    res = _run({"2024-06-03": rows}, slippage=0.02)
+    t = res.trades[0]
+    assert t.reason == "BE Stop"
+    assert t.outcome == "failure"
+    assert t.pnl_total < 0                          # not $0 — slippage makes it a real loss
+    assert abs(t.pnl_total - (-0.02)) < 1e-9        # 1 unit * $0.02
+
+
+def test_summary_counts_be_stop_as_failure():
+    from udb_orb.engine.metrics import summarize
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),
+        (9, 40, 101, 101.6, 98.5, 99.0, 1000),     # BE Stop
+        (9, 45, 99, 99.0, 97.9, 98.0, 1000),       # reversal short
+        (9, 50, 98, 98.1, 92.8, 93.0, 1000),       # partial
+        (15, 50, 93, 93.1, 92.9, 93.0, 1000),      # reversal EOD win
+    ]
+    res = _run({"2024-06-03": rows}, slippage=0.02)
+    s = summarize(res)
+    assert s.be_stop_failures == 1
+    assert s.failures >= 1
+    assert s.successes >= 1
+    assert s.trades == s.successes + s.failures
 
 
 def test_no_base_sl_when_be_on():

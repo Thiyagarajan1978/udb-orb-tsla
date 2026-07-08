@@ -33,8 +33,9 @@ def _d(s: str) -> date:
 def _print_summary(run_id, summ) -> None:
     s = summ
     print(f"\n=== Backtest summary (run_id={run_id}) ===")
-    print(f"  Trades        : {s.trades}  (W {s.wins} / L {s.losses})")
-    print(f"  Win rate      : {s.win_rate:.1f}%")
+    print(f"  Trades        : {s.trades}  (success {s.successes} / failure {s.failures})")
+    print(f"  Win rate      : {s.win_rate:.1f}%   [success = net > 0; BE Stop counts as failure]")
+    print(f"  BE-Stop fails : {s.be_stop_failures}")
     print(f"  Net P&L       : {s.net_pnl:+.2f}")
     print(f"  Profit factor : {('%.2f' % s.profit_factor) if s.profit_factor else 'n/a'}")
     print(f"  Expectancy    : {s.expectancy:+.3f} / trade")
@@ -43,8 +44,8 @@ def _print_summary(run_id, summ) -> None:
           f"{('%+.2f' % s.worst_day) if s.worst_day is not None else 'n/a'}")
     print(f"  Trade days    : {s.trade_days}/{s.total_days} ({s.trade_day_pct:.1f}%)")
     print(f"  Reversals     : {s.reversal_entries}")
-    print(f"  Exits  TP {s.tp_exits} · BaseSL {s.base_sl_exits} · BE {s.be_saves} · "
-          f"Part {s.partial_exits} · VWAP {s.vwap_trail_exits} · EOD {s.eod_exits}")
+    print(f"  Exits  TP {s.tp_exits} · BaseSL {s.base_sl_exits} · BE-Trail {s.be_trail_exits} · "
+          f"BE-Stop {s.be_stop_exits} · Part {s.partial_exits} · VWAP {s.vwap_trail_exits} · EOD {s.eod_exits}")
 
 
 def cmd_init_db(args, cfg):
