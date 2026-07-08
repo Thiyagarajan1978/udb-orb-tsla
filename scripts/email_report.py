@@ -27,7 +27,7 @@ def _fmt_ts(ts):
     return pd.Timestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 
-def build_report(run_row, trades: pd.DataFrame, days: pd.DataFrame):
+def build_report(run_row, trades: pd.DataFrame, events: pd.DataFrame = None):
     net = float(trades["pnl_total"].sum()) if not trades.empty else 0.0
     wins = int((trades["pnl_total"] > 0).sum()) if not trades.empty else 0   # BE Stop @ $0 is NOT a win
     fails = n_fail = int((trades["pnl_total"] <= 0).sum()) if not trades.empty else 0
@@ -57,6 +57,15 @@ def build_report(run_row, trades: pd.DataFrame, days: pd.DataFrame):
             f"{_fmt_ts(t['exit_ts']):<20}{t['exit_price']:<9.2f}{t['qty']:<5.2f}"
             f"{t['pnl_total']:<+9.2f}{outcome:<9}{t['reason']:<10}"
         )
+    # optional fill-by-fill event log
+    if events is not None and not events.empty:
+        lines += ["", "FILL-BY-FILL EVENT LOG (exact time + price; times are 5m bar-start ET, fill = bar close):",
+                  f"{'Time':<18}{'Event':<16}{'Dir':<9}{'Price':<9}{'Qty':<6}{'PnL':<8}Note", "-" * 92]
+        for _, e in events.iterrows():
+            pnl = "" if e["pnl"] is None or pd.isna(e["pnl"]) else f"{e['pnl']:+.2f}"
+            lines.append(
+                f"{_fmt_ts(e['ts']):<18}{e['type']:<16}{(e['direction'] or ''):<9}"
+                f"{e['price']:<9.2f}{e['qty']:<6.2f}{pnl:<8}{e['note'] or e['reason'] or ''}")
     text = "\n".join(lines)
 
     # ---- HTML ----
@@ -108,13 +117,41 @@ def build_report(run_row, trades: pd.DataFrame, days: pd.DataFrame):
     </thead>
     <tbody>{rows}</tbody>
   </table>
+  {_event_html(events)}
   <p style="color:#888;font-size:12px;margin-top:14px">
-    Alerts-only research system · Adaptive TP + Reversal · TSLA 5-minute ORB ·
-    P&L is gross per unit, 5-minute intrabar fills are approximate.
+    Times are 5-minute BAR-START (ET); the fill is that bar's close. Alerts-only research
+    system · Adaptive TP + Reversal · TSLA 5-minute ORB · P&L gross per unit; 5-minute
+    intrabar fills are approximate.
   </p>
 </div>"""
     subject = f"UDB-ORB TSLA report | {rng_text} | {n} trades | net {net:+.2f}"
     return subject, text, html
+
+
+def _event_html(events) -> str:
+    if events is None or events.empty:
+        return ""
+    erows = ""
+    for _, e in events.iterrows():
+        pnl = "" if e["pnl"] is None or pd.isna(e["pnl"]) else f"{e['pnl']:+.2f}"
+        note = e["note"] or e["reason"] or ""
+        entry = e["type"] in ("primary_entry", "reversal_entry")
+        bg = " style='background:#eef4fb'" if entry else ""
+        erows += (
+            f"<tr{bg}><td>{_fmt_ts(e['ts'])}</td><td>{e['type']}</td><td>{e['direction'] or ''}</td>"
+            f"<td style='text-align:right'>{e['price']:.2f}</td>"
+            f"<td style='text-align:right'>{e['qty']:.2f}</td>"
+            f"<td style='text-align:right'>{pnl}</td><td>{note}</td></tr>"
+        )
+    return f"""
+  <h3 style="color:#1e88e5;margin-top:20px">Fill-by-fill event log (exact time + price)</h3>
+  <table cellpadding="5" cellspacing="0"
+         style="border-collapse:collapse;width:100%;font-size:12px;border:1px solid #ddd">
+    <thead><tr style="background:#555;color:#fff;text-align:left">
+      <th>Time (ET)</th><th>Event</th><th>Dir</th><th>Price</th><th>Qty</th><th>PnL</th><th>Note</th>
+    </tr></thead>
+    <tbody>{erows}</tbody>
+  </table>"""
 
 
 def send_resend(subject: str, text: str, html: str, to: str) -> tuple[bool, str]:
@@ -139,6 +176,7 @@ def main():
     g.add_argument("--run", type=int)
     g.add_argument("--latest", action="store_true")
     ap.add_argument("--to", default=None)
+    ap.add_argument("--no-events", action="store_true", help="omit the fill-by-fill event log")
     ap.add_argument("--dry-run", action="store_true", help="print report, do not send")
     args = ap.parse_args()
 
@@ -152,8 +190,9 @@ def main():
             run_id = args.run
         run_row = runs.loc[runs["id"] == run_id].iloc[0]
         trades = db.trades_df(run_id)
+        events = None if args.no_events else db.events_df(run_id)
 
-    subject, text, html = build_report(run_row, trades, None)
+    subject, text, html = build_report(run_row, trades, events)
     print(text)
     print()
     if args.dry_run:
