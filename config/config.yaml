@@ -41,8 +41,10 @@ profile:
   fixed_sl: 3.0            # only used by Fixed/Max-Cap SL modes (not this profile)
 
   # Take profit: Adaptive (% of OR width)
+  # NOTE: adaptive_tp_scale adopted as 1.25 (port = 1.0). Validated train(2024-25)+holdout
+  # (2026): wider TP lets winners run -> more net on BOTH periods (trades win rate for P&L).
   tp_mode: "Adaptive"      # Adaptive | Fixed
-  adaptive_tp_scale: 1.0   # TP distance = max(floor, OR_width * scale)
+  adaptive_tp_scale: 1.25  # TP distance = max(floor, OR_width * scale)  [tuned; port = 1.0]
   adaptive_tp_min: 2.14    # floor
   fixed_tp: 2.14           # only used when tp_mode == Fixed
 
@@ -108,6 +110,8 @@ enhancements:
     trail_to_eod: true          # reversal rides the full move (no fixed $5 TP, no partial) —
                                 # BE-trail + EOD only, to capture the whole reverse trend
     target_or_mult: 0.0         # >0: reversal TP = mult * OR_width (adaptive) instead of fixed $5
+    reenter_after_whipsaw: false  # after BOTH primary AND reversal stop out (a whipsaw day),
+                                # re-enter ONCE in the ORIGINAL direction on a fresh raw OR break
 
 # ---- Data / storage ------------------------------------------------
 data:

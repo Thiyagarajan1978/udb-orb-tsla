@@ -139,6 +139,11 @@ class _DayState:
         self.prim_stopped = False
         self.qty_total: Optional[float] = None
 
+        # whipsaw re-entry (original direction after BOTH primary and reversal stop)
+        self.is_reenter = False
+        self.reenter_armed = False
+        self.reenter_taken = False
+
         # no-trade reason tracking
         self.has_or = False
         self.post_raw_break = False
@@ -194,6 +199,10 @@ class OrbEngine:
 
     def _rev_trigger_raw(self) -> bool:
         return self._rev_on and bool(self._rev_cfg.get("trigger_on_be_stop", False))
+
+    @property
+    def _reenter_on(self) -> bool:
+        return self._rev_on and bool(self._rev_cfg.get("reenter_after_whipsaw", False))
 
     def _reversal_tp_dist(self, or_size: float) -> Optional[float]:
         """Distance for the reversal TP, or None to disable TP (trail to EOD)."""
@@ -328,6 +337,20 @@ class OrbEngine:
                     st.prim_stopped = False
                     self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "L (Rev)", c, st.qty_total, None, "reversal entry"))
 
+            # ---- WHIPSAW RE-ENTRY (original direction, once, after primary+reversal both stopped) ----
+            if (self._reenter_on and st.reenter_armed and not st.reenter_taken and not st.active
+                    and entry_ok_common):
+                if st.prim_dir == 1 and st.or_high is not None and c > st.or_high and max_ok and vwap_long_ok and self._rvol_ok(rv):
+                    self._enter(st, ts, bar_i, direction=1, c=c, reversal=False, reenter=True)
+                    st.reenter_armed = False
+                    st.reenter_taken = True
+                    self.result.events.append(Event(ts, EV_PRIMARY_ENTRY, "L (Re)", c, st.qty_total, None, "whipsaw re-entry"))
+                elif st.prim_dir == -1 and st.or_low is not None and c < st.or_low and max_ok and vwap_short_ok and self._rvol_ok(rv):
+                    self._enter(st, ts, bar_i, direction=-1, c=c, reversal=False, reenter=True)
+                    st.reenter_armed = False
+                    st.reenter_taken = True
+                    self.result.events.append(Event(ts, EV_PRIMARY_ENTRY, "S (Re)", c, st.qty_total, None, "whipsaw re-entry"))
+
             # ---- EXIT ENGINE ----
             if st.active and st.entry_bar is not None and bar_i > st.entry_bar:
                 if st.dir == 1:
@@ -345,20 +368,23 @@ class OrbEngine:
         return self.result
 
     # ---- entry helper ---------------------------------------------------
-    def _enter(self, st: _DayState, ts, bar_i, direction, c, reversal):
+    def _enter(self, st: _DayState, ts, bar_i, direction, c, reversal, reenter=False):
         p = self.p
         st.active = True
         st.dir = direction
         st.in_reversal = reversal
+        st.is_reenter = reenter
         st.entry_price = c
         st.entry_bar = bar_i
         st.entry_ts = ts
         or_size = st.or_width or 0.0
 
         if not reversal:
-            st.prim_dir = direction
-            st.first_taken = True
-            # stop
+            # primary AND whipsaw re-entry share the same management (adaptive TP, 1x, partial,
+            # BE, VWAP trail). A re-entry must NOT reset the day's primary/first-trade state.
+            if not reenter:
+                st.prim_dir = direction
+                st.first_taken = True
             if direction == 1:
                 st.stop = self._long_sl(c, st.or_low)
                 tp_dist = max(p.adaptive_tp_min, or_size * p.adaptive_tp_scale) if p.use_adaptive_tp else p.fixed_tp
@@ -527,8 +553,10 @@ class OrbEngine:
         leg_total = per_unit * st.eff_qty
         pnl_total = leg_total + st.part1_pnl
         base_dir = ("L" if long else "S")
-        dir_label = base_dir + (" (Rev)" if st.in_reversal else "")
-        reason_out = ("Rev " + reason) if st.in_reversal else reason
+        suffix = " (Rev)" if st.in_reversal else (" (Re)" if st.is_reenter else "")
+        dir_label = base_dir + suffix
+        prefix = "Rev " if st.in_reversal else ("Re " if st.is_reenter else "")
+        reason_out = prefix + reason
 
         leg = TradeLeg(
             day=str(ts.date()), direction=dir_label, is_reversal=st.in_reversal,
@@ -557,9 +585,12 @@ class OrbEngine:
         st.duration_bars_day = bar_i - st.entry_bar
 
         # reversal transition: primary SL with reversal enabled -> await reversal
-        was_primary_sl = (not st.in_reversal) and reason in ("Base SL", "BE Stop", "BE Trail")
+        was_primary_sl = (not st.in_reversal) and (not st.is_reenter) and reason in ("Base SL", "BE Stop", "BE Trail")
         if was_primary_sl and p.use_reversal:
             st.prim_stopped = True
+        # whipsaw arming: a REVERSAL leg that stops out -> allow one original-direction re-entry
+        if st.in_reversal and self._reenter_on and reason in ("Base SL", "BE Stop", "BE Trail"):
+            st.reenter_armed = True
 
         # clear active-trade fields
         st.active = False
@@ -569,6 +600,7 @@ class OrbEngine:
         st.tp = None
         st.entry_bar = None
         st.in_reversal = False
+        st.is_reenter = False
 
     # ---- EOD close ------------------------------------------------------
     def _eod_close(self, st: _DayState, ts, bar_i, c):
@@ -577,8 +609,9 @@ class OrbEngine:
         eod_qty = st.eff_qty if st.eff_qty is not None else (st.qty_total if st.qty_total is not None else p.trade_qty)
         pnl_total = per_unit * eod_qty + st.part1_pnl
         base_dir = ("L" if st.dir == 1 else "S")
-        dir_label = base_dir + (" (Rev)" if st.in_reversal else "")
-        reason_out = "Rev EOD" if st.in_reversal else "EOD"
+        suffix = " (Rev)" if st.in_reversal else (" (Re)" if st.is_reenter else "")
+        dir_label = base_dir + suffix
+        reason_out = ("Rev EOD" if st.in_reversal else ("Re EOD" if st.is_reenter else "EOD"))
 
         leg = TradeLeg(
             day=str(ts.date()), direction=dir_label, is_reversal=st.in_reversal,
@@ -606,6 +639,7 @@ class OrbEngine:
         st.tp = None
         st.entry_bar = None
         st.in_reversal = False
+        st.is_reenter = False
 
     # ---- day finalize ---------------------------------------------------
     def _finalize_day(self, d, st: _DayState):

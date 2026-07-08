@@ -11,11 +11,16 @@ defines the range; a buffered close-break triggers the trade; adaptive TP + 25% 
 never places broker orders.
 
 ## Defaults vs the faithful port
-`config/config.yaml` is the **production default** and now carries two *validated* tunings on
-top of the port (both cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_ANALYSIS.md`):
+`config/config.yaml` is the **production default** and now carries three *validated* tunings on
+top of the port (all cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_ANALYSIS.md`):
 1. **BE trigger 0.55** (port was 0.35) — cuts premature BE-Stop failures.
 2. **`reversal_capture` ON** (`trigger_on_be_stop` + `trail_to_eod`) — captures false-breakout
    reversal days in full.
+3. **`adaptive_tp_scale` 1.25** (port was 1.0) — wider primary TP lets winners run (more net,
+   slightly lower win rate).
+
+Built but **NOT adopted** (marginal / regime-dependent OOS, default OFF): `reenter_after_whipsaw`
+— re-enter the original direction after both primary and reversal stop. Kept as an opt-in.
 
 To reproduce the **exact Pine v12.4.3 numbers**, use `config/faithful_be035.yaml` (BE 0.35,
 reversal_capture OFF). `tests/test_params.py` asserts both: the tuned default AND the port.

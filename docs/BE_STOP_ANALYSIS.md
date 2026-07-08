@@ -95,3 +95,31 @@ did not beat trail_to_eod.
 | Worst day | −$1.25 | −$3.22 |
 
 Reproduce the exact Pine port (no tuning) with `config/faithful_be035.yaml`.
+
+## 5. Can the 7 failures be avoided? — tested, mostly no
+
+Drilling into a single month (June 2026, 7 failures) with `scripts/inspect_day.py`:
+- **3 of 7 are already winning days** — the reversal rescued them (Jun 10 +$17, 18 +$5, 24 +$3).
+- **2 are unwinnable chop** (Jun 15, 25) — entered on the open, snapped back to breakeven, then
+  ranged sideways; never broke the far OR boundary. BE caps them at ~$0.
+- **1 is a whipsaw** (Jun 17) — the short was directionally right (close 394 vs 398.55 entry) but
+  BE-stopped on a mid-day spike; the reversal long then bought the top. Net −$0.06.
+
+Total cost of all 7 ≈ **−$0.14**. Crucially, **the failures and the biggest winners share the
+same 09:35 opening-break setup** (Jun 5 +$20 and Jun 29 +$19 both entered 09:35, as did four
+failures). You cannot filter the losers without killing the winners — which is why every
+time-of-day / RVOL filter *reduced* net. BE protection is already optimal here.
+
+**What was tested (train + holdout):**
+| Lever | Result | Decision |
+|-------|--------|----------|
+| Bigger partial (25→75%) | BE-stops happen *before* any partial → count unchanged; helped train, hurt holdout | wash |
+| **Wider TP `adaptive_tp_scale` 1.25** | +net on BOTH (train +$34, holdout +$9); lower WR | **adopted** |
+| **Whipsaw re-entry** (`reenter_after_whipsaw`) | train +$38 (48% WR) but holdout only +$4.3 over 6mo (30% WR), +failures | built, **left OFF** (opt-in) |
+
+The honest takeaway: the losers are already ~$0, so there is nothing to squeeze there — the only
+robust lever is letting **winners run further** (TP scale), which trades win-rate for total P&L.
+
+### 6-month 2026 with all adopted tunings (BE 0.55 + reversal capture + tp_scale 1.25)
+157 trades · 52.9% WR · **net +$510.47** · best day +$33.84 · worst −$3.22 (vs faithful port
++$450.01). Re-entry stays OFF.

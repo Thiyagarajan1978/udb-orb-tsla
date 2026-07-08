@@ -102,6 +102,7 @@ enhancements:
     trigger_on_be_stop: false
     trail_to_eod: false
     target_or_mult: 0.0
+    reenter_after_whipsaw: false
 
 # ---- Data / storage ------------------------------------------------
 data:

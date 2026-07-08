@@ -12,8 +12,8 @@ _ROOT = Path(__file__).resolve().parents[1]
 def _assert_common_profile(p: Params):
     """Everything that is identical between the default and the faithful port."""
     assert p.use_adaptive_tp is True
-    assert p.adaptive_tp_scale == 1.0
     assert p.adaptive_tp_min == 2.14
+    # adaptive_tp_scale differs (default tuned 1.25 vs port 1.0) — asserted per-config below
     assert p.partial_qty_pct == 25.0
     assert p.use_partial_exit is True
     assert p.use_be_retrace is True
@@ -34,6 +34,7 @@ def test_default_profile_uses_tuned_be_055():
     p = Params.from_config(base_config())
     _assert_common_profile(p)
     assert p.be_retrace_trigger == 0.55             # adopted tuned default
+    assert p.adaptive_tp_scale == 1.25              # adopted tuned default
 
 
 def test_faithful_port_config_preserves_035():
@@ -42,3 +43,4 @@ def test_faithful_port_config_preserves_035():
     p = Params.from_config(cfg)
     _assert_common_profile(p)
     assert p.be_retrace_trigger == 0.35             # exact Pine port
+    assert p.adaptive_tp_scale == 1.0               # exact Pine port

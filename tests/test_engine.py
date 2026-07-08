@@ -6,10 +6,11 @@ from udb_orb.engine.orb_engine import run_engine
 from udb_orb.engine.params import Params
 
 
-def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35):
+def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scale=1.0):
     cfg = base_config()
     cfg["profile"]["slippage_per_unit"] = slippage   # geometry tests use 0; realism test sets >0
     cfg["profile"]["be_retrace_trigger"] = be_trigger  # pin to the port value for stable geometry
+    cfg["profile"]["adaptive_tp_scale"] = tp_scale     # pin (default now 1.25) for stable geometry
     enh = cfg.get("enhancements", {})
     # geometry tests are enhancement-independent unless a test opts in
     enh.setdefault("reversal_capture", {})["enabled"] = False
@@ -187,6 +188,29 @@ def test_reversal_trigger_on_be_stop_uses_raw_break():
     res_buf = _run({"2024-06-03": rows})            # rc off -> needs buffered break
     assert any(t.is_reversal for t in res_raw.trades)      # raw break entered
     assert not any(t.is_reversal for t in res_buf.trades)  # buffered break did NOT
+
+
+def test_whipsaw_reenter_fires_once():
+    """After primary AND reversal both stop, a re-entry in the ORIGINAL direction fires once."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),      # OR
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),     # primary long
+        (9, 40, 101, 101.6, 100.0, 100.5, 1000),     # primary BE-stops
+        (9, 45, 99.5, 99.5, 98.0, 98.5, 1000),       # reversal short (raw break)
+        (9, 50, 98.5, 100.0, 98.0, 99.5, 1000),      # reversal stops out
+        (9, 55, 100, 101.6, 100.5, 101.5, 1000),     # ORIGINAL dir breaks again -> RE-ENTRY long
+        (15, 50, 101.5, 102.0, 101.0, 101.8, 1000),  # EOD
+    ]
+    res = _run({"2024-06-03": rows},
+               enh_overrides={"reversal_capture": {"enabled": True, "trigger_on_be_stop": True,
+                                                    "trail_to_eod": False, "reenter_after_whipsaw": True}})
+    reentries = [t for t in res.trades if "(Re)" in t.direction]
+    assert len(reentries) == 1                       # exactly one re-entry
+    assert reentries[0].direction.startswith("L")    # original (long) direction
+    # off by default: same day with the flag off produces no re-entry
+    res_off = _run({"2024-06-03": rows},
+                   enh_overrides={"reversal_capture": {"enabled": True, "trigger_on_be_stop": True}})
+    assert not any("(Re)" in t.direction for t in res_off.trades)
 
 
 def test_reversal_only_once_per_day():
