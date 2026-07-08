@@ -508,15 +508,16 @@ class OrbEngine:
     # ---- partial close --------------------------------------------------
     def _partial(self, st: _DayState, ts, long: bool):
         p = self.p
+        fill_px = st.tp   # the partial closes AT the TP level (record it before disabling TP)
         part1_qty = st.qty_total * (p.partial_qty_pct / 100.0)
-        per_unit = (st.tp - st.entry_price - p.slippage_per_unit) if long else (st.entry_price - st.tp - p.slippage_per_unit)
+        per_unit = (fill_px - st.entry_price - p.slippage_per_unit) if long else (st.entry_price - fill_px - p.slippage_per_unit)
         st.part1_pnl = per_unit * part1_qty
         st.eff_qty = st.qty_total - part1_qty
         st.part1_closed = True
         st.tp = None  # disable TP; trail takes over
         base_dir = "L" if long else "S"
         d = base_dir + (" (Rev)" if st.in_reversal else "")
-        self.result.events.append(Event(ts, EV_PARTIAL_EXIT, d, st.entry_price, part1_qty, st.part1_pnl,
+        self.result.events.append(Event(ts, EV_PARTIAL_EXIT, d, fill_px, part1_qty, st.part1_pnl,
                                         f"partial {p.partial_qty_pct:.0f}%", note=f"{100 - p.partial_qty_pct:.0f}% trails"))
 
     # ---- final close of a leg ------------------------------------------
