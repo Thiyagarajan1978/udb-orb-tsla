@@ -12,6 +12,11 @@ symbol: TSLA
 timeframe_minutes: 5
 timezone: America/New_York
 
+# Exact Pine port fills stops at the stop level (intrabar). Keep exit_on_close OFF here to
+# reproduce the Pine numbers; config/config.yaml uses the realistic close-based fill.
+execution:
+  exit_on_close: false
+
 session:
   # Regular trading hours (ET). The opening range is the first bar (09:30-09:35).
   rth_start: "09:30"

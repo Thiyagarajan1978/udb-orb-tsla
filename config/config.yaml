@@ -10,6 +10,15 @@ symbol: TSLA
 timeframe_minutes: 5
 timezone: America/New_York
 
+# ---- Execution realism -------------------------------------------------
+# This is an ALERTS-ONLY system: signals fire on the 5-minute BAR CLOSE, so stop-type exits
+# cannot fill at the stop level intrabar (no resting order) — you act after the close and fill
+# at/around the close. With exit_on_close ON, BE Stop / BE Trail / Base SL / runner-trail exits
+# trigger when the bar CLOSES beyond the level and fill at that close (so a BE stop is a real
+# loss, ~$1-2, not a $0 scratch). TP/partial still fill at the target (favourable limit).
+execution:
+  exit_on_close: true
+
 session:
   # Regular trading hours (ET). The opening range is the first bar (09:30-09:35).
   rth_start: "09:30"

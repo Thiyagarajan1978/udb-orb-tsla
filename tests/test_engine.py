@@ -6,11 +6,13 @@ from udb_orb.engine.orb_engine import run_engine
 from udb_orb.engine.params import Params
 
 
-def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scale=1.0):
+def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scale=1.0,
+         exit_on_close=False):
     cfg = base_config()
     cfg["profile"]["slippage_per_unit"] = slippage   # geometry tests use 0; realism test sets >0
     cfg["profile"]["be_retrace_trigger"] = be_trigger  # pin to the port value for stable geometry
     cfg["profile"]["adaptive_tp_scale"] = tp_scale     # pin (default now 1.25) for stable geometry
+    cfg.setdefault("execution", {})["exit_on_close"] = exit_on_close  # geometry uses intrabar fills
     enh = cfg.get("enhancements", {})
     # geometry tests are enhancement-independent unless a test opts in
     enh.setdefault("reversal_capture", {})["enabled"] = False
@@ -125,6 +127,21 @@ def test_partial_then_be_stop_is_net_win_not_failure():
     assert s.be_stop_exits == 1
     assert s.be_stop_failures == 0                 # a winning BE-stop is not a failure
     assert s.successes == 1 and s.failures == 0
+
+
+def test_exit_on_close_makes_be_stop_a_real_loss():
+    """Alerts-only fill model: a BE stop fills at the bar CLOSE (a real loss), not at entry."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),   # long @101.5
+        (9, 40, 101, 101.6, 98.5, 99.0, 1000),     # retrace; BE fires, bar CLOSES at 99.0
+    ]
+    intrabar = _run({"2024-06-03": rows})                     # fills at entry -> ~$0
+    on_close = _run({"2024-06-03": rows}, exit_on_close=True)  # fills at close 99.0 -> real loss
+    assert abs(intrabar.trades[0].pnl_total) < 1e-9
+    assert on_close.trades[0].reason == "BE Stop"
+    assert abs(on_close.trades[0].pnl_total - (99.0 - 101.5)) < 1e-9   # -$2.50, filled at close
+    assert on_close.trades[0].outcome == "failure"
 
 
 def test_no_base_sl_when_be_on():

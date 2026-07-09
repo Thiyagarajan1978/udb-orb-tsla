@@ -177,4 +177,29 @@ trails overfit (help train, hurt holdout — shaken out of volatile trends). **A
 
 ### 6-month 2026 with ALL adopted tunings (BE 0.55 + reversal capture + tp_scale 1.25 + runner_trail 1.0×OR)
 157 trades · 53.5% WR · **net +$522.56** (vs faithful port +$450.01, +16%). EOD exits 72 → 66 as
-the runner banks its peak earlier.
+the runner banks its peak earlier. *(NOTE: this is the OPTIMISTIC fill-at-stop model — see §8.)*
+
+## 8. Execution realism — BE stops fill at the bar CLOSE (alerts-only)
+
+Desk observation: in live trading a BE stop loses ~$2, not $0, because the alert fires on the
+5-minute **bar close** — there is no resting order, so you exit *after* the close, at the close.
+`execution.exit_on_close: true` (now the default in `config.yaml`) models this: BE Stop / BE Trail
+/ Base SL / runner-trail exits trigger on a close beyond the level and fill at that close.
+
+**Impact (6-month 2026), optimistic (fill-at-stop) vs realistic (fill-at-close):**
+| | Optimistic | Realistic |
+|--|-----------:|----------:|
+| Net P&L | +$522.56 | **+$214.03** |
+| Win rate | 53.5% | 47.8% |
+| Avg loss | −$0.21 | **−$3.87** |
+| Worst day | −$3.22 | **−$22.06** |
+| Profit factor | 34.7 | **1.67** |
+
+June 2026: +$131.66 → **+$89.88** (PF 2.68, worst −$14.38).
+
+The strategy is still profitable realistically, but far more modest, and the earlier "failures are
+≈free" conclusion only held under the optimistic model. **Key execution lever:** placing a resting
+stop order at the BE level (broker OCO) instead of a manual close-alert exit recovers most of the
+gap and caps the tail — that is now the single highest-value improvement, and it lives in *how you
+execute*, not in the signal. All prior tunings were validated under the optimistic model and should
+be re-checked under `exit_on_close` if you trade purely on close alerts.

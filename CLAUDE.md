@@ -10,6 +10,17 @@ defines the range; a buffered close-break triggers the trade; adaptive TP + 25% 
 **This system is ALERTS-ONLY.** It computes signals and logs every event to SQLite; it
 never places broker orders.
 
+## Execution realism (IMPORTANT)
+This is an **alerts-only** system: signals fire on the 5-minute **bar close**. `config.yaml`
+sets `execution.exit_on_close: true`, so BE Stop / BE Trail / Base SL / runner-trail exits
+trigger when a bar **closes** beyond the level and fill at that **close** — a BE stop is a real
+~$2–4 loss, not a $0 scratch. This roughly **halves** reported P&L vs the optimistic
+fill-at-stop model (6-month 2026: +$214 realistic vs +$522 optimistic) and widens the worst day
+(−$22 vs −$3). The single biggest execution improvement is to place a **resting stop order** at
+the BE level (broker OCO) instead of exiting manually on the close alert — that recovers the
+fill-at-stop behaviour and caps the tail. `faithful_be035.yaml` keeps `exit_on_close: false` to
+reproduce the Pine numbers.
+
 ## Defaults vs the faithful port
 `config/config.yaml` is the **production default** and now carries three *validated* tunings on
 top of the port (all cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_ANALYSIS.md`):

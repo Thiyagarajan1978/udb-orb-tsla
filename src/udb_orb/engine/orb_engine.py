@@ -515,16 +515,19 @@ class OrbEngine:
             if self._runner_trail_on:
                 st.runner_peak = h if st.runner_peak is None else max(st.runner_peak, h)
                 trail_level = st.runner_peak - self._runner_trail_dist(st)
-                if l <= trail_level:
+                # alerts-only: trigger on close beyond the trail and fill at the close
+                if (c <= trail_level) if p.exit_on_close else (l <= trail_level):
                     long_runner_trail = True
-                    runner_trail_px = trail_level
+                    runner_trail_px = c if p.exit_on_close else trail_level
             else:
                 if (c - st.entry_price) >= p.partial_activation:
                     st.trail_active = True
                 if st.trail_active and vw is not None and c <= vw:
                     long_vwap_cross = True
 
-        sl_hit = l <= st.stop
+        # alerts-only fill model: stop exits trigger on the bar CLOSE and fill at the close
+        sl_hit = (c <= st.stop) if p.exit_on_close else (l <= st.stop)
+        sl_fill = c if p.exit_on_close else st.stop
         tp_hit = st.tp is not None and h >= st.tp
         anach = p.be_retrace_use_close and be_fired_now and (l <= sl_at_bar_start)
 
@@ -536,7 +539,7 @@ class OrbEngine:
                 if self.result.events and self.result.events[-1].type == EV_BE_RETRACE_FIRED:
                     self.result.events.pop()
             else:
-                exit_px = st.stop
+                exit_px = sl_fill
             reason = "BE Trail" if (st.be_triggered and exit_px > st.entry_price) else ("BE Stop" if st.be_triggered else "Base SL")
             self._close_leg(st, ts, bar_i, exit_px, reason, long=True)
         elif tp_hit:
@@ -574,16 +577,17 @@ class OrbEngine:
             if self._runner_trail_on:
                 st.runner_peak = l if st.runner_peak is None else min(st.runner_peak, l)
                 trail_level = st.runner_peak + self._runner_trail_dist(st)
-                if h >= trail_level:
+                if (c >= trail_level) if p.exit_on_close else (h >= trail_level):
                     short_runner_trail = True
-                    runner_trail_px = trail_level
+                    runner_trail_px = c if p.exit_on_close else trail_level
             else:
                 if (st.entry_price - c) >= p.partial_activation:
                     st.trail_active = True
                 if st.trail_active and vw is not None and c >= vw:
                     short_vwap_cross = True
 
-        sl_hit = h >= st.stop
+        sl_hit = (c >= st.stop) if p.exit_on_close else (h >= st.stop)
+        sl_fill = c if p.exit_on_close else st.stop
         tp_hit = st.tp is not None and l <= st.tp
         anach = p.be_retrace_use_close and be_fired_now and (h >= sl_at_bar_start)
 
@@ -594,7 +598,7 @@ class OrbEngine:
                 if self.result.events and self.result.events[-1].type == EV_BE_RETRACE_FIRED:
                     self.result.events.pop()
             else:
-                exit_px = st.stop
+                exit_px = sl_fill
             reason = "BE Trail" if (st.be_triggered and exit_px < st.entry_price) else ("BE Stop" if st.be_triggered else "Base SL")
             self._close_leg(st, ts, bar_i, exit_px, reason, long=False)
         elif tp_hit:

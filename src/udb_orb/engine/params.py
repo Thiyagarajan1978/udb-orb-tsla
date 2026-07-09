@@ -72,6 +72,9 @@ class Params:
     # side
     trade_side_mode: str    # "Both" | "Long Only" | "Short Only"
 
+    # execution realism: alerts-only -> stop exits fill at the bar close, not the stop level
+    exit_on_close: bool = False
+
     @property
     def use_adaptive_tp(self) -> bool:
         return self.tp_mode.lower().startswith("adapt")
@@ -122,4 +125,5 @@ class Params:
             max_or_width=float(p["max_or_width"]),
             use_vwap_filter=bool(p["use_vwap_filter"]),
             trade_side_mode=str(p["trade_side_mode"]),
+            exit_on_close=bool(cfg.get("execution", {}).get("exit_on_close", False)),
         )
