@@ -27,7 +27,8 @@ def _fmt_ts(ts):
     return pd.Timestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 
-def build_report(run_row, trades: pd.DataFrame, events: pd.DataFrame = None):
+def build_report(run_row, trades: pd.DataFrame, events: pd.DataFrame = None,
+                 days: pd.DataFrame = None):
     net = float(trades["pnl_total"].sum()) if not trades.empty else 0.0
     wins = int((trades["pnl_total"] > 0).sum()) if not trades.empty else 0   # BE Stop @ $0 is NOT a win
     fails = n_fail = int((trades["pnl_total"] <= 0).sum()) if not trades.empty else 0
@@ -57,6 +58,15 @@ def build_report(run_row, trades: pd.DataFrame, events: pd.DataFrame = None):
             f"{_fmt_ts(t['exit_ts']):<20}{t['exit_price']:<9.2f}{t['qty']:<5.2f}"
             f"{t['pnl_total']:<+9.2f}{outcome:<9}{t['reason']:<10}"
         )
+    # no-trade / gate-skipped days (validate the vol + OR-width gates fire on the same dates)
+    if days is not None and not days.empty:
+        nt = days[days["has_trades"] == 0]
+        if not nt.empty:
+            lines += ["", f"NO-TRADE / SKIPPED DAYS ({len(nt)}) - the Pine chart should grey these out:",
+                      f"{'Date':<14}{'Day':<6}{'Reason'}", "-" * 60]
+            for _, r in nt.iterrows():
+                lines.append(f"{r['date']:<14}{(r['day_name'] or ''):<6}{r['no_trade_reason']}")
+
     # optional fill-by-fill event log
     if events is not None and not events.empty:
         lines += ["", "FILL-BY-FILL EVENT LOG (exact time + price; times are 5m bar-start ET, fill = bar close):",
@@ -117,6 +127,7 @@ def build_report(run_row, trades: pd.DataFrame, events: pd.DataFrame = None):
     </thead>
     <tbody>{rows}</tbody>
   </table>
+  {_skipped_html(days)}
   {_event_html(events)}
   <p style="color:#888;font-size:12px;margin-top:14px">
     Times are 5-minute BAR-START (ET); the fill is that bar's close. Alerts-only research
@@ -126,6 +137,30 @@ def build_report(run_row, trades: pd.DataFrame, events: pd.DataFrame = None):
 </div>"""
     subject = f"UDB-ORB TSLA report | {rng_text} | {n} trades | net {net:+.2f}"
     return subject, text, html
+
+
+def _skipped_html(days) -> str:
+    if days is None or days.empty:
+        return ""
+    nt = days[days["has_trades"] == 0]
+    if nt.empty:
+        return ""
+    rows = "".join(
+        f"<tr><td>{r['date']}</td><td>{r['day_name'] or ''}</td><td>{r['no_trade_reason']}</td></tr>"
+        for _, r in nt.iterrows()
+    )
+    return f"""
+  <h3 style="color:#8e24aa;margin-top:20px">No-trade / gate-skipped days ({len(nt)})</h3>
+  <div style="color:#666;font-size:12px;margin-bottom:6px">
+    The Pine indicator greys out skipped days — these dates should match.
+  </div>
+  <table cellpadding="5" cellspacing="0"
+         style="border-collapse:collapse;font-size:12px;border:1px solid #ddd">
+    <thead><tr style="background:#8e24aa;color:#fff;text-align:left">
+      <th>Date</th><th>Day</th><th>Reason</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+  </table>"""
 
 
 def _event_html(events) -> str:
@@ -191,8 +226,9 @@ def main():
         run_row = runs.loc[runs["id"] == run_id].iloc[0]
         trades = db.trades_df(run_id)
         events = None if args.no_events else db.events_df(run_id)
+        days = db.days_df(run_id)
 
-    subject, text, html = build_report(run_row, trades, events)
+    subject, text, html = build_report(run_row, trades, events, days)
     print(text)
     print()
     if args.dry_run:
