@@ -147,6 +147,10 @@ class _DayState:
         self.reenter_armed = False
         self.reenter_taken = False
 
+        # resume re-entry (original direction after the PRIMARY stops, price resumes)
+        self.resume_armed = False
+        self.resume_taken = False
+
         # no-trade reason tracking
         self.has_or = False
         self.post_raw_break = False
@@ -207,6 +211,31 @@ class OrbEngine:
     @property
     def _reenter_on(self) -> bool:
         return self._rev_on and bool(self._rev_cfg.get("reenter_after_whipsaw", False))
+
+    # ---- resume re-entry (default OFF) ----------------------------------
+    @property
+    def _resume_cfg(self) -> dict[str, Any]:
+        return self.enh.get("resume_reentry", {})
+
+    @property
+    def _resume_on(self) -> bool:
+        return bool(self._resume_cfg.get("enabled", False))
+
+    @property
+    def _resume_disarms(self) -> bool:
+        """True: resume and reversal compete for one slot (max 2 legs/day).
+        False: both stay armed — a stopped resume can still be followed by a reversal (3 legs)."""
+        return bool(self._resume_cfg.get("disarm_other", True))
+
+    def _resume_qty(self, st: _DayState, c: float, direction: int) -> float:
+        p = self.p
+        stop = (st.or_low - p.sl_offset) if direction == 1 else (st.or_high + p.sl_offset)
+        rpu = abs(c - stop)
+        qty = p.trade_qty
+        cap = float(self._resume_cfg.get("risk_cap", 0.0) or 0.0)
+        if cap > 0 and rpu > 0:
+            qty = min(qty, cap / rpu)
+        return qty
 
     # ---- PDH/PDL confirmation filter (default OFF) ----------------------
     @property
@@ -429,13 +458,40 @@ class OrbEngine:
                     if rqty is not None:
                         self._enter(st, ts, bar_i, direction=-1, c=c, reversal=True, qty=rqty)
                         st.prim_stopped = False
+                        if self._resume_disarms:
+                            st.resume_armed = False   # reversal wins; disarm the resume leg
                         self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "S (Rev)", c, st.qty_total, None, "reversal entry"))
                 elif st.prim_dir == -1 and rev_long_level is not None and c > rev_long_level and max_ok and vwap_long_ok and self._rvol_ok(rv):
                     rqty = self._reversal_qty(st, c, 1)
                     if rqty is not None:
                         self._enter(st, ts, bar_i, direction=1, c=c, reversal=True, qty=rqty)
                         st.prim_stopped = False
+                        if self._resume_disarms:
+                            st.resume_armed = False
                         self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "L (Rev)", c, st.qty_total, None, "reversal entry"))
+
+            # ---- RESUME RE-ENTRY (same direction, after the primary stopped and price resumed) ----
+            if (self._resume_on and st.resume_armed and not st.resume_taken and not st.active
+                    and entry_ok_common):
+                _raw = str(self._resume_cfg.get("trigger", "buffered")) == "raw"
+                res_long_level = st.or_high if _raw else long_brk
+                res_short_level = st.or_low if _raw else short_brk
+                if st.prim_dir == 1 and res_long_level is not None and c > res_long_level and max_ok and vwap_long_ok and self._rvol_ok(rv):
+                    self._enter(st, ts, bar_i, direction=1, c=c, reversal=False, reenter=True,
+                                qty=self._resume_qty(st, c, 1))
+                    st.resume_armed = False
+                    st.resume_taken = True
+                    if self._resume_disarms:
+                        st.prim_stopped = False   # resume wins; disarm the reversal
+                    self.result.events.append(Event(ts, EV_PRIMARY_ENTRY, "L (Re)", c, st.qty_total, None, "resume re-entry"))
+                elif st.prim_dir == -1 and res_short_level is not None and c < res_short_level and max_ok and vwap_short_ok and self._rvol_ok(rv):
+                    self._enter(st, ts, bar_i, direction=-1, c=c, reversal=False, reenter=True,
+                                qty=self._resume_qty(st, c, -1))
+                    st.resume_armed = False
+                    st.resume_taken = True
+                    if self._resume_disarms:
+                        st.prim_stopped = False
+                    self.result.events.append(Event(ts, EV_PRIMARY_ENTRY, "S (Re)", c, st.qty_total, None, "resume re-entry"))
 
             # ---- WHIPSAW RE-ENTRY (original direction, once, after primary+reversal both stopped) ----
             if (self._reenter_on and st.reenter_armed and not st.reenter_taken and not st.active
@@ -495,7 +551,7 @@ class OrbEngine:
                 tp_dist = max(p.adaptive_tp_min, or_size * p.adaptive_tp_scale) if p.use_adaptive_tp else p.fixed_tp
                 st.tp = c - tp_dist
                 st.be_level = st.or_low + (p.be_retrace_trigger * or_size) if or_size else None
-            st.qty_total = p.trade_qty
+            st.qty_total = qty if qty is not None else p.trade_qty
         else:
             # reversal: TP per _reversal_tp_dist (fixed $5, OR-scaled, or None=trail to EOD),
             # SL at the OR boundary opposite the reversal direction.
@@ -734,6 +790,9 @@ class OrbEngine:
         was_primary_sl = (not st.in_reversal) and (not st.is_reenter) and reason in ("Base SL", "BE Stop", "BE Trail")
         if was_primary_sl and p.use_reversal:
             st.prim_stopped = True
+        # resume re-entry arms on the SAME primary stop that arms the reversal
+        if was_primary_sl and self._resume_on:
+            st.resume_armed = True
         # whipsaw arming: a REVERSAL leg that stops out -> allow one original-direction re-entry
         if st.in_reversal and self._reenter_on and reason in ("Base SL", "BE Stop", "BE Trail"):
             st.reenter_armed = True

@@ -367,6 +367,27 @@ def test_daily_loss_breaker_blocks_new_entries():
     assert len(breaker.trades) == 1
 
 
+def test_resume_reentry_takes_same_direction_and_disarms_reversal():
+    """After the primary stops, a close back beyond the break level re-enters the SAME direction."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),      # OR 99-101, long_brk 101.2
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),     # primary long @101.5
+        (9, 40, 101, 101.6, 100.0, 100.5, 1000),     # BE stop (arms reversal + resume)
+        (9, 45, 100.5, 101.9, 100.4, 101.8, 1000),   # closes back above 101.2 -> RESUME long
+        (15, 50, 101.8, 102.2, 101.5, 102.0, 1000),
+    ]
+    off = _run({"2024-06-03": rows})
+    on = _run({"2024-06-03": rows},
+              enh_overrides={"resume_reentry": {"enabled": True, "trigger": "buffered",
+                                                 "risk_cap": 0.0, "disarm_other": True},
+                             "reversal_capture": {"enabled": True, "trigger_on_be_stop": True}})
+    assert not any("(Re)" in t.direction for t in off.trades)
+    res = [t for t in on.trades if "(Re)" in t.direction]
+    assert len(res) == 1
+    assert res[0].direction.startswith("L")          # same direction as the primary
+    assert not any(t.is_reversal for t in on.trades)  # resume disarmed the reversal
+
+
 def test_reversal_only_once_per_day():
     """Primary + at most one reversal = 2 legs max in a day."""
     rows = [

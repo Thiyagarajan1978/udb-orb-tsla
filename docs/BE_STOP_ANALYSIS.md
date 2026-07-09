@@ -341,6 +341,52 @@ percentile of **2024–25 only** (4.92%); 2026 is out-of-sample.
 year (+94% net, PF 1.07→1.19), costs $3 in 2025, and **cannot touch 2026**. Every year now clears
 PF ≥ 1.19; the razor-thin 1.07 is gone. Adopted as `enhancements.volatility_regime`.
 
+## 13. Resume re-entry — BUILT, TESTED, REJECTED
+
+Motivated by **2026-07-09**: the primary long (398.01) was BE-stopped at 392.43 (−$5.60) by a
+single dip, then price rallied all day to close at 406.55. The reversal (a *short*, triggered by a
+close below the OR low 390.86) never armed — price never came within $2 of it. Correct, but the
+day was left on the table. A "resume" rule — re-enter the SAME direction when price closes back
+beyond the original break level — turns that day into **−$5.60 → +$1.48**.
+
+Implemented as `enhancements.resume_reentry` (trigger buffered/raw, optional risk cap, and
+`disarm_other` controlling whether it competes with the reversal or both stay armed).
+
+**It only works in 2025.** Resume-leg P&L and win rate:
+
+| Year | Resume legs | Resume P&L | Resume WR |
+|------|------------:|-----------:|----------:|
+| 2024 | 37 | **−$16.7** | 32% |
+| 2025 | 40 | **+$83.7** | **62%** |
+| 2026 | 22 | **−$16.8** | 36% |
+
+**It also cannibalises the reversal** (they compete for the same slot). In 2024 the resume
+preempted **+$46.5 of GOOD reversals** and returned −$16.7 — a −$63 swing:
+
+| Year | Reversal off→on | Preempted reversals worth | Resume delivered | Net |
+|------|-----------------|--------------------------:|-----------------:|----:|
+| 2024 | 65 legs +$17.3 → 49 legs −$29.2 | **+$46.5** | −$16.7 | **−$63** |
+| 2025 | 52 legs −$36.1 → 42 legs −$36.5 | +$0.4 | +$83.7 | +$83 |
+| 2026 | 30 legs +$59.8 → 19 legs +$69.9 | −$10.1 | −$16.8 | −$7 |
+
+Letting **both** stay armed (up to 3 legs/day) removes the cannibalisation but is worse still:
+
+| Variant | Train net | Train worst | Holdout net | Holdout worst | Holdout ratio |
+|---------|----------:|------------:|------------:|--------------:|--------------:|
+| **baseline (off)** | +$148 | −$13.1 | **+$192.3** | **−$9.7** | **19.87** |
+| resume, compete (2 legs) | +$169 | −$13.1 | +$185.6 | −$9.7 | 19.18 |
+| resume, both armed (3 legs) | **+$219** | −$18.4 | +$171.1 | −$13.7 | 12.51 |
+
+The most aggressive variant is **best on train and worst on holdout** — the classic overfit
+signature. Baseline beats both on holdout net, PF *and* worst day.
+
+**Why:** 2025 was a **shakeout regime** (its reversals lost −$36, so resuming was the better bet);
+2024 and 2026 were **reversal regimes** (reversals made +$17 and +$60). These are opposite worlds,
+and — as with the entry filters (§5, §6) — we cannot tell which one we are in *ex ante*. The
+reversal is positive in 2 of 3 years, so it keeps the slot. **Default OFF.**
+
+2026-07-09 is an anecdote, not a pattern.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic

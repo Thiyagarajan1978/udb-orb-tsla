@@ -166,6 +166,27 @@ enhancements:
     enabled: true
     or_mult: 0.75   # runner exits when price retraces this * OR width from its post-partial peak
 
+  # 4b) RESUME re-entry — BUILT, TESTED, REJECTED (default OFF, opt-in only).
+  #     Arms when the PRIMARY stops; re-enters the SAME direction when price closes back beyond
+  #     the original break level (a shakeout that resumed, e.g. 2026-07-09 where it turns the day
+  #     from -$5.60 to +$1.48). Distinct from reenter_after_whipsaw (which needs BOTH legs stopped).
+  #
+  #     WHY REJECTED: it only pays in 2025, and it competes with the reversal for the same slot.
+  #       resume leg P&L : 2024 -$16.7 (32% WR) | 2025 +$83.7 (62% WR) | 2026 -$16.8 (36% WR)
+  #       2024 compete   : preempted +$46.5 of GOOD reversals, returned -$16.7  -> net -$63
+  #       holdout (2026) : every variant is worse than baseline on net, PF AND worst day.
+  #       'both armed' (3 legs) looks best on train (+$219) and worst on holdout (+$171, worst
+  #       -$13.7) — the classic overfit signature.
+  #     2025 was a shakeout regime (its reversals lost -$36); 2024/2026 were reversal regimes.
+  #     We cannot tell which regime we're in ex ante, so the reversal (positive in 2/3 years) wins.
+  #     See docs/BE_STOP_ANALYSIS.md §13.
+  resume_reentry:
+    enabled: false
+    trigger: buffered   # buffered (close beyond the original break level) | raw (beyond OR bound)
+    risk_cap: 0.0       # 0 = off; scale qty so (entry -> OR boundary) * qty <= cap
+    disarm_other: true  # true = resume/reversal compete for one slot (2 legs/day max)
+                        # false = both stay armed (up to 3 legs) — worse tail, worse holdout
+
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
   #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the
   #    breakout level (within proximity_pct of the OR width), require the bar to CLOSE BEYOND
