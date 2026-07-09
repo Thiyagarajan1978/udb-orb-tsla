@@ -387,6 +387,49 @@ reversal is positive in 2 of 3 years, so it keeps the slot. **Default OFF.**
 
 2026-07-09 is an anecdote, not a pattern.
 
+## 14. Breakout buffer — swept, KEPT AT 10%
+
+Prompted by a TradingView chart running a 14% buffer (long trigger 396.19 = 395.54 + 0.655 on a
+4.68 OR). Swept 0-25% across all three years:
+
+| Buffer | 2024 | 2025 | 2026 H1 | Train | Holdout | Sum |
+|-------:|-----:|-----:|--------:|------:|--------:|----:|
+| 0% | +49.2 | +84.8 | +162.2 | +134.0 | +162.2 | +296 |
+| 5% | +61.9 | +93.0 | +173.6 | +154.8 | +173.6 | +328 |
+| 8% | +55.9 | +83.0 | +193.3 | +138.9 | +193.3 | +332 |
+| **10% (kept)** | **+65.7** | +82.7 | +192.3 | +148.4 | +192.3 | +341 |
+| 12% | +52.1 | +96.4 | +187.5 | +148.5 | +187.5 | +336 |
+| 14% | +59.8 | +90.0 | **+201.3** | +149.8 | **+201.3** | **+351** |
+| 18% | +56.8 | +75.8 | +176.6 | +132.6 | +176.6 | +309 |
+| 25% | +44.5 | +44.2 | +171.6 | +88.6 | +171.6 | +260 |
+
+**The curve is noise, not signal.** Walk 2024: `49 → 62 → 56 → 66 → 52 → 60 → 57` — it jumps ~$10
+between adjacent settings, with no smooth optimum. Anything 5–14% is statistically the same; only
+the extremes hurt (0% takes false breaks, 25% arrives too late). **Worst day is identical (-13.1 /
+-9.7) at every buffer** — this knob has zero risk effect.
+
+14% posts the best sum (+$351) but its entire edge comes from **2026, the friendly low-vol regime**;
+in 2024 (the weak year we size off) it is *worse* (+59.8 vs +65.7). Adopting it would be tuning to
+the good regime for a $9 gain inside the noise band. **Kept at 10%.**
+
+## 15. 2026-07-09 — the reversal was RIGHT not to fire
+
+The primary LONG (398.01) was BE-stopped at 392.43 (-$5.60) by one dip; price then rallied all day
+to close 406.55. It *looks* like a missed reversal. It is not — **the reversal is always the OPPOSITE
+of the primary, so on this day it could only have been a SHORT**, needing a close below the raw OR
+low (390.86). The lowest close after the stop was 392.98; it never came within $2.
+
+Forcing a short at that best-possible price and applying the engine's exact rules:
+
+```
+FORCED reversal SHORT @392.98, stop 395.54 (OR high), risk-parity qty 2.00, BE trigger >=393.43
+EXIT 10:25 @ close 394.52 (BE Stop) -> -1.56/unit x 2.00 = -$3.12
+Day WITH reversal: -$8.72   |   Day AS TRADED: -$5.60   |   Gate SAVED +$3.12
+```
+
+The miss people see on 07-09 is a **resume** miss (re-entering LONG), not a reversal miss — and the
+resume rule was tested and rejected in §13 (it pays +$7 here but costs -$63 in 2024).
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic
