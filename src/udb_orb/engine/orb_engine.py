@@ -365,9 +365,13 @@ class OrbEngine:
                     if bsc and short_trig < short_brk and c >= short_trig:
                         st.pdhpdl_blocked = True
 
+            # daily loss circuit-breaker: once the day's realised P&L breaches the limit, take no
+            # NEW entries (an already-open position still manages to its own exit).
+            breaker_ok = (p.daily_loss_limit <= 0) or (st.day_pnl > -p.daily_loss_limit)
+
             entry_ok_common = (
                 p and st.has_or and st.or_high is not None and t > p.market_open
-                and not st.skipped_by_regime and self._time_window_ok(ts)
+                and not st.skipped_by_regime and self._time_window_ok(ts) and breaker_ok
             )
 
             # filter gates for entry direction

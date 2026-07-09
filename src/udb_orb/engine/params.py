@@ -81,6 +81,9 @@ class Params:
     reversal_risk_cap: float = 0.0      # 0 = off; cap the reversal leg's dollar risk
     reversal_risk_mode: str = "scale"   # "scale" (shrink qty) | "skip" (no reversal)
 
+    # daily loss circuit-breaker: block new entries once day P&L <= -limit (0 = off)
+    daily_loss_limit: float = 0.0
+
     @property
     def use_adaptive_tp(self) -> bool:
         return self.tp_mode.lower().startswith("adapt")
@@ -135,4 +138,5 @@ class Params:
             protective_stop=bool(cfg.get("execution", {}).get("protective_stop", False)),
             reversal_risk_cap=float(p.get("reversal_risk_cap", 0.0) or 0.0),
             reversal_risk_mode=str(p.get("reversal_risk_mode", "scale")),
+            daily_loss_limit=float(cfg.get("execution", {}).get("daily_loss_limit", 0.0) or 0.0),
         )

@@ -7,8 +7,10 @@ from udb_orb.engine.params import Params
 
 
 def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scale=1.0,
-         exit_on_close=False, protective_stop=False, profile_overrides=None):
+         exit_on_close=False, protective_stop=False, profile_overrides=None,
+         daily_loss_limit=0.0):
     cfg = base_config()
+    cfg.setdefault("execution", {})["daily_loss_limit"] = daily_loss_limit
     cfg["profile"]["slippage_per_unit"] = slippage   # geometry tests use 0; realism test sets >0
     cfg["profile"]["be_retrace_trigger"] = be_trigger  # pin to the port value for stable geometry
     cfg["profile"]["adaptive_tp_scale"] = tp_scale     # pin for stable geometry
@@ -321,6 +323,23 @@ def test_reversal_risk_cap_scales_qty():
     # skip mode: risk 6.0 > cap 3.0 -> no reversal at all
     skipped = _run(cfg_rows, profile_overrides={"reversal_risk_cap": 3.0, "reversal_risk_mode": "skip"})
     assert not any(t.is_reversal for t in skipped.trades)
+
+
+def test_daily_loss_breaker_blocks_new_entries():
+    """Once the day's realised loss breaches the limit, no NEW entries (blocks the reversal)."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),   # long @101.5
+        (9, 40, 101, 101.6, 98.5, 99.0, 1000),     # BE stop fills at close 99.0 -> -$2.50
+        (9, 45, 99, 99.0, 97.9, 98.0, 1000),       # reversal short would enter here
+        (15, 50, 98, 98.1, 97.9, 98.0, 1000),
+    ]
+    no_breaker = _run({"2024-06-03": rows}, exit_on_close=True)
+    assert any(t.is_reversal for t in no_breaker.trades)          # reversal taken
+
+    breaker = _run({"2024-06-03": rows}, exit_on_close=True, daily_loss_limit=2.0)
+    assert not any(t.is_reversal for t in breaker.trades)          # blocked after -$2.50
+    assert len(breaker.trades) == 1
 
 
 def test_reversal_only_once_per_day():

@@ -23,6 +23,9 @@ execution:
   # the boundary), so an OR-boundary stop doesn't cap them and can even worsen a wick-and-recover
   # bar. The real tail driver is the 2x reversal on wide-OR whipsaw days — see max_or_width.
   protective_stop: false
+  # Daily loss circuit-breaker: once the day's realised P&L <= -limit, take no NEW entries that
+  # day (an open position still manages to its own exit). 0 = off.
+  daily_loss_limit: 0.0
 
 session:
   # Regular trading hours (ET). The opening range is the first bar (09:30-09:35).

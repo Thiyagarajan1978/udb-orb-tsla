@@ -262,6 +262,37 @@ Worst day −41% for −18% net. **Sized to a fixed worst-day budget, that's ~+4
 the same risk** (e.g. a $100/day tolerance: 6.07 units × $238 = $1,445 vs 10.33 units × $196 =
 $2,027). Worst 5 days flatten from −16.5/−12.9/−11.5/−10.8/−10.5 to −9.7/−9.3/−9.1/−7.4/−7.1.
 
+## 11. Daily loss circuit-breaker — TESTED, REJECTED
+
+Idea: once the day's realised P&L ≤ −X, take no new entries (blocks the reversal on bad days).
+Built as `execution.daily_loss_limit` (0 = off, default).
+
+**The signal is inverted.** On the 6-month data, the primary's loss *before* the reversal was:
+- days the reversal **WON**: mean **−$4.06**
+- days the reversal **LOST**: mean **−$3.34**
+
+A *bigger* primary loss predicts a *better* reversal — a large primary loss means price moved
+decisively against the breakout, which is exactly the move the reversal rides. A breaker therefore
+cuts the reversals you most want. At a −$5 breaker it blocks 4 reversals, **all 4 winners**, avoiding
+$0 of losses.
+
+Sweep (train + holdout), judged on net per $1 of worst-day risk:
+
+| Breaker | Train net | Train ratio | Holdout net | Holdout ratio |
+|--------:|----------:|------------:|------------:|--------------:|
+| off | +$134 | 11.29 | **+$196** | **20.28** |
+| −$3/day | +$155 | 18.17 | +$145 | 19.56 |
+| −$4/day | +$127 | 14.93 | +$157 | 21.14 |
+| −$8/day | +$127 | 11.13 | +$196 | 20.28 (never fires) |
+
+Train prefers −$3; the holdout's ratio gets *worse* there. The holdout's best (−$4) buys a **+4%**
+risk-adjusted gain for a **−20%** cut in net. And at "safe" levels (−$6 and wider) it never fires,
+because after the risk-parity cap the primary loss rarely exceeds −$6. **Regime-dependent and
+value-destroying — left OFF** (opt-in via `execution.daily_loss_limit`).
+
+**Conclusion: −$9.68 is the right worst-day floor.** The reversal risk-parity cap (§10) was the
+real fix; the breaker adds nothing on top of it.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic
