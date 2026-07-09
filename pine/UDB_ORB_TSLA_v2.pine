@@ -1,0 +1,502 @@
+//@version=6
+indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UDB-ORB v2.0", overlay=true, max_labels_count=500)
+
+//=============================================================================================
+//  UDB-ORB TSLA v2.0  —  Pine port of the Python engine's CURRENT DEFAULT config
+//  Source of truth: github.com/Thiyagarajan1978/udb-orb-tsla   (config/config.yaml)
+//=============================================================================================
+//
+//  WHY THIS DIFFERS FROM "UDB v12.4.3 / Adaptive TP + Reversal"
+//  ------------------------------------------------------------
+//  The old script filled stop exits AT the stop level, as if a resting stop order existed.
+//  This is an ALERTS-ONLY system: the signal fires on the 5-minute BAR CLOSE, so you act after
+//  the candle closes and fill at/around that close. Fixing that one thing cut the 6-month P&L
+//  from +$522 to +$214. Everything below was then RE-TUNED under realistic fills.
+//
+//   1. EXIT_ON_CLOSE (the big one) : BE Stop / BE Trail / Base SL / runner-trail all TRIGGER on
+//                                    the bar CLOSE and FILL at that close. A BE stop is a REAL
+//                                    loss (~$2-4), not a $0 scratch.
+//   2. VOLATILITY REGIME GATE (NEW): skip the day when prior-20d realised daily vol > 4.92%.
+//                                    This is a LOW-VOL breakout system — a high-vol bar closes
+//                                    further past the stop, so BE-stop cost scales with vol.
+//                                    The top vol quintile is the ONLY net-negative bucket.
+//   3. BE trigger 0.35 -> 0.55     : fewer premature BE stops.
+//   4. Reversal capture            : enter the reversal on a RAW opposite OR break (earlier) and
+//                                    let it TRAIL TO EOD (no fixed $5 TP, no partial).
+//   5. Runner peak-trail (NEW)     : after the 25% partial, the 75% runner trails 0.75 x OR below
+//                                    its peak. Previously it had NO trail until a BE retrace, so
+//                                    trend days handed the whole fade back.
+//   6. Max OR width $8             : skip wide-OR whipsaw days.
+//   7. Reversal RISK PARITY (NEW)  : the 2x size was never risk-adjusted. The reversal enters
+//                                    after price crossed the whole OR, so its stop is far away;
+//                                    at 2x it carried 1.6x the primary's risk and caused 68% of
+//                                    worst-day damage. Its qty is now scaled so its DOLLAR RISK
+//                                    <= $6 (the primary's average risk).
+//   8. Slippage $0.02 / unit charged on every exit leg.
+//
+//  PYTHON-VALIDATED RESULTS (TSLA 5m, realistic fills, 1 unit, slippage $0.02)
+//  --------------------------------------------------------------------------
+//     Year      Trades   WR      Net        PF     Worst day
+//     2024       253    45.1%   +  $65.67   1.19   -$9.72
+//     2025       236    47.5%   +  $82.71   1.19   -$13.12
+//     2026 H1    150    50.7%   + $196.23   1.81   -$9.68
+//
+//  NOTE: 2026 was a LOW-VOLATILITY regime — that is WHY it outperformed. Size off 2024.
+//  The original script's advertised +$5,528 was a fill-model artifact; under realistic fills
+//  that same config LOSES money in 2024 (-$70, PF 0.85).
+//
+//  APPLY TO: TSLA, 5-minute chart, Regular Trading Hours.
+//  The table's Net P&L is per 1 unit and should track the Python engine closely. Small
+//  divergences are expected from TradingView's data feed vs FMP, and from Pine's daily-bar
+//  close used for the volatility gate.
+//=============================================================================================
+
+// ==================== INPUTS ====================
+grpS = "Session"
+eodHour = input.int(15, "EOD Exit Hour", minval=0, maxval=23, group=grpS)
+eodMin  = input.int(50, "EOD Exit Minute", minval=0, maxval=59, group=grpS)
+
+grpR = "Risk / Regime Gates"
+maxORWidth  = input.float(8.0,  "Max OR Width ($) — skip wider days", step=0.5, group=grpR)
+volLookback = input.int(20,     "Volatility Lookback (days)", minval=2, group=grpR)
+maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, group=grpR, tooltip="Skip the day when the prior N-day stdev of daily returns exceeds this. Threshold fitted on 2024-25 ONLY; 2026 was out-of-sample and has ~no such days.")
+
+grpE = "Entry"
+bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE)
+tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE)
+slippage    = input.float(0.02, "Slippage Per Unit (charged on each exit)", step=0.01, group=grpE)
+
+grpX = "Exits (tuned under realistic fills)"
+adaptiveTPScale = input.float(1.0,  "Adaptive TP — OR Width Multiplier", step=0.05, group=grpX)
+adaptiveTPMin   = input.float(2.14, "Adaptive TP — Minimum Floor ($)", step=0.01, group=grpX)
+beTrigger       = input.float(0.55, "BE Retrace Trigger (% of OR width)", step=0.05, group=grpX)
+beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
+partialPct      = input.float(25.0, "Partial Exit Quantity (%)", step=1.0, group=grpX)
+runnerMult      = input.float(0.75, "Runner Peak-Trail (x OR width)", step=0.05, group=grpX)
+exitOnClose     = input.bool(true,  "Stop exits fill at bar CLOSE (alerts-only realism)", group=grpX, tooltip="ON = the realistic model. OFF reverts to the old optimistic fill-at-stop-level assumption.")
+
+grpV = "Reversal"
+revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step=0.5, group=grpV)
+revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, group=grpV, tooltip="Risk parity: scale the reversal qty so (entry -> OR boundary) x qty <= this. The primary's average risk is ~$6.16.")
+
+grpU = "Display"
+showLabels = input.bool(true, "Show Entry/Exit Labels", group=grpU)
+showLevels = input.bool(true, "Show OR / Trigger Levels", group=grpU)
+showTable  = input.bool(true, "Show Summary Table", group=grpU)
+
+// ==================== PRIOR-DAY REALISED VOLATILITY (no repaint) ====================
+// Safe idiom: lookahead_on + [1] returns the LAST COMPLETED daily value (no future leak).
+// Matches Python: daily_close.pct_change().rolling(20).std(ddof=1) * 100, shifted 1 day.
+f_priorRvol() =>
+    r = ta.change(close) / close[1] * 100.0
+    s = ta.stdev(r, volLookback, false)   // biased=false -> sample stdev (pandas ddof=1)
+    s[1]
+rvol20 = request.security(syminfo.tickerid, "D", f_priorRvol(), lookahead=barmerge.lookahead_on)
+
+// ==================== STATE ====================
+var float orHigh = na
+var float orLow = na
+var float orWidth = na
+var bool skipVol = false
+var bool skipWide = false
+var bool daySkipped = false
+
+var bool firstTaken = false
+var bool active = false
+var int tdir = 0
+var float entry = na
+var float stop = na
+var float tp = na
+var int entryBar = na
+var bool inRev = false
+var bool suppressPartial = false
+
+var bool beTrig = false
+var float beLevel = na
+var bool part1 = false
+var float qtyTotal = na
+var float effQty = na
+var float part1Pnl = 0.0
+var float runnerPeak = na
+
+var int primDir = 0
+var bool primStopped = false
+
+var float dayPnl = 0.0
+var bool dayHasTrades = false
+
+// stats
+var int nTrades = 0
+var int nSucc = 0
+var int nFail = 0
+var float netPnl = 0.0
+var float grossP = 0.0
+var float grossL = 0.0
+var float worstDay = na
+var float bestDay = na
+var int totalDays = 0
+var int tradeDays = 0
+var int volSkipDays = 0
+var int wideSkipDays = 0
+var int cBEStop = 0
+var int cBETrail = 0
+var int cBaseSL = 0
+var int cTrail = 0
+var int cEOD = 0
+var int cPart = 0
+var int cRev = 0
+
+// alert flags (reset every bar)
+aEntryL = false
+aEntryS = false
+aRevL = false
+aRevS = false
+aBEFired = false
+aPart = false
+aTrailX = false
+aBEStop = false
+aBETrail = false
+aBaseSL = false
+aEOD = false
+
+// ==================== NEW DAY / OPENING RANGE ====================
+isNewDay = session.isfirstbar_regular
+isEODbar = (hour * 60 + minute) >= (eodHour * 60 + eodMin)
+
+if isNewDay
+    // finalise the previous day before resetting
+    if dayHasTrades
+        worstDay := na(worstDay) ? dayPnl : math.min(worstDay, dayPnl)
+        bestDay := na(bestDay) ? dayPnl : math.max(bestDay, dayPnl)
+        tradeDays += 1
+    totalDays += 1
+    dayPnl := 0.0
+    dayHasTrades := false
+    orHigh := high
+    orLow := low
+    orWidth := high - low
+    skipVol := not na(rvol20) and rvol20 > maxRvolPct
+    skipWide := orWidth > maxORWidth
+    daySkipped := skipVol or skipWide
+    if skipVol
+        volSkipDays += 1
+    else if skipWide
+        wideSkipDays += 1
+    firstTaken := false
+    active := false
+    tdir := 0
+    entry := na
+    stop := na
+    tp := na
+    entryBar := na
+    inRev := false
+    suppressPartial := false
+    beTrig := false
+    beLevel := na
+    part1 := false
+    qtyTotal := na
+    effQty := na
+    part1Pnl := 0.0
+    runnerPeak := na
+    primDir := 0
+    primStopped := false
+
+longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
+shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
+tpDist = not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na
+canTrade = session.ismarket and not isNewDay and not daySkipped and not na(orHigh)
+
+// ==================== PRIMARY ENTRY ====================
+if canTrade and not active and not firstTaken
+    if close > longBrk
+        active := true
+        tdir := 1
+        inRev := false
+        suppressPartial := false
+        entry := close
+        stop := orLow
+        tp := close + tpDist
+        beLevel := orHigh - beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := tradeQty
+        effQty := tradeQty
+        part1 := false
+        part1Pnl := 0.0
+        beTrig := false
+        runnerPeak := na
+        primDir := 1
+        firstTaken := true
+        aEntryL := true
+        if showLabels
+            label.new(bar_index, low, "LONG " + str.tostring(entry, format.mintick), style=label.style_label_up, color=color.rgb(7, 170, 75), textcolor=color.white, size=size.small)
+    else if close < shortBrk
+        active := true
+        tdir := -1
+        inRev := false
+        suppressPartial := false
+        entry := close
+        stop := orHigh
+        tp := close - tpDist
+        beLevel := orLow + beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := tradeQty
+        effQty := tradeQty
+        part1 := false
+        part1Pnl := 0.0
+        beTrig := false
+        runnerPeak := na
+        primDir := -1
+        firstTaken := true
+        aEntryS := true
+        if showLabels
+            label.new(bar_index, high, "SHORT " + str.tostring(entry, format.mintick), style=label.style_label_down, color=color.rgb(243, 76, 76), textcolor=color.white, size=size.small)
+
+// ==================== REVERSAL ENTRY (raw OR break · trail-to-EOD · risk-parity size) ====================
+if canTrade and primStopped and not active
+    if primDir == 1 and close < orLow
+        rpu = math.abs(close - orHigh)
+        rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
+        active := true
+        tdir := -1
+        inRev := true
+        suppressPartial := true
+        entry := close
+        stop := orHigh
+        tp := na
+        beLevel := orLow + beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := rq
+        effQty := rq
+        part1 := false
+        part1Pnl := 0.0
+        beTrig := false
+        runnerPeak := na
+        primStopped := false
+        cRev += 1
+        aRevS := true
+        if showLabels
+            label.new(bar_index, high, "REV SHORT " + str.tostring(entry, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
+    else if primDir == -1 and close > orHigh
+        rpu = math.abs(close - orLow)
+        rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
+        active := true
+        tdir := 1
+        inRev := true
+        suppressPartial := true
+        entry := close
+        stop := orLow
+        tp := na
+        beLevel := orHigh - beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := rq
+        effQty := rq
+        part1 := false
+        part1Pnl := 0.0
+        beTrig := false
+        runnerPeak := na
+        primStopped := false
+        cRev += 1
+        aRevL := true
+        if showLabels
+            label.new(bar_index, low, "REV LONG " + str.tostring(entry, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_up, color=color.purple, textcolor=color.white, size=size.small)
+
+// ==================== EXIT ENGINE (never fires on the entry bar) ====================
+if active and not na(stop) and bar_index > entryBar
+    // --- Step 1: BE Retrace (WICK-based trigger, as in the Python engine) ---
+    if not beTrig and not na(beLevel)
+        beFire = tdir == 1 ? low <= beLevel : high >= beLevel
+        if beFire
+            stop := tdir == 1 ? math.max(stop, entry) : math.min(stop, entry)
+            beTrig := true
+            aBEFired := true
+
+    // --- Step 2: BE Trail ---
+    if beTrig and beTrailAmt > 0
+        stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
+
+    // --- Step 3: Runner peak-trail (primary only, after the partial) ---
+    runnerHit = false
+    float runnerPx = na
+    if part1 and not suppressPartial and runnerMult > 0
+        if tdir == 1
+            runnerPeak := na(runnerPeak) ? high : math.max(runnerPeak, high)
+            lvl = runnerPeak - runnerMult * orWidth
+            if exitOnClose ? close <= lvl : low <= lvl
+                runnerHit := true
+                runnerPx := exitOnClose ? close : lvl
+        else
+            runnerPeak := na(runnerPeak) ? low : math.min(runnerPeak, low)
+            lvl = runnerPeak + runnerMult * orWidth
+            if exitOnClose ? close >= lvl : high >= lvl
+                runnerHit := true
+                runnerPx := exitOnClose ? close : lvl
+
+    // --- Step 4: hit checks. Stop exits are CLOSE-based when exitOnClose ---
+    slHit = tdir == 1 ? (exitOnClose ? close <= stop : low <= stop) : (exitOnClose ? close >= stop : high >= stop)
+    slFill = exitOnClose ? close : stop
+    tpHit = not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
+
+    if slHit
+        exitPx = slFill
+        perUnit = tdir == 1 ? (exitPx - entry - slippage) : (entry - exitPx - slippage)
+        pnlTotal = perUnit * effQty + part1Pnl
+        isBETrail = beTrig and (tdir == 1 ? exitPx > entry : exitPx < entry)
+        reason = beTrig ? (isBETrail ? "BE Trail" : "BE Stop") : "Base SL"
+        if isBETrail
+            cBETrail += 1
+            aBETrail := true
+        else if beTrig
+            cBEStop += 1
+            aBEStop := true
+        else
+            cBaseSL += 1
+            aBaseSL := true
+        nTrades += 1
+        if pnlTotal > 0
+            nSucc += 1
+            grossP += pnlTotal
+        else
+            nFail += 1
+            grossL += math.abs(pnlTotal)
+        netPnl += pnlTotal
+        dayPnl += pnlTotal
+        dayHasTrades := true
+        if not inRev
+            primStopped := true
+        if showLabels
+            label.new(bar_index, tdir == 1 ? low : high, (inRev ? "REV " : "") + reason + " " + str.tostring(exitPx, format.mintick) + "\n" + (pnlTotal >= 0 ? "+" : "") + str.tostring(pnlTotal, "#.##"), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=isBETrail ? color.rgb(7, 170, 75) : color.orange, textcolor=color.white, size=size.small)
+        active := false
+        tdir := 0
+        inRev := false
+        tp := na
+        stop := na
+    else if tpHit and not suppressPartial and not part1
+        // 25% partial AT the TP level (limit fill); the remainder trails
+        p1qty = qtyTotal * partialPct / 100.0
+        pu = tdir == 1 ? (tp - entry - slippage) : (entry - tp - slippage)
+        part1Pnl := pu * p1qty
+        effQty := qtyTotal - p1qty
+        part1 := true
+        cPart += 1
+        aPart := true
+        if showLabels
+            label.new(bar_index, tdir == 1 ? high : low, "PARTIAL " + str.tostring(partialPct, "#") + "% @ " + str.tostring(tp, format.mintick) + "\n+" + str.tostring(part1Pnl, "#.##"), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.rgb(7, 170, 75), textcolor=color.white, size=size.tiny)
+        tp := na
+    else if runnerHit
+        exitPx = runnerPx
+        perUnit = tdir == 1 ? (exitPx - entry - slippage) : (entry - exitPx - slippage)
+        pnlTotal = perUnit * effQty + part1Pnl
+        cTrail += 1
+        aTrailX := true
+        nTrades += 1
+        if pnlTotal > 0
+            nSucc += 1
+            grossP += pnlTotal
+        else
+            nFail += 1
+            grossL += math.abs(pnlTotal)
+        netPnl += pnlTotal
+        dayPnl += pnlTotal
+        dayHasTrades := true
+        if showLabels
+            label.new(bar_index, tdir == 1 ? high : low, "TRAIL " + str.tostring(exitPx, format.mintick) + "\n" + (pnlTotal >= 0 ? "+" : "") + str.tostring(pnlTotal, "#.##"), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
+        active := false
+        tdir := 0
+        inRev := false
+        tp := na
+        stop := na
+
+// ==================== EOD FORCED CLOSE ====================
+if active and isEODbar and tdir != 0
+    exitPx = close
+    perUnit = tdir == 1 ? (exitPx - entry - slippage) : (entry - exitPx - slippage)
+    pnlTotal = perUnit * effQty + part1Pnl
+    cEOD += 1
+    aEOD := true
+    nTrades += 1
+    if pnlTotal > 0
+        nSucc += 1
+        grossP += pnlTotal
+    else
+        nFail += 1
+        grossL += math.abs(pnlTotal)
+    netPnl += pnlTotal
+    dayPnl += pnlTotal
+    dayHasTrades := true
+    if showLabels
+        label.new(bar_index, close, (inRev ? "REV EOD " : "EOD ") + str.tostring(exitPx, format.mintick) + "\n" + (pnlTotal >= 0 ? "+" : "") + str.tostring(pnlTotal, "#.##"), style=label.style_label_left, color=color.rgb(255, 140, 0), textcolor=color.white, size=size.small)
+    active := false
+    tdir := 0
+    inRev := false
+    tp := na
+    stop := na
+
+// ==================== VISUALS ====================
+plot(showLevels and not daySkipped and not na(orHigh) ? orHigh : na, "OR High", color=color.new(color.aqua, 0), style=plot.style_linebr)
+plot(showLevels and not daySkipped and not na(orLow) ? orLow : na, "OR Low", color=color.new(color.aqua, 0), style=plot.style_linebr)
+plot(showLevels and not daySkipped and not na(longBrk) ? longBrk : na, "Long Trigger", color=color.new(color.lime, 0), style=plot.style_linebr)
+plot(showLevels and not daySkipped and not na(shortBrk) ? shortBrk : na, "Short Trigger", color=color.new(color.red, 0), style=plot.style_linebr)
+plot(active ? stop : na, "Active Stop", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(active and not na(tp) ? tp : na, "Active TP", color=color.lime, linewidth=2, style=plot.style_linebr)
+plot(active and not beTrig and not na(beLevel) ? beLevel : na, "BE Trigger", color=color.new(color.yellow, 0), style=plot.style_circles)
+bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol regime / wide OR)")
+
+// ==================== ALERTS ====================
+if barstate.isconfirmed
+    base = " | " + syminfo.ticker + " " + timeframe.period + "m | Px $" + str.tostring(close, "#.##") + " | " + str.format_time(time, "yyyy-MM-dd HH:mm", "America/New_York") + " ET"
+    if aEntryL
+        alert("[ENTRY] LONG breakout — BUY at market" + base, alert.freq_once_per_bar)
+    if aEntryS
+        alert("[ENTRY] SHORT breakout — SELL SHORT at market" + base, alert.freq_once_per_bar)
+    if aRevL
+        alert("[ENTRY-REV] REVERSAL LONG (risk-parity size) — BUY at market" + base, alert.freq_once_per_bar)
+    if aRevS
+        alert("[ENTRY-REV] REVERSAL SHORT (risk-parity size) — SELL SHORT at market" + base, alert.freq_once_per_bar)
+    if aBEFired
+        alert("[STATE] BE RETRACE FIRED — move stop to ENTRY" + base, alert.freq_once_per_bar)
+    if aPart
+        alert("[EXIT-PARTIAL] Partial closed at TP; runner now trails" + base, alert.freq_once_per_bar)
+    if aTrailX
+        alert("[EXIT-WIN] RUNNER TRAIL — close remaining position" + base, alert.freq_once_per_bar)
+    if aBETrail
+        alert("[EXIT-WIN] BE TRAIL — close position in profit" + base, alert.freq_once_per_bar)
+    if aBEStop
+        alert("[EXIT-LOSS] BE STOP — close position (real loss, filled at close)" + base, alert.freq_once_per_bar)
+    if aBaseSL
+        alert("[EXIT-LOSS] BASE STOP LOSS — close position" + base, alert.freq_once_per_bar)
+    if aEOD
+        alert("[EXIT-EOD] End-of-day forced close" + base, alert.freq_once_per_bar)
+
+// ==================== SUMMARY TABLE ====================
+var table tbl = table.new(position.top_right, 2, 16, border_width=1)
+
+f_row(_r, _k, _v, _col) =>
+    table.cell(tbl, 0, _r, _k, text_color=color.white, bgcolor=color.rgb(25, 25, 25), text_size=size.small)
+    table.cell(tbl, 1, _r, _v, text_color=_col, bgcolor=color.rgb(25, 25, 25), text_size=size.small)
+
+if barstate.islast and showTable
+    // fold the still-open final day into best/worst so the table is complete
+    wD = dayHasTrades ? (na(worstDay) ? dayPnl : math.min(worstDay, dayPnl)) : worstDay
+    bD = dayHasTrades ? (na(bestDay) ? dayPnl : math.max(bestDay, dayPnl)) : bestDay
+    tD = tradeDays + (dayHasTrades ? 1 : 0)
+    wr = nTrades > 0 ? nSucc * 100.0 / nTrades : 0.0
+    pf = grossL > 0 ? grossP / grossL : na
+    exp = nTrades > 0 ? netPnl / nTrades : 0.0
+
+    table.cell(tbl, 0, 0, "UDB-ORB v2.0", text_color=color.white, bgcolor=color.rgb(50, 30, 10), text_size=size.small)
+    table.cell(tbl, 1, 0, "Realistic Fills", text_color=color.orange, bgcolor=color.rgb(50, 30, 10), text_size=size.small)
+    f_row(1, "Trades", str.tostring(nTrades), color.yellow)
+    f_row(2, "Success / Fail", str.tostring(nSucc) + " / " + str.tostring(nFail), color.silver)
+    f_row(3, "Win Rate", str.tostring(wr, "#.#") + "%", color.orange)
+    f_row(4, "Net P&L", (netPnl >= 0 ? "+" : "") + str.tostring(netPnl, "#.##"), netPnl >= 0 ? color.lime : color.red)
+    f_row(5, "Profit Factor", na(pf) ? "n/a" : str.tostring(pf, "#.##"), na(pf) ? color.silver : (pf >= 1 ? color.lime : color.red))
+    f_row(6, "Expectancy", (exp >= 0 ? "+" : "") + str.tostring(exp, "#.###"), exp >= 0 ? color.lime : color.red)
+    f_row(7, "Best Day", na(bD) ? "-" : "+" + str.tostring(bD, "#.##"), color.lime)
+    f_row(8, "Worst Day", na(wD) ? "-" : str.tostring(wD, "#.##"), color.red)
+    f_row(9, "Trade Days", str.tostring(tD) + " / " + str.tostring(totalDays), color.aqua)
+    f_row(10, "Skipped: High Vol", str.tostring(volSkipDays), color.fuchsia)
+    f_row(11, "Skipped: Wide OR", str.tostring(wideSkipDays), color.fuchsia)
+    f_row(12, "Reversals", str.tostring(cRev), color.purple)
+    f_row(13, "BE Stop / Trail", str.tostring(cBEStop) + " / " + str.tostring(cTrail), color.silver)
+    f_row(14, "EOD / Partials", str.tostring(cEOD) + " / " + str.tostring(cPart), color.silver)
+    f_row(15, "Prior RVol", na(rvol20) ? "n/a" : str.tostring(rvol20, "#.##") + "%" + (skipVol ? "  SKIP" : ""), skipVol ? color.red : color.lime)
