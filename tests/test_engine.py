@@ -7,11 +7,14 @@ from udb_orb.engine.params import Params
 
 
 def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scale=1.0,
-         exit_on_close=False, protective_stop=False):
+         exit_on_close=False, protective_stop=False, profile_overrides=None):
     cfg = base_config()
     cfg["profile"]["slippage_per_unit"] = slippage   # geometry tests use 0; realism test sets >0
     cfg["profile"]["be_retrace_trigger"] = be_trigger  # pin to the port value for stable geometry
     cfg["profile"]["adaptive_tp_scale"] = tp_scale     # pin for stable geometry
+    cfg["profile"]["reversal_risk_cap"] = 0.0          # geometry: uncapped 2x unless opted in
+    if profile_overrides:
+        cfg["profile"].update(profile_overrides)
     ex = cfg.setdefault("execution", {})
     ex["exit_on_close"] = exit_on_close   # geometry uses intrabar fills
     ex["protective_stop"] = protective_stop
@@ -292,6 +295,32 @@ def test_whipsaw_reenter_fires_once():
     res_off = _run({"2024-06-03": rows},
                    enh_overrides={"reversal_capture": {"enabled": True, "trigger_on_be_stop": True}})
     assert not any("(Re)" in t.direction for t in res_off.trades)
+
+
+def test_reversal_risk_cap_scales_qty():
+    """The reversal qty shrinks so its dollar risk <= cap (risk parity), instead of blind 2x."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),   # primary long
+        (9, 40, 101, 101.6, 98.5, 99.0, 1000),     # BE stop -> prim_stopped
+        (9, 45, 99, 99.0, 97.9, 98.0, 1000),       # reversal short @98.0, stop = OR high 101.0
+        (15, 50, 98, 98.1, 97.9, 98.0, 1000),
+    ]
+    # risk per unit = |98.0 - 101.0| = 3.0 ; uncapped qty = 2.0 -> risk 6.0
+    uncapped = _run({"2024-06-03": rows})
+    rev = [t for t in uncapped.trades if t.is_reversal][0]
+    assert rev.qty == 2.0
+
+    # cap $3 -> qty = 3.0/3.0 = 1.0
+    cfg_rows = {"2024-06-03": rows}
+    capped = _run(cfg_rows, profile_overrides={"reversal_risk_cap": 3.0, "reversal_risk_mode": "scale"})
+    rev2 = [t for t in capped.trades if t.is_reversal][0]
+    assert abs(rev2.qty - 1.0) < 1e-9
+    assert abs(rev2.risk_amount - 3.0) < 1e-9      # risk capped
+
+    # skip mode: risk 6.0 > cap 3.0 -> no reversal at all
+    skipped = _run(cfg_rows, profile_overrides={"reversal_risk_cap": 3.0, "reversal_risk_mode": "skip"})
+    assert not any(t.is_reversal for t in skipped.trades)
 
 
 def test_reversal_only_once_per_day():

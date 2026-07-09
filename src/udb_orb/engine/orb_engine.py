@@ -238,6 +238,26 @@ class OrbEngine:
             short_trig = min(short_brk, pdl)
         return long_trig, short_trig
 
+    def _reversal_qty(self, st: _DayState, c: float, direction: int) -> Optional[float]:
+        """Reversal size after the dollar-risk cap. None => skip the reversal entirely.
+
+        The reversal enters after price crossed the whole OR, so its stop (the opposite OR
+        boundary) is far away; at 2x size that risk drives the worst days. `scale` shrinks the
+        qty so risk <= cap; `skip` declines the trade.
+        """
+        p = self.p
+        stop = (st.or_high + p.sl_offset) if direction == -1 else (st.or_low - p.sl_offset)
+        risk_per_unit = abs(c - stop)
+        qty = p.trade_qty * p.reversal_qty_mult
+        cap = p.reversal_risk_cap
+        if cap and cap > 0 and risk_per_unit > 0:
+            if p.reversal_risk_mode == "skip":
+                if risk_per_unit * qty > cap:
+                    return None
+            else:  # scale
+                qty = min(qty, cap / risk_per_unit)
+        return qty
+
     def _reversal_tp_dist(self, or_size: float) -> Optional[float]:
         """Distance for the reversal TP, or None to disable TP (trail to EOD)."""
         if self._rev_on and self._rev_cfg.get("trail_to_eod", False):
@@ -381,13 +401,17 @@ class OrbEngine:
             rev_short_level = st.or_low if self._rev_trigger_raw() else short_brk
             if (p.use_reversal and st.prim_stopped and not st.active and entry_ok_common):
                 if st.prim_dir == 1 and rev_short_level is not None and c < rev_short_level and max_ok and vwap_short_ok and self._rvol_ok(rv):
-                    self._enter(st, ts, bar_i, direction=-1, c=c, reversal=True)
-                    st.prim_stopped = False
-                    self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "S (Rev)", c, st.qty_total, None, "reversal entry"))
+                    rqty = self._reversal_qty(st, c, -1)
+                    if rqty is not None:
+                        self._enter(st, ts, bar_i, direction=-1, c=c, reversal=True, qty=rqty)
+                        st.prim_stopped = False
+                        self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "S (Rev)", c, st.qty_total, None, "reversal entry"))
                 elif st.prim_dir == -1 and rev_long_level is not None and c > rev_long_level and max_ok and vwap_long_ok and self._rvol_ok(rv):
-                    self._enter(st, ts, bar_i, direction=1, c=c, reversal=True)
-                    st.prim_stopped = False
-                    self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "L (Rev)", c, st.qty_total, None, "reversal entry"))
+                    rqty = self._reversal_qty(st, c, 1)
+                    if rqty is not None:
+                        self._enter(st, ts, bar_i, direction=1, c=c, reversal=True, qty=rqty)
+                        st.prim_stopped = False
+                        self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "L (Rev)", c, st.qty_total, None, "reversal entry"))
 
             # ---- WHIPSAW RE-ENTRY (original direction, once, after primary+reversal both stopped) ----
             if (self._reenter_on and st.reenter_armed and not st.reenter_taken and not st.active
@@ -420,7 +444,7 @@ class OrbEngine:
         return self.result
 
     # ---- entry helper ---------------------------------------------------
-    def _enter(self, st: _DayState, ts, bar_i, direction, c, reversal, reenter=False):
+    def _enter(self, st: _DayState, ts, bar_i, direction, c, reversal, reenter=False, qty=None):
         p = self.p
         st.active = True
         st.dir = direction
@@ -460,7 +484,7 @@ class OrbEngine:
                 st.stop = st.or_low - p.sl_offset
                 st.tp = None if tp_dist is None else c + tp_dist
                 st.be_level = st.or_high - (p.be_retrace_trigger * or_size) if or_size else None
-            st.qty_total = p.trade_qty * p.reversal_qty_mult
+            st.qty_total = qty if qty is not None else (p.trade_qty * p.reversal_qty_mult)
 
         st.init_stop = st.stop   # record base SL as the risk basis (before any BE ratchet)
         st.be_triggered = False

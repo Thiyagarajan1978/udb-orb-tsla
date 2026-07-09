@@ -77,6 +77,10 @@ class Params:
     # hybrid: a resting protective stop at the OR boundary fills intrabar (caps crash bars)
     protective_stop: bool = False
 
+    # reversal risk control (the 2x reversal drives the worst days)
+    reversal_risk_cap: float = 0.0      # 0 = off; cap the reversal leg's dollar risk
+    reversal_risk_mode: str = "scale"   # "scale" (shrink qty) | "skip" (no reversal)
+
     @property
     def use_adaptive_tp(self) -> bool:
         return self.tp_mode.lower().startswith("adapt")
@@ -129,4 +133,6 @@ class Params:
             trade_side_mode=str(p["trade_side_mode"]),
             exit_on_close=bool(cfg.get("execution", {}).get("exit_on_close", False)),
             protective_stop=bool(cfg.get("execution", {}).get("protective_stop", False)),
+            reversal_risk_cap=float(p.get("reversal_risk_cap", 0.0) or 0.0),
+            reversal_risk_mode=str(p.get("reversal_risk_mode", "scale")),
         )

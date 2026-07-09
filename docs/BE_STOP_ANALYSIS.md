@@ -230,6 +230,38 @@ fix — skips the widest whipsaw days:
 
 Train net +61%, holdout flat, worst day better on both — same return, lower risk.
 
+## 10. Reducing the worst day — reversal risk parity (ADOPTED)
+
+Every one of the 8 worst days has the same shape: **primary BE-stops small, then the 2× reversal
+BE-stops big.** Across those days: primary −$28.53 vs **reversal −$60.04 (68% of the damage)**.
+
+Cause: the reversal enters *after* price crossed the whole opening range, so its stop (the
+opposite OR boundary) is far away — and then it's doubled by the 2× size.
+
+| | n | avg dollar risk |
+|--|--:|----------------:|
+| primary legs | 120 | $6.16 |
+| **reversal legs** | 30 | **$10.03 (1.6× the primary)** |
+
+The 2× share multiplier (from the ORB doc) was never risk-adjusted. Fix: `reversal_risk_cap`
+(profile) scales the reversal qty so its dollar risk ≤ cap (`scale`), or declines it (`skip`).
+
+- **`skip` rejected** — regime-dependent (train +$163 / holdout +$164, a $74 collapse).
+- **`scale` is smooth and consistent** on both segments.
+
+Return per $1 of worst-day risk (net / |worst day|) rises monotonically as the cap tightens — but
+that degenerates toward "no reversal" at the extreme. The **principled stopping point is risk
+parity with the primary (~$6)**, not the ratio maximum.
+
+| Cap (scale) | Holdout net | Holdout worst | ratio | Train net | Train worst |
+|------------:|------------:|--------------:|------:|----------:|------------:|
+| off | +$238 | −$16.5 | 14.45 | +$159 | −$17.3 |
+| **$6 (adopted)** | **+$196** | **−$9.7** | **20.28** | **+$134** | **−$11.9** |
+
+Worst day −41% for −18% net. **Sized to a fixed worst-day budget, that's ~+40% more profit for
+the same risk** (e.g. a $100/day tolerance: 6.07 units × $238 = $1,445 vs 10.33 units × $196 =
+$2,027). Worst 5 days flatten from −16.5/−12.9/−11.5/−10.8/−10.5 to −9.7/−9.3/−9.1/−7.4/−7.1.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic

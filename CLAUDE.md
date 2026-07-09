@@ -33,6 +33,11 @@ top of the port (all cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_
    peak (it previously had no trail until a BE retrace). Re-tuned from 1.0 under realism.
 5. **`max_or_width` ≤ $8** — skips wide-OR whipsaw days (the realistic tail driver: primary +
    2× reversal both take real close losses). Cuts worst day (−22→−16) with net flat-to-up.
+6. **`reversal_risk_cap` $6 (scale)** — RISK PARITY. The reversal enters after price crossed the
+   whole OR, so its stop is far away; at 2× size it carried 1.6× the primary's risk ($10.03 vs
+   $6.16) and caused **68% of worst-day damage**. Scaling its qty to equal dollar risk cuts the
+   worst day 41% (−16.5→−9.7) for 18% net = **+40% return per $1 of worst-day risk**.
+   (`skip` mode was tested and rejected — regime-dependent.)
 
 Built but **NOT adopted** (default OFF, opt-in): `reenter_after_whipsaw` (marginal/regime-dependent
 OOS) and `pdh_pdl_filter` (require close beyond prior-day high/low when it's near the break level —

@@ -82,6 +82,16 @@ profile:
   reversal_qty_mult: 2.0
   reversal_target: 5.0       # fixed TP distance for reversal leg
   apply_be_to_reversal: true
+  # Reversal risk control. The reversal enters after price crossed the whole OR, so its stop
+  # (opposite OR boundary) is far away — its risk runs 2-4x the primary's, then gets DOUBLED by
+  # the 2x size. That is 68% of the worst-day damage. Cap the reversal leg's dollar risk:
+  #   scale = shrink qty so risk <= cap (keeps participation)   skip = don't take the reversal
+  # ADOPTED: $6 = RISK PARITY with the primary leg (primary avg risk $6.16, reversal was $10.03
+  # = 1.6x). The 2x share multiplier was never risk-adjusted. Scaling to equal dollar risk cuts
+  # the worst day 41% (-16.5 -> -9.7) for 18% net, i.e. +40% return per $1 of worst-day risk.
+  # 'skip' mode was tested and rejected (train +163 / holdout +164 — regime-dependent).
+  reversal_risk_cap: 6.0     # 0 = off (dollars: risk_per_unit * qty)
+  reversal_risk_mode: scale  # scale | skip
 
   # Max OR width filter — ADOPTED for tail control under realistic fills. The realistic worst
   # days are whipsaws on WIDE-OR days (risk $12-17) where the primary AND 2x reversal both take
