@@ -44,7 +44,15 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //    2026 H1   152 tr  50.7%  +$192.31  PF 1.78  worst -$9.68
 //    Jun+Jul26  31 tr  71.0%  +$131.42  PF 4.20  worst -$6.81
 //
-//  Strategy Tester will show slightly MORE than Python because Python charges $0.02/unit
+//  SHARES PER UNIT (default 100) — READ THIS
+//  TradingView rounds order size to whole shares. The reversal is sized by RISK PARITY and needs
+//  FRACTIONAL units (e.g. 1.59). At 1 share/unit that rounds to 1 and the risk cap silently
+//  disappears; likewise a 25% partial of 1 share rounds to 1 and closes the WHOLE position,
+//  deleting the runner. With 100 shares/unit, 1.59 units = 159 shares and everything survives.
+//  ==> Strategy Tester P&L is therefore ~100x the Python per-unit figures. Divide by 100.
+//  (The 25% partial uses qty_percent, which is immune to this.)
+//
+//  Strategy Tester will also show slightly MORE than Python because Python charges $0.02/unit
 //  slippage on every exit leg and this script sets slippage=0 (set it to 2 ticks to compare).
 //
 //  APPLY TO: TSLA, 5-minute, Regular Trading Hours.  Size off 2024, not 2026.
@@ -63,6 +71,8 @@ maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, g
 grpE = "Entry"
 bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE)
 tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE)
+unitScale   = input.int(100,    "Shares per 'unit' (scale so fractional sizes survive rounding)", minval=1, group=grpE,
+     tooltip="TradingView rounds order size to whole shares. The reversal is sized by RISK PARITY and needs fractional units (e.g. 1.59). With 100 shares per unit, 1.59 units = 159 shares and the ratio survives.\n\nStrategy Tester P&L will therefore be this multiple of the Python per-unit figures — divide by this number to compare.")
 
 grpX = "Exits"
 adaptiveTPScale = input.float(1.0,  "Adaptive TP — OR Width Multiplier", step=0.05, group=grpX)
@@ -153,11 +163,12 @@ canTrade = session.ismarket and not isNewDay and not daySkipped and not na(orHig
 if canTrade and not active and not firstTaken and strategy.position_size == 0
     if close > longBrk
         entryId := "L"
-        strategy.entry(entryId, strategy.long, qty=tradeQty)
+        strategy.entry(entryId, strategy.long, qty=tradeQty * unitScale)
         // 25% partial as a LIMIT at the TP (fills AT the TP level, like the Python engine).
-        // Placed now -> becomes active from the NEXT bar, matching the engine's "no exit on the
-        // entry bar" rule.
-        strategy.exit("P1", from_entry=entryId, qty=tradeQty * partialPct / 100.0, limit=close + tpDist)
+        // MUST use qty_percent: a fractional `qty` (0.25) rounds up to 1 whole share and closes
+        // the ENTIRE position, which silently removes the runner.
+        // Placed now -> active from the NEXT bar, matching the engine's "no exit on the entry bar".
+        strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, limit=close + tpDist)
         active := true
         tdir := 1
         inRev := false
@@ -177,8 +188,8 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
             label.new(bar_index, low, "LONG " + str.tostring(close, format.mintick), style=label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.small)
     else if close < shortBrk
         entryId := "S"
-        strategy.entry(entryId, strategy.short, qty=tradeQty)
-        strategy.exit("P1", from_entry=entryId, qty=tradeQty * partialPct / 100.0, limit=close - tpDist)
+        strategy.entry(entryId, strategy.short, qty=tradeQty * unitScale)
+        strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, limit=close - tpDist)
         active := true
         tdir := -1
         inRev := false
@@ -203,7 +214,8 @@ if canTrade and primStopped and not active and strategy.position_size == 0
         rpu = math.abs(close - orHigh)
         rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
         entryId := "RS"
-        strategy.entry(entryId, strategy.short, qty=rq)   // no partial: reversal trails to EOD
+        // risk-parity size, scaled to whole shares (1.59 units x 100 = 159 shares)
+        strategy.entry(entryId, strategy.short, qty=rq * unitScale)   // no partial: trails to EOD
         active := true
         tdir := -1
         inRev := true
@@ -224,7 +236,7 @@ if canTrade and primStopped and not active and strategy.position_size == 0
         rpu = math.abs(close - orLow)
         rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
         entryId := "RL"
-        strategy.entry(entryId, strategy.long, qty=rq)
+        strategy.entry(entryId, strategy.long, qty=rq * unitScale)
         active := true
         tdir := 1
         inRev := true
@@ -300,6 +312,17 @@ if active and not na(stop) and bar_index > entryBar
         inRev := false
         tp := na
         stop := na
+
+// ==================== STATE DE-SYNC GUARD ====================
+// If TradingView shows flat while we still believe a trade is live (e.g. an exit order filled
+// the whole position), resync. Without this the exit engine keeps managing a phantom position
+// and can arm/suppress the reversal incorrectly.
+if active and strategy.position_size == 0 and bar_index > entryBar
+    active := false
+    tdir := 0
+    inRev := false
+    tp := na
+    stop := na
 
 // ==================== EOD FORCED CLOSE (market at this bar's close) ====================
 if active and isEODbar and tdir != 0
