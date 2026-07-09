@@ -7,12 +7,14 @@ from udb_orb.engine.params import Params
 
 
 def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scale=1.0,
-         exit_on_close=False):
+         exit_on_close=False, protective_stop=False):
     cfg = base_config()
     cfg["profile"]["slippage_per_unit"] = slippage   # geometry tests use 0; realism test sets >0
     cfg["profile"]["be_retrace_trigger"] = be_trigger  # pin to the port value for stable geometry
-    cfg["profile"]["adaptive_tp_scale"] = tp_scale     # pin (default now 1.25) for stable geometry
-    cfg.setdefault("execution", {})["exit_on_close"] = exit_on_close  # geometry uses intrabar fills
+    cfg["profile"]["adaptive_tp_scale"] = tp_scale     # pin for stable geometry
+    ex = cfg.setdefault("execution", {})
+    ex["exit_on_close"] = exit_on_close   # geometry uses intrabar fills
+    ex["protective_stop"] = protective_stop
     enh = cfg.get("enhancements", {})
     # geometry tests are enhancement-independent unless a test opts in
     enh.setdefault("reversal_capture", {})["enabled"] = False
@@ -142,6 +144,23 @@ def test_exit_on_close_makes_be_stop_a_real_loss():
     assert on_close.trades[0].reason == "BE Stop"
     assert abs(on_close.trades[0].pnl_total - (99.0 - 101.5)) < 1e-9   # -$2.50, filled at close
     assert on_close.trades[0].outcome == "failure"
+
+
+def test_protective_stop_caps_a_crash_bar():
+    """A resting protective stop at the OR boundary caps a crash bar at base-SL risk, not the
+    (much lower) close."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),      # OR low 99 -> protective stop at 99
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),     # long @101.5 (risk = 101.5-99 = 2.5)
+        (9, 40, 101, 101.6, 95.0, 95.5, 1000),       # crash: low 95 pierces 99, closes 95.5
+    ]
+    close_only = _run({"2024-06-03": rows}, exit_on_close=True, protective_stop=False)
+    hybrid = _run({"2024-06-03": rows}, exit_on_close=True, protective_stop=True)
+    # pure close-based: fills at 95.5 -> -$6.00 loss
+    assert abs(close_only.trades[0].pnl_total - (95.5 - 101.5)) < 1e-9
+    # protective: resting stop at OR boundary 99 -> capped at -$2.50
+    assert abs(hybrid.trades[0].pnl_total - (99.0 - 101.5)) < 1e-9
+    assert hybrid.trades[0].pnl_total > close_only.trades[0].pnl_total   # smaller loss
 
 
 def test_no_base_sl_when_be_on():

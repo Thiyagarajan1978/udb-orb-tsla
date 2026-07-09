@@ -18,6 +18,11 @@ timezone: America/New_York
 # loss, ~$1-2, not a $0 scratch). TP/partial still fill at the target (favourable limit).
 execution:
   exit_on_close: true
+  # Resting protective stop at the OR boundary (opt-in). TESTED and left OFF: the realistic
+  # worst days are whipsaws on WIDE-OR days where the loss closes *within* the OR range (above
+  # the boundary), so an OR-boundary stop doesn't cap them and can even worsen a wick-and-recover
+  # bar. The real tail driver is the 2x reversal on wide-OR whipsaw days — see max_or_width.
+  protective_stop: false
 
 session:
   # Regular trading hours (ET). The opening range is the first bar (09:30-09:35).
@@ -50,10 +55,11 @@ profile:
   fixed_sl: 3.0            # only used by Fixed/Max-Cap SL modes (not this profile)
 
   # Take profit: Adaptive (% of OR width)
-  # NOTE: adaptive_tp_scale adopted as 1.25 (port = 1.0). Validated train(2024-25)+holdout
-  # (2026): wider TP lets winners run -> more net on BOTH periods (trades win rate for P&L).
+  # NOTE: adaptive_tp_scale = 1.0. (Optimistic-fill tuning liked 1.25, but re-tuned under the
+  # realistic exit_on_close model 1.0 wins both train+holdout — a wider TP just rides more
+  # trades into a real BE-stop loss. 1.0 also equals the Pine port value.)
   tp_mode: "Adaptive"      # Adaptive | Fixed
-  adaptive_tp_scale: 1.25  # TP distance = max(floor, OR_width * scale)  [tuned; port = 1.0]
+  adaptive_tp_scale: 1.0   # TP distance = max(floor, OR_width * scale)  [re-tuned under realism]
   adaptive_tp_min: 2.14    # floor
   fixed_tp: 2.14           # only used when tp_mode == Fixed
 
@@ -77,11 +83,14 @@ profile:
   reversal_target: 5.0       # fixed TP distance for reversal leg
   apply_be_to_reversal: true
 
-  # Filters unused by this profile (kept for completeness / Custom experiments)
+  # Max OR width filter — ADOPTED for tail control under realistic fills. The realistic worst
+  # days are whipsaws on WIDE-OR days (risk $12-17) where the primary AND 2x reversal both take
+  # real close-based losses. Skipping OR width > $8 cuts the worst day (train -24->-17, holdout
+  # -22->-16) with net flat-to-up (train +61%). See docs/BE_STOP_ANALYSIS.md §9.
   min_or_width_enabled: false
   min_or_width: 2.50
-  max_or_width_enabled: false
-  max_or_width: 20.0
+  max_or_width_enabled: true
+  max_or_width: 8.0
   use_vwap_filter: false
 
   # Trade side
@@ -126,11 +135,11 @@ enhancements:
   #    stop until price retraces to the BE trigger — so on trend days it holds to EOD and gives
   #    back the whole fade from the peak (~$3-6.5/unit). This trails the runner `or_mult` * OR
   #    width below the running peak, engaging immediately after the partial, to bank more of it.
-  # ADOPTED: 1.0xOR trail validated train(2024-25)+holdout(2026) — banks more of the runner's
-  # peak (winners reached ~$9/unit but only captured ~$5). +net, +win rate, worst day unchanged.
+  # Runner peak-trail. Re-tuned under realistic exit_on_close: 0.75xOR wins both train+holdout
+  # (optimistic-fill tuning liked 1.0). Banks more of the runner's peak after the partial.
   runner_trail:
     enabled: true
-    or_mult: 1.0    # runner exits when price retraces this * OR width from its post-partial peak
+    or_mult: 0.75   # runner exits when price retraces this * OR width from its post-partial peak
 
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
   #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the

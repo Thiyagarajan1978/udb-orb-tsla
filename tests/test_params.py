@@ -34,7 +34,7 @@ def test_default_profile_uses_tuned_be_055():
     p = Params.from_config(base_config())
     _assert_common_profile(p)
     assert p.be_retrace_trigger == 0.55             # adopted tuned default
-    assert p.adaptive_tp_scale == 1.25              # adopted tuned default
+    assert p.adaptive_tp_scale == 1.0               # re-tuned under realistic exit_on_close
 
 
 def test_faithful_port_config_preserves_035():

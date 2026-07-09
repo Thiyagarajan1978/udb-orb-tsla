@@ -74,6 +74,8 @@ class Params:
 
     # execution realism: alerts-only -> stop exits fill at the bar close, not the stop level
     exit_on_close: bool = False
+    # hybrid: a resting protective stop at the OR boundary fills intrabar (caps crash bars)
+    protective_stop: bool = False
 
     @property
     def use_adaptive_tp(self) -> bool:
@@ -126,4 +128,5 @@ class Params:
             use_vwap_filter=bool(p["use_vwap_filter"]),
             trade_side_mode=str(p["trade_side_mode"]),
             exit_on_close=bool(cfg.get("execution", {}).get("exit_on_close", False)),
+            protective_stop=bool(cfg.get("execution", {}).get("protective_stop", False)),
         )

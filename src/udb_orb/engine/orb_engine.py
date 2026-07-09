@@ -525,9 +525,18 @@ class OrbEngine:
                 if st.trail_active and vw is not None and c <= vw:
                     long_vwap_cross = True
 
-        # alerts-only fill model: stop exits trigger on the bar CLOSE and fill at the close
-        sl_hit = (c <= st.stop) if p.exit_on_close else (l <= st.stop)
-        sl_fill = c if p.exit_on_close else st.stop
+        # alerts-only fill model: stop exits trigger on the bar CLOSE and fill at the close.
+        # Hybrid: a resting protective stop at the OR boundary (init_stop) fills intrabar first,
+        # capping a crash bar at the base-SL risk instead of the (much lower) close.
+        if p.exit_on_close and p.protective_stop and st.init_stop is not None and l <= st.init_stop:
+            sl_hit = True
+            sl_fill = st.init_stop
+        elif p.exit_on_close:
+            sl_hit = c <= st.stop
+            sl_fill = c
+        else:
+            sl_hit = l <= st.stop
+            sl_fill = st.stop
         tp_hit = st.tp is not None and h >= st.tp
         anach = p.be_retrace_use_close and be_fired_now and (l <= sl_at_bar_start)
 
@@ -586,8 +595,16 @@ class OrbEngine:
                 if st.trail_active and vw is not None and c >= vw:
                     short_vwap_cross = True
 
-        sl_hit = (c >= st.stop) if p.exit_on_close else (h >= st.stop)
-        sl_fill = c if p.exit_on_close else st.stop
+        # hybrid: resting protective stop at the OR boundary fills intrabar first (caps crashes)
+        if p.exit_on_close and p.protective_stop and st.init_stop is not None and h >= st.init_stop:
+            sl_hit = True
+            sl_fill = st.init_stop
+        elif p.exit_on_close:
+            sl_hit = c >= st.stop
+            sl_fill = c
+        else:
+            sl_hit = h >= st.stop
+            sl_fill = st.stop
         tp_hit = st.tp is not None and l <= st.tp
         anach = p.be_retrace_use_close and be_fired_now and (h >= sl_at_bar_start)
 

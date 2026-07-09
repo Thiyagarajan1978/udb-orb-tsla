@@ -27,11 +27,12 @@ top of the port (all cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_
 1. **BE trigger 0.55** (port was 0.35) — cuts premature BE-Stop failures.
 2. **`reversal_capture` ON** (`trigger_on_be_stop` + `trail_to_eod`) — captures false-breakout
    reversal days in full.
-3. **`adaptive_tp_scale` 1.25** (port was 1.0) — wider primary TP lets winners run (more net,
-   slightly lower win rate).
-4. **`runner_trail` ON @ 1.0×OR** — after the 25% partial, the remaining 75% trails 1×OR width
-   below its peak (it previously had no trail until a BE retrace, so trend days gave the whole
-   fade back). Banks more of the runner's peak; +net, +win rate, worst day unchanged.
+3. **`adaptive_tp_scale` 1.0** — re-tuned under realistic fills (optimistic tuning liked 1.25,
+   but a wider TP just rides more trades into a real BE-stop loss). Equals the Pine port value.
+4. **`runner_trail` ON @ 0.75×OR** — after the 25% partial, the runner trails 0.75×OR below its
+   peak (it previously had no trail until a BE retrace). Re-tuned from 1.0 under realism.
+5. **`max_or_width` ≤ $8** — skips wide-OR whipsaw days (the realistic tail driver: primary +
+   2× reversal both take real close losses). Cuts worst day (−22→−16) with net flat-to-up.
 
 Built but **NOT adopted** (default OFF, opt-in): `reenter_after_whipsaw` (marginal/regime-dependent
 OOS) and `pdh_pdl_filter` (require close beyond prior-day high/low when it's near the break level —

@@ -203,3 +203,34 @@ stop order at the BE level (broker OCO) instead of a manual close-alert exit rec
 gap and caps the tail — that is now the single highest-value improvement, and it lives in *how you
 execute*, not in the signal. All prior tunings were validated under the optimistic model and should
 be re-checked under `exit_on_close` if you trade purely on close alerts.
+
+## 9. Re-tune under realistic fills + tail control (a + b)
+
+**(a) Re-tuned under `exit_on_close` (train + holdout):**
+- BE OFF *loses* money on train (−$33) — BE is essential under realistic fills.
+- `adaptive_tp_scale` 1.25 → **1.0** (wider TP rides more trades into a real BE loss; 1.0 wins both).
+- `runner_trail` 1.0 → **0.75×OR** (wins both).
+- BE trigger 0.55 kept. Net effect (holdout 6-month): +$214 → **+$241**, train +$64 → +$99.
+
+**(b) Protective stop — TESTED, LEFT OFF.** A resting stop at the OR boundary does **not** cap the
+tail: the realistic worst days are whipsaws on *wide-OR* days where the loss **closes within the OR
+range** (above the boundary), so the boundary stop never fires (and can worsen a wick-and-recover
+bar). Worst day unchanged (−22.1), train net slightly worse. Kept as an opt-in
+(`execution.protective_stop`), default OFF.
+
+**The real tail driver + fix.** The 4 worst days are all: wide OR (risk $12–17) → primary BE-stops
+big → the **2× reversal** BE-stops big in the other direction → −$16 to −$22 day. Dropping the
+reversal halves the tail but costs $91 on holdout (too valuable). **Capping OR width at $8** is the
+fix — skips the widest whipsaw days:
+
+| | Train net | Holdout net | Train worst | Holdout worst |
+|--|----------:|------------:|------------:|--------------:|
+| re-tuned baseline | +$99 | +$241 | −$24.3 | −$22.1 |
+| **+ max OR ≤ $8 (adopted)** | **+$159** | +$238 | **−$17.3** | **−$16.5** |
+
+Train net +61%, holdout flat, worst day better on both — same return, lower risk.
+
+### Final realistic 6-month 2026 (all adopted, exit_on_close)
+BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
+**150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic
++$214 / PF 1.67 / −$22.06). Reproduce optimistic Pine numbers with `config/faithful_be035.yaml`.

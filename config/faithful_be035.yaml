@@ -16,6 +16,7 @@ timezone: America/New_York
 # reproduce the Pine numbers; config/config.yaml uses the realistic close-based fill.
 execution:
   exit_on_close: false
+  protective_stop: false
 
 session:
   # Regular trading hours (ET). The opening range is the first bar (09:30-09:35).
