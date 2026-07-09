@@ -24,6 +24,7 @@ def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scal
     # geometry tests are enhancement-independent unless a test opts in
     enh.setdefault("reversal_capture", {})["enabled"] = False
     enh.setdefault("runner_trail", {})["enabled"] = False
+    enh.setdefault("volatility_regime", {})["enabled"] = False
     if enh_overrides:
         for k, v in enh_overrides.items():
             enh.setdefault(k, {}).update(v)
@@ -221,6 +222,30 @@ def test_runner_trail_banks_the_peak():
     off = _run({"2024-06-03": rows})                  # runner_trail off -> rides to EOD
     assert off.trades[0].reason == "EOD"
     assert on.trades[0].pnl_total > off.trades[0].pnl_total
+
+
+def test_volatility_regime_skips_high_vol_days():
+    """A day is skipped entirely when prior realised volatility exceeds the threshold."""
+    # 25 prior days of wildly alternating closes -> very high realised vol, then a breakout day
+    prior = {}
+    for i in range(25):
+        day = f"2024-05-{i+1:02d}"
+        c = 100.0 if i % 2 == 0 else 130.0          # ~26% daily swings -> huge rvol
+        prior[day] = [(9, 30, c, c + 1, c - 1, c, 1000), (15, 50, c, c + 1, c - 1, c, 1000)]
+    breakout = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),    # would enter long
+        (15, 50, 101.5, 102.0, 101.0, 101.8, 1000),
+    ]
+    rows = {**prior, "2024-06-03": breakout}
+
+    off = _run(rows)
+    on = _run(rows, enh_overrides={"volatility_regime": {"enabled": True, "lookback": 20,
+                                                          "max_rvol_pct": 4.92}})
+    assert any(t.day == "2024-06-03" for t in off.trades)        # traded normally
+    assert not any(t.day == "2024-06-03" for t in on.trades)     # skipped by vol regime
+    skipped = [d for d in on.days if d.date == "2024-06-03"]
+    assert skipped[0].no_trade_reason == "Vol Regime Skip"
 
 
 def test_no_trade_day_reason_no_setup():

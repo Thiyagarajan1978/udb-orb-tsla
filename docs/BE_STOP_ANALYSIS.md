@@ -293,6 +293,54 @@ value-destroying — left OFF** (opt-in via `execution.daily_loss_limit`).
 **Conclusion: −$9.68 is the right worst-day floor.** The reversal risk-parity cap (§10) was the
 real fix; the breaker adds nothing on top of it.
 
+## 12. Regime: this is a LOW-VOLATILITY breakout system (volatility gate ADOPTED)
+
+Full-year data (after fixing a DB gap — 2025 only had ~60 days stored) showed the edge is heavily
+regime-dependent:
+
+| Year | Trades | Net | PF | Expectancy/trade |
+|------|-------:|----:|---:|-----------------:|
+| 2024 | 315 | +$33.89 | **1.07** | $0.11 |
+| 2025 | 288 | +$85.79 | 1.16 | $0.30 |
+| 2026 H1 | 150 | +$196.23 | 1.81 | $1.31 |
+
+2026 earns **12× more per trade** than 2024. So what differs? Building daily features that use
+ONLY pre-entry information (prior sessions + the 09:30 OR bar) and correlating with day P&L:
+
+- The only strong correlates are **post-hoc**: `efficiency` (trend-day-ness, +0.43) and
+  `day_range_pct` (+0.40). Both are known only at the close — useless as a filter.
+- **Every pre-entry feature has |corr| ≤ 0.06** (OR/ATR, gap, prior trend, OR volume). Linearly,
+  nothing predicts the day.
+
+But the relationship is a **step function**, not linear. Prior-20-day realised volatility, by quintile:
+
+| rvol20 quintile | days | mean day P&L |
+|-----------------|-----:|-------------:|
+| Q1 (lowest vol) | 113 | +0.891 |
+| Q2 | 112 | +0.728 |
+| Q3 | 112 | +0.753 |
+| Q4 | 112 | +0.742 |
+| **Q5 (highest vol)** | 112 | **−0.156** |
+
+Q1–Q4 are uniformly profitable; **only the top vol quintile loses money.**
+
+**Causal mechanism:** with close-based BE stops (§8), a high-volatility bar closes further past the
+stop, so the BE-stop cost scales directly with volatility. High vol doesn't break the signal — it
+inflates the cost of being wrong.
+
+**The filter.** Skip the day when prior-20d realised daily vol > threshold. Threshold = 80th
+percentile of **2024–25 only** (4.92%); 2026 is out-of-sample.
+
+| Year | Before | After | Days skipped |
+|------|-------:|------:|-------------:|
+| 2024 | +$33.89 (PF 1.07) | **+$65.67 (PF 1.19)** | 64 |
+| 2025 | +$85.79 (PF 1.16) | +$82.71 (PF 1.19) | 66 |
+| **2026 (OOS)** | +$196.23 (PF 1.81) | **+$196.23 (PF 1.81)** | **8** |
+
+2026 has almost **no** high-vol days — that is *why* it outperformed. The gate rescues the worst
+year (+94% net, PF 1.07→1.19), costs $3 in 2025, and **cannot touch 2026**. Every year now clears
+PF ≥ 1.19; the razor-thin 1.07 is gone. Adopted as `enhancements.volatility_regime`.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic

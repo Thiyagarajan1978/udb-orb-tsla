@@ -113,6 +113,7 @@ class _DayState:
         self.or_low: Optional[float] = None
         self.or_width: Optional[float] = None
         self.skipped_by_regime = False
+        self.skipped_by_vol = False
 
         # active trade
         self.active = False
@@ -266,6 +267,15 @@ class OrbEngine:
             return float(self._rev_cfg["target_or_mult"]) * or_size
         return self.p.reversal_target
 
+    def _vol_regime_skip(self, rvol: Optional[float]) -> bool:
+        """Skip the whole day when prior realised volatility exceeds the threshold."""
+        cfg = self.enh.get("volatility_regime", {})
+        if not cfg.get("enabled", False):
+            return False
+        if rvol is None or pd.isna(rvol):
+            return False   # not enough history -> don't block
+        return float(rvol) > float(cfg.get("max_rvol_pct", 4.92))
+
     def _regime_skip(self, or_width: float) -> bool:
         cfg = self.enh.get("or_width_regime", {})
         if not cfg.get("enabled", False):
@@ -287,9 +297,16 @@ class OrbEngine:
         rvol = indicators.relative_volume(df, int(self.enh.get("rvol_filter", {}).get("lookback_bars", 20)))
 
         # Prior-day high/low (PDH/PDL) per date, from the RTH session data itself.
-        _daily = df.groupby(df.index.date).agg(hi=("high", "max"), lo=("low", "min"))
+        _daily = df.groupby(df.index.date).agg(hi=("high", "max"), lo=("low", "min"),
+                                               cl=("close", "last"))
         pdh_map = _daily["hi"].shift(1).to_dict()
         pdl_map = _daily["lo"].shift(1).to_dict()
+
+        # Prior-N-day realised daily volatility (%) — known at the open, so usable pre-entry.
+        _vcfg = self.enh.get("volatility_regime", {})
+        _lb = int(_vcfg.get("lookback", 20))
+        _rvol = (_daily["cl"].pct_change().rolling(_lb).std() * 100.0).shift(1)
+        rvol_map = _rvol.to_dict()
 
         st = _DayState()
         cur_date = None
@@ -307,10 +324,12 @@ class OrbEngine:
             d = ts.date()
             if cur_date is None:
                 cur_date = d
+                st.skipped_by_vol = self._vol_regime_skip(rvol_map.get(d))
             elif d != cur_date:
                 self._finalize_day(cur_date, st)
                 st = _DayState()
                 cur_date = d
+                st.skipped_by_vol = self._vol_regime_skip(rvol_map.get(d))
 
             t = ts.time()
 
@@ -371,7 +390,8 @@ class OrbEngine:
 
             entry_ok_common = (
                 p and st.has_or and st.or_high is not None and t > p.market_open
-                and not st.skipped_by_regime and self._time_window_ok(ts) and breaker_ok
+                and not st.skipped_by_regime and not st.skipped_by_vol
+                and self._time_window_ok(ts) and breaker_ok
             )
 
             # filter gates for entry direction
@@ -787,6 +807,8 @@ class OrbEngine:
         self.result.days.append(rec)
 
     def _no_trade_reason(self, st: _DayState) -> str:
+        if st.skipped_by_vol:
+            return "Vol Regime Skip"
         if not st.has_or:
             return "Open Range Missing"
         if st.skipped_by_regime:

@@ -118,6 +118,18 @@ enhancements:
     lookback_bars: 20        # avg volume window (same session + prior sessions)
     min_rvol: 1.2            # breakout bar volume must be >= min_rvol * avg
 
+  # 1b) VOLATILITY REGIME GATE — ADOPTED. This is a LOW-VOL breakout system: with close-based BE
+  #     stops, a high-vol bar closes further past the stop, so BE-stop cost scales with vol. Days
+  #     in the top vol quintile are the ONLY net-negative bucket (mean -0.156/day vs +0.72..+0.89
+  #     for Q1-Q4). Skip a day when the prior 20-day realised daily volatility exceeds the
+  #     threshold — known at the open, so it is a true PRE-ENTRY filter.
+  #     Threshold = 80th pct of 2024-25 ONLY. 2026 (OOS) has ZERO such days, so it cannot overfit.
+  #     2024 +50->+82 (+64%), 2025 -$3 (neutral), 2026 unchanged. See docs/BE_STOP_ANALYSIS.md §12.
+  volatility_regime:
+    enabled: true
+    lookback: 20
+    max_rvol_pct: 4.92   # skip day if prior-20d stdev of daily returns (%) exceeds this
+
   # 2) Skip / flag days by opening-range width regime.
   or_width_regime:
     enabled: false

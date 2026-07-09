@@ -33,6 +33,10 @@ top of the port (all cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_
    peak (it previously had no trail until a BE retrace). Re-tuned from 1.0 under realism.
 5. **`max_or_width` ≤ $8** — skips wide-OR whipsaw days (the realistic tail driver: primary +
    2× reversal both take real close losses). Cuts worst day (−22→−16) with net flat-to-up.
+0. **`volatility_regime` ON (rvol20 ≤ 4.92%)** — this is a **low-vol breakout system**. With
+   close-based BE stops, a high-vol bar closes further past the stop, so BE-stop cost scales with
+   volatility. The top vol quintile is the only net-negative bucket. Skipping it rescues 2024
+   (PF 1.07→1.19) and cannot touch 2026 (no high-vol days there). Threshold set on 2024-25 only.
 6. **`reversal_risk_cap` $6 (scale)** — RISK PARITY. The reversal enters after price crossed the
    whole OR, so its stop is far away; at 2× size it carried 1.6× the primary's risk ($10.03 vs
    $6.16) and caused **68% of worst-day damage**. Scaling its qty to equal dollar risk cuts the

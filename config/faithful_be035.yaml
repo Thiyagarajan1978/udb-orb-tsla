@@ -90,6 +90,11 @@ enhancements:
     lookback_bars: 20        # avg volume window (same session + prior sessions)
     min_rvol: 1.2            # breakout bar volume must be >= min_rvol * avg
 
+  volatility_regime:
+    enabled: false
+    lookback: 20
+    max_rvol_pct: 4.92
+
   # 2) Skip / flag days by opening-range width regime.
   or_width_regime:
     enabled: false
