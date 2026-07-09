@@ -1,13 +1,34 @@
-# Pine port — `UDB_ORB_TSLA_v2.pine`
+# Pine port — two scripts
 
-TradingView indicator that mirrors the Python engine's **current default config**
-(`config/config.yaml`). Use it to paper-trade / eyeball-validate the tuned logic on TSLA 5m.
+Both mirror the Python engine's **current default config** (`config/config.yaml`) on TSLA 5m.
+
+| File | Type | Use it for |
+|------|------|-----------|
+| `UDB_ORB_TSLA_v2_strategy.pine` | `strategy()` | **Strategy Tester** → List of Trades + Performance Summary |
+| `UDB_ORB_TSLA_v2.pine` | `indicator()` | Chart + alerts for paper trading, custom summary table |
 
 ## Install
-1. TradingView → **Pine Editor** → paste `UDB_ORB_TSLA_v2.pine` → **Add to chart**.
+1. TradingView → **Pine Editor** → paste the file → **Add to chart**.
 2. Chart must be **TSLA, 5-minute, Regular Trading Hours**.
-3. The **Summary Table** (top-right) reports trades, win rate, net P&L, PF, and worst day —
-   the same definitions the Python engine uses (**a BE Stop counts as a failure**).
+3. Strategy version: open the **Strategy Tester** tab for the trade list.
+   Indicator version: the **Summary Table** (top-right) reports trades, win rate, net P&L, PF and
+   worst day — the same definitions the Python engine uses (**a BE Stop counts as a failure**).
+
+## Why the strategy never uses `strategy.exit(stop=...)`
+A resting stop order fills **intrabar at the stop price** — that is the optimistic fantasy the
+original v12.4.3 script assumed, and it inflated the 6-month P&L from **+$214 to +$522**. This is
+an alerts-only system: the signal fires on the 5-minute **bar close**. So every stop-type exit is a
+**market order** and, with `process_orders_on_close=true`, fills at **that bar's close**.
+
+| Event | Order type | Fills at |
+|-------|-----------|----------|
+| Entry / reversal entry | market | signal bar's **close** |
+| 25% partial at TP | **limit** | the **TP level** |
+| BE Stop / BE Trail / Base SL / runner-trail / EOD | market | that bar's **close** |
+
+Strategy Tester will show slightly **more** than Python, because Python charges $0.02/unit slippage
+on every exit leg and the strategy sets `slippage=0`. Set `slippage` to **2 ticks** to compare like
+for like (TradingView charges it on entries *and* exits, so it will be marginally harsher).
 
 ## Alerts (for paper trading)
 Right-click chart → **Add Alert** → Condition: this indicator → **"Any alert() function call"**.
