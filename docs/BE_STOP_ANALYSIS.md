@@ -147,3 +147,34 @@ and worse at wider bands. No setting improved results.
 trigger enough on TSLA to matter and can't catch these failures (the entry isn't near PDH/PDL).
 Kept as an opt-in (default OFF) — prior-day levels are meaningful S/R generally and may help on
 other instruments/regimes. Not adopted.
+
+## 7. Better TP process: runner peak-trail — ADOPTED
+
+Diagnosing the *exit* side (6-month, per-unit): the winners reach a big peak but capture little.
+
+| Exit | n | Realized/unit | Peak (MFE)/unit | Give-back |
+|------|---:|-------------:|----------------:|----------:|
+| EOD | 72 | $5.49 | $8.90 | **$3.41** |
+| VWAP Cross | 18 | $2.41 | $8.94 | **$6.53** |
+| BE Stop | 58 | $0.00 | $2.67 | (correct — reversed hard, EOD would be −$4.86) |
+
+Root cause: the BE-trail only engages **after** price retraces to the BE trigger. On strong trend
+days price never retraces that far, so the post-partial runner has **no trailing stop at all** — it
+holds to EOD (or a VWAP cross), giving back the whole fade from the peak (~$540/unit total left).
+
+Fix (`enhancements.runner_trail`): after the 25% partial, trail the 75% runner `or_mult × OR width`
+below its running peak, engaging immediately. Swept train + holdout:
+
+| Trail width | Train net | Holdout net |
+|------------:|----------:|------------:|
+| baseline (VWAP/EOD) | +$767 | +$510.5 |
+| 0.75×OR | +$784 | +$490 (worse) |
+| **1.0×OR (adopted)** | **+$795** | **+$522.6** |
+| 1.25×OR | +$781 | +$516 |
+
+1.0×OR adds +$28 train / +$12 holdout, lifts win rate and avg win, worst day unchanged. Tighter
+trails overfit (help train, hurt holdout — shaken out of volatile trends). **Adopted @ 1.0×OR.**
+
+### 6-month 2026 with ALL adopted tunings (BE 0.55 + reversal capture + tp_scale 1.25 + runner_trail 1.0×OR)
+157 trades · 53.5% WR · **net +$522.56** (vs faithful port +$450.01, +16%). EOD exits 72 → 66 as
+the runner banks its peak earlier.

@@ -108,6 +108,10 @@ enhancements:
     enabled: false
     proximity_pct: 14.0
 
+  runner_trail:
+    enabled: false
+    or_mult: 0.75
+
 # ---- Data / storage ------------------------------------------------
 data:
   provider: fmp              # fmp | local_parquet

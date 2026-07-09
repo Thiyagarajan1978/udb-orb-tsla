@@ -88,7 +88,7 @@ def summarize(result: Result) -> Summary:
         elif "BE Trail" in r:
             s.be_trail_exits += 1
             s.be_saves += 1
-        elif "VWAP" in r:
+        elif "VWAP" in r or "Trail" in r:   # runner exits (VWAP cross or peak-trail)
             s.vwap_trail_exits += 1
         elif "EOD" in r:
             s.eod_exits += 1

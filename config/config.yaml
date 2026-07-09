@@ -113,6 +113,16 @@ enhancements:
     reenter_after_whipsaw: false  # after BOTH primary AND reversal stop out (a whipsaw day),
                                 # re-enter ONCE in the ORIGINAL direction on a fresh raw OR break
 
+  # 6) Runner peak-trail. After the 25% partial, the remaining 75% currently has NO trailing
+  #    stop until price retraces to the BE trigger — so on trend days it holds to EOD and gives
+  #    back the whole fade from the peak (~$3-6.5/unit). This trails the runner `or_mult` * OR
+  #    width below the running peak, engaging immediately after the partial, to bank more of it.
+  # ADOPTED: 1.0xOR trail validated train(2024-25)+holdout(2026) — banks more of the runner's
+  # peak (winners reached ~$9/unit but only captured ~$5). +net, +win rate, worst day unchanged.
+  runner_trail:
+    enabled: true
+    or_mult: 1.0    # runner exits when price retraces this * OR width from its post-partial peak
+
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
   #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the
   #    breakout level (within proximity_pct of the OR width), require the bar to CLOSE BEYOND

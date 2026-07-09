@@ -14,6 +14,7 @@ def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scal
     enh = cfg.get("enhancements", {})
     # geometry tests are enhancement-independent unless a test opts in
     enh.setdefault("reversal_capture", {})["enabled"] = False
+    enh.setdefault("runner_trail", {})["enabled"] = False
     if enh_overrides:
         for k, v in enh_overrides.items():
             enh.setdefault(k, {}).update(v)
@@ -158,6 +159,27 @@ def test_pdh_pdl_filter_requires_close_beyond_level():
     day_trades_on = [t for t in on.trades if t.day == "2024-06-03"]
     assert abs(day_trades_off[0].entry_price - 101.25) < 1e-9   # entered on the buffer break
     assert abs(day_trades_on[0].entry_price - 101.5) < 1e-9     # waited for close above PDH 101.3
+
+
+def test_runner_trail_banks_the_peak():
+    """After the partial, the runner exits on a 1xOR retrace from its peak (not held to EOD)."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),        # OR width 2 -> trail dist 2.0, TP 103.64
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),       # long @101.5
+        (9, 40, 101.5, 103.7, 101.4, 103.5, 1000),     # TP -> 25% partial; peak so far 103.7
+        (9, 45, 103.5, 106.0, 103.0, 105.5, 1000),     # runs to 106 (peak); trail = 106-2 = 104
+        (9, 50, 105.5, 105.6, 103.5, 103.8, 1000),     # low 103.5 <= 104 -> runner trail exits @104
+        (15, 50, 103.8, 104.0, 103.0, 103.5, 1000),    # (would-be EOD, lower)
+    ]
+    on = _run({"2024-06-03": rows},
+              enh_overrides={"runner_trail": {"enabled": True, "or_mult": 1.0}})
+    t = on.trades[0]
+    assert t.reason == "Trail"
+    assert abs(t.exit_price - 104.0) < 1e-9            # exited at peak(106) - 1xOR(2)
+    # the trail beat holding the runner to EOD (103.5)
+    off = _run({"2024-06-03": rows})                  # runner_trail off -> rides to EOD
+    assert off.trades[0].reason == "EOD"
+    assert on.trades[0].pnl_total > off.trades[0].pnl_total
 
 
 def test_no_trade_day_reason_no_setup():

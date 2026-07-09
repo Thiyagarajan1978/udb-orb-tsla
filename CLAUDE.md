@@ -18,6 +18,9 @@ top of the port (all cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_
    reversal days in full.
 3. **`adaptive_tp_scale` 1.25** (port was 1.0) — wider primary TP lets winners run (more net,
    slightly lower win rate).
+4. **`runner_trail` ON @ 1.0×OR** — after the 25% partial, the remaining 75% trails 1×OR width
+   below its peak (it previously had no trail until a BE retrace, so trend days gave the whole
+   fade back). Banks more of the runner's peak; +net, +win rate, worst day unchanged.
 
 Built but **NOT adopted** (default OFF, opt-in): `reenter_after_whipsaw` (marginal/regime-dependent
 OOS) and `pdh_pdl_filter` (require close beyond prior-day high/low when it's near the break level —

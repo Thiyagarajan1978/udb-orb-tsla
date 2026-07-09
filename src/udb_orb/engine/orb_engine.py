@@ -32,6 +32,7 @@ EV_PARTIAL_EXIT = "partial_exit"
 EV_BE_TRAIL_EXIT = "be_trail_exit"
 EV_BE_STOP_EXIT = "be_stop_exit"
 EV_VWAP_CROSS_EXIT = "vwap_cross_exit"
+EV_TRAIL_EXIT = "runner_trail_exit"
 EV_BASE_SL_EXIT = "base_sl_exit"
 EV_EOD_EXIT = "eod_exit"
 
@@ -133,6 +134,7 @@ class _DayState:
         self.trail_active = False
         self.part1_pnl = 0.0
         self.suppress_partial = False   # reversal trail_to_eod: no partial, ride full move
+        self.runner_peak: Optional[float] = None   # peak favorable price after the partial
 
         # reversal state machine
         self.prim_dir = 0
@@ -213,6 +215,15 @@ class OrbEngine:
     @property
     def _pdhpdl_on(self) -> bool:
         return bool(self._pdhpdl_cfg.get("enabled", False))
+
+    # ---- runner peak-trail (default OFF) -------------------------------
+    @property
+    def _runner_trail_on(self) -> bool:
+        return bool(self.enh.get("runner_trail", {}).get("enabled", False))
+
+    def _runner_trail_dist(self, st: _DayState) -> float:
+        mult = float(self.enh.get("runner_trail", {}).get("or_mult", 0.75))
+        return mult * (st.or_width or 0.0)
 
     def _effective_triggers(self, st: _DayState, long_brk, short_brk, pdh, pdl):
         """When PDH/PDL sits within proximity_pct of the OR width of the break level, raise the
@@ -457,6 +468,7 @@ class OrbEngine:
         st.eff_qty = st.qty_total
         st.trail_active = False
         st.part1_pnl = 0.0
+        st.runner_peak = None
         # reversal 'trail_to_eod' rides the full move: no partial scale-out
         st.suppress_partial = bool(reversal and self._rev_on and self._rev_cfg.get("trail_to_eod", False))
         if st.entry_ts_day is None:
@@ -494,13 +506,23 @@ class OrbEngine:
         if apply_be and st.be_triggered and p.be_trail_amount > 0:
             st.stop = max(st.stop, h - p.be_trail_amount)
 
-        # Step 3: partial VWAP trail arm/check
+        # Step 3: runner exit for the post-partial remainder — either a peak-trail (when
+        # runner_trail is on) or the default VWAP cross.
         long_vwap_cross = False
+        long_runner_trail = False
+        runner_trail_px = None
         if p.use_partial_exit and st.part1_closed:
-            if (c - st.entry_price) >= p.partial_activation:
-                st.trail_active = True
-            if st.trail_active and vw is not None and c <= vw:
-                long_vwap_cross = True
+            if self._runner_trail_on:
+                st.runner_peak = h if st.runner_peak is None else max(st.runner_peak, h)
+                trail_level = st.runner_peak - self._runner_trail_dist(st)
+                if l <= trail_level:
+                    long_runner_trail = True
+                    runner_trail_px = trail_level
+            else:
+                if (c - st.entry_price) >= p.partial_activation:
+                    st.trail_active = True
+                if st.trail_active and vw is not None and c <= vw:
+                    long_vwap_cross = True
 
         sl_hit = l <= st.stop
         tp_hit = st.tp is not None and h >= st.tp
@@ -522,6 +544,8 @@ class OrbEngine:
                 self._partial(st, ts, long=True)
             else:
                 self._close_leg(st, ts, bar_i, st.tp, "TP", long=True)
+        elif long_runner_trail:
+            self._close_leg(st, ts, bar_i, runner_trail_px, "Trail", long=True)
         elif long_vwap_cross:
             self._close_leg(st, ts, bar_i, c, "VWAP Cross", long=True)
 
@@ -544,11 +568,20 @@ class OrbEngine:
             st.stop = min(st.stop, l + p.be_trail_amount)
 
         short_vwap_cross = False
+        short_runner_trail = False
+        runner_trail_px = None
         if p.use_partial_exit and st.part1_closed:
-            if (st.entry_price - c) >= p.partial_activation:
-                st.trail_active = True
-            if st.trail_active and vw is not None and c >= vw:
-                short_vwap_cross = True
+            if self._runner_trail_on:
+                st.runner_peak = l if st.runner_peak is None else min(st.runner_peak, l)
+                trail_level = st.runner_peak + self._runner_trail_dist(st)
+                if h >= trail_level:
+                    short_runner_trail = True
+                    runner_trail_px = trail_level
+            else:
+                if (st.entry_price - c) >= p.partial_activation:
+                    st.trail_active = True
+                if st.trail_active and vw is not None and c >= vw:
+                    short_vwap_cross = True
 
         sl_hit = h >= st.stop
         tp_hit = st.tp is not None and l <= st.tp
@@ -569,6 +602,8 @@ class OrbEngine:
                 self._partial(st, ts, long=False)
             else:
                 self._close_leg(st, ts, bar_i, st.tp, "TP", long=False)
+        elif short_runner_trail:
+            self._close_leg(st, ts, bar_i, runner_trail_px, "Trail", long=False)
         elif short_vwap_cross:
             self._close_leg(st, ts, bar_i, c, "VWAP Cross", long=False)
 
@@ -613,6 +648,7 @@ class OrbEngine:
         ev_type = {
             "TP": EV_TP_FULL, "BE Trail": EV_BE_TRAIL_EXIT, "BE Stop": EV_BE_STOP_EXIT,
             "Base SL": EV_BASE_SL_EXIT, "VWAP Cross": EV_VWAP_CROSS_EXIT, "EOD": EV_EOD_EXIT,
+            "Trail": EV_TRAIL_EXIT,
         }[reason]
         self.result.events.append(Event(ts, ev_type, dir_label, exit_px, st.eff_qty, pnl_total, reason_out))
 
