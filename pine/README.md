@@ -48,13 +48,29 @@ Toggle `exit_on_close` **off** in the inputs to see the old, optimistic numbers 
 
 ## Expected results (Python, 1 unit, realistic fills, $0.02 slippage)
 
-| Year | Trades | WR | Net | PF | Worst day |
-|---|---:|---:|---:|---:|---:|
-| 2024 | 253 | 45.1% | +$65.67 | 1.19 | −$9.72 |
-| 2025 | 236 | 47.5% | +$82.71 | 1.19 | −$13.12 |
-| 2026 H1 | 150 | 50.7% | +$196.23 | 1.81 | −$9.68 |
+| Year | Trades | WR | Net | PF | Worst day | Reversals |
+|---|---:|---:|---:|---:|---:|---:|
+| 2024 | 253 | 45.1% | +$65.67 | 1.19 | −$9.72 | 65 |
+| 2025 | 236 | 47.5% | +$82.71 | 1.19 | −$13.12 | 52 |
+| 2026 H1 | 152 | 50.7% | +$192.31 | 1.78 | −$9.68 | 30 |
 
 **Size off 2024, not 2026.** 2026 was the friendly regime.
+
+## Set your buffer to 10%
+If your chart plots a **Long Trigger of 396.19** on 2026-07-09, your buffer is **14%**, not 10%
+(10% gives 396.01). 14% was swept across all three years and rejected — the curve is noise, the
+worst day is identical at every buffer, and 14%'s only edge comes from the friendly 2026 regime
+(it is *worse* in 2024). Nothing will reconcile against the Python engine unless both use 10%.
+
+## Reading the reversal (why 2026-07-09 didn't fire)
+The reversal is **always the opposite direction of the primary**, and the primary stopping only
+**arms** it — it fires only when price **closes beyond the raw opposite OR boundary**. That level
+is now plotted as **purple circles** whenever a reversal is armed, and the stop label prints
+`REV armed: need close < 390.86`.
+
+On 2026-07-09 the primary was **long**, so the reversal could only be a **short** needing a close
+below 390.86. The lowest close after the stop was 392.98, and the day rallied to 406.55. Forcing
+that short at its best available price would have **lost −$3.12**. Not firing was correct.
 
 ## Known sources of small divergence
 These are expected; they should shift totals modestly, not change the character.

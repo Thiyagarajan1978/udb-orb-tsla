@@ -36,14 +36,29 @@ indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UD
 //
 //  PYTHON-VALIDATED RESULTS (TSLA 5m, realistic fills, 1 unit, slippage $0.02)
 //  --------------------------------------------------------------------------
-//     Year      Trades   WR      Net        PF     Worst day
-//     2024       253    45.1%   +  $65.67   1.19   -$9.72
-//     2025       236    47.5%   +  $82.71   1.19   -$13.12
-//     2026 H1    150    50.7%   + $196.23   1.81   -$9.68
+//     Year        Trades   WR      Net        PF     Worst day   Reversals
+//     2024         253    45.1%   +  $65.67   1.19   -$9.72         65
+//     2025         236    47.5%   +  $82.71   1.19   -$13.12        52
+//     2026 (H1)    152    50.7%   + $192.31   1.78   -$9.68         30
 //
 //  NOTE: 2026 was a LOW-VOLATILITY regime — that is WHY it outperformed. Size off 2024.
 //  The original script's advertised +$5,528 was a fill-model artifact; under realistic fills
 //  that same config LOSES money in 2024 (-$70, PF 0.85).
+//
+//  BUFFER = 10%. 14% was swept across all 3 years and rejected: the curve is noise (2024 jumps
+//  ~$10 between adjacent settings), worst day is IDENTICAL at every buffer, and 14%'s only edge
+//  comes from 2026 — the friendly regime. In 2024 (the year you size off) 10% is better.
+//  ==> If your chart shows Long Trigger 396.19 on 2026-07-09, your buffer is 14%. Set it to 10%
+//      (10% gives 396.01) or nothing will reconcile against the Python engine.
+//
+//  READING THE REVERSAL (e.g. 2026-07-09)
+//  --------------------------------------
+//  The reversal is ALWAYS the OPPOSITE direction of the primary, and the primary stopping only
+//  ARMS it — it fires only when price CLOSES beyond the RAW opposite OR boundary. That level is
+//  now plotted (purple circles) whenever a reversal is armed, so you can see exactly what price
+//  had to do. On 2026-07-09 the primary was LONG, so the reversal could only be a SHORT needing
+//  a close < 390.86; the lowest close after the stop was 392.98 and the day rallied to 406.55.
+//  Forcing that short at its best price would have LOST -$3.12. Not firing was correct.
 //
 //  APPLY TO: TSLA, 5-minute chart, Regular Trading Hours.
 //  The table's Net P&L is per 1 unit and should track the Python engine closely. Small
@@ -364,7 +379,8 @@ if active and not na(stop) and bar_index > entryBar
         if not inRev
             primStopped := true
         if showLabels
-            label.new(bar_index, tdir == 1 ? low : high, (inRev ? "REV " : "") + reason + " " + str.tostring(exitPx, format.mintick) + "\n" + (pnlTotal >= 0 ? "+" : "") + str.tostring(pnlTotal, "#.##"), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=isBETrail ? color.rgb(7, 170, 75) : color.orange, textcolor=color.white, size=size.small)
+            revNote = (not inRev and primStopped) ? "\nREV armed: need close " + (tdir == 1 ? "< " + str.tostring(orLow, format.mintick) : "> " + str.tostring(orHigh, format.mintick)) : ""
+            label.new(bar_index, tdir == 1 ? low : high, (inRev ? "REV " : "") + reason + " " + str.tostring(exitPx, format.mintick) + "\n" + (pnlTotal >= 0 ? "+" : "") + str.tostring(pnlTotal, "#.##") + revNote, style=tdir == 1 ? label.style_label_up : label.style_label_down, color=isBETrail ? color.rgb(7, 170, 75) : color.orange, textcolor=color.white, size=size.small)
         active := false
         tdir := 0
         inRev := false
@@ -439,6 +455,10 @@ plot(showLevels and not daySkipped and not na(shortBrk) ? shortBrk : na, "Short 
 plot(active ? stop : na, "Active Stop", color=color.red, linewidth=2, style=plot.style_linebr)
 plot(active and not na(tp) ? tp : na, "Active TP", color=color.lime, linewidth=2, style=plot.style_linebr)
 plot(active and not beTrig and not na(beLevel) ? beLevel : na, "BE Trigger", color=color.new(color.yellow, 0), style=plot.style_circles)
+// Reversal trigger: shown only while a reversal is ARMED (primary stopped, none taken yet).
+// The reversal is the OPPOSITE direction, so price must CLOSE beyond this raw OR boundary.
+revTrigger = primStopped and not active ? (primDir == 1 ? orLow : orHigh) : na
+plot(revTrigger, "Reversal Trigger (needs a CLOSE beyond)", color=color.new(color.purple, 0), linewidth=2, style=plot.style_circles)
 bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol regime / wide OR)")
 
 // ==================== ALERTS ====================
