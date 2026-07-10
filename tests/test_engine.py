@@ -8,9 +8,13 @@ from udb_orb.engine.params import Params
 
 def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scale=1.0,
          exit_on_close=False, protective_stop=False, profile_overrides=None,
-         daily_loss_limit=0.0):
+         daily_loss_limit=0.0, execution_overrides=None):
     cfg = base_config()
     cfg.setdefault("execution", {})["daily_loss_limit"] = daily_loss_limit
+    # geometry tests predate stop_fill_mode; force the legacy exit_on_close path unless overridden
+    cfg["execution"].pop("stop_fill_mode", None)
+    if execution_overrides:
+        cfg["execution"].update(execution_overrides)
     cfg["profile"]["slippage_per_unit"] = slippage   # geometry tests use 0; realism test sets >0
     cfg["profile"]["be_retrace_trigger"] = be_trigger  # pin to the port value for stable geometry
     cfg["profile"]["adaptive_tp_scale"] = tp_scale     # pin for stable geometry
@@ -167,6 +171,23 @@ def test_protective_stop_caps_a_crash_bar():
     # protective: resting stop at OR boundary 99 -> capped at -$2.50
     assert abs(hybrid.trades[0].pnl_total - (99.0 - 101.5)) < 1e-9
     assert hybrid.trades[0].pnl_total > close_only.trades[0].pnl_total   # smaller loss
+
+
+def test_stop_fill_touch_is_gap_aware():
+    """Touch mode fills a BE stop at ~entry, but a gap-through bar fills at the worse open."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),      # long @101.5, BE stop = entry after BE fires
+        (9, 40, 101.4, 101.6, 98.5, 99.0, 1000),      # opens 101.4 (below stop 101.5): gap-through
+    ]
+    # touch mode: bar opens at 101.4 < stop 101.5 -> fill at min(101.5, 101.4) = 101.4
+    touch = _run({"2024-06-03": rows},
+                 profile_overrides={}, exit_on_close=False,
+                 execution_overrides={"stop_fill_mode": "touch"})
+    assert abs(touch.trades[0].exit_price - 101.4) < 1e-9
+    # pure "stop" mode fills exactly at the stop level (Pine parity)
+    stop = _run({"2024-06-03": rows}, exit_on_close=False)   # -> stop mode
+    assert abs(stop.trades[0].exit_price - 101.5) < 1e-9
 
 
 def test_no_base_sl_when_be_on():

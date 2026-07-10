@@ -668,8 +668,10 @@ class OrbEngine:
             sl_hit = c <= st.stop
             sl_fill = c
         else:
+            # intrabar fill. "stop" mode = exactly at the stop (Pine parity). "touch" mode =
+            # gap-aware broker stop: a bar opening BELOW the stop fills at the worse open price.
             sl_hit = l <= st.stop
-            sl_fill = st.stop
+            sl_fill = min(st.stop, o) if p.stop_fill_touch else st.stop
         tp_hit = st.tp is not None and h >= st.tp
         anach = p.be_retrace_use_close and be_fired_now and (l <= sl_at_bar_start)
 
@@ -736,8 +738,9 @@ class OrbEngine:
             sl_hit = c >= st.stop
             sl_fill = c
         else:
+            # "touch" mode: gap-aware — a bar opening ABOVE the stop fills the short stop worse
             sl_hit = h >= st.stop
-            sl_fill = st.stop
+            sl_fill = max(st.stop, o) if p.stop_fill_touch else st.stop
         tp_hit = st.tp is not None and l <= st.tp
         anach = p.be_retrace_use_close and be_fired_now and (h >= sl_at_bar_start)
 

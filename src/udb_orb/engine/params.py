@@ -17,6 +17,15 @@ def _parse_hhmm(s: str) -> time:
     return time(int(h), int(m))
 
 
+def _resolve_fill_mode(execution: dict) -> dict:
+    """Map execution config -> (exit_on_close, stop_fill_touch). stop_fill_mode wins if present;
+    otherwise fall back to the legacy exit_on_close bool."""
+    mode = execution.get("stop_fill_mode")
+    if mode is None:
+        mode = "close" if bool(execution.get("exit_on_close", False)) else "stop"
+    return {"exit_on_close": mode == "close", "stop_fill_touch": mode == "touch"}
+
+
 @dataclass(frozen=True)
 class Params:
     # session
@@ -72,8 +81,12 @@ class Params:
     # side
     trade_side_mode: str    # "Both" | "Long Only" | "Short Only"
 
-    # execution realism: alerts-only -> stop exits fill at the bar close, not the stop level
-    exit_on_close: bool = False
+    # execution realism. stop_fill_mode selects how a stop exit fills:
+    #   "close" : alerts-only — trigger & fill on the bar CLOSE (the default live workflow)
+    #   "stop"  : Pine intrabar — trigger on the wick, fill exactly at the stop level
+    #   "touch" : broker resting stop — trigger on the wick, gap-aware fill at min(stop, open)
+    exit_on_close: bool = False      # derived: True iff stop_fill_mode == "close"
+    stop_fill_touch: bool = False    # derived: True iff stop_fill_mode == "touch"
     # hybrid: a resting protective stop at the OR boundary fills intrabar (caps crash bars)
     protective_stop: bool = False
 
@@ -134,7 +147,7 @@ class Params:
             max_or_width=float(p["max_or_width"]),
             use_vwap_filter=bool(p["use_vwap_filter"]),
             trade_side_mode=str(p["trade_side_mode"]),
-            exit_on_close=bool(cfg.get("execution", {}).get("exit_on_close", False)),
+            **_resolve_fill_mode(cfg.get("execution", {})),
             protective_stop=bool(cfg.get("execution", {}).get("protective_stop", False)),
             reversal_risk_cap=float(p.get("reversal_risk_cap", 0.0) or 0.0),
             reversal_risk_mode=str(p.get("reversal_risk_mode", "scale")),

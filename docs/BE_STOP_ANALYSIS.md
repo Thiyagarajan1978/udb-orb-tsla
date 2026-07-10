@@ -526,6 +526,58 @@ dismissed it as *"trivial; ~zero impact."* That was wrong. In the Python engine 
 (the trade opens and closes on the same bar for −$0.02), but in Pine it is a correctness bug. The
 concept was right; only our engine's tolerance for it hid the cost.
 
+## 18. External review response — execution modality, time window, reversal
+
+An external reviewer ranked six recommendations. Each was tested on full-year 2024 / 2025 / 2026.
+
+**(1) Execution modality — CONFIRMED as the biggest lever; `stop_fill_mode` added.** Every loss is
+a close-fill BE stop averaging ~$3.68/share *through* the stop — a tax on the alerts-only workflow,
+not on the alpha. A broker resting stop fills at the stop ±slippage instead. Modelled honestly
+(`stop_fill_mode: touch`, gap-aware fill at min(stop, open), which also wicks out trades that dip to
+entry and recover):
+
+| model | 2024 | 2025 | 2026 |
+|-------|-----:|-----:|-----:|
+| close-fill (alerts-only) | +65.8 (PF 1.2) | +79.6 (1.2) | +192.4 (1.8) |
+| touch slip $0.03 | +155.4 (1.7) | +148.0 (1.5) | +246.7 (2.7) |
+| touch slip $0.10 | +134.7 (1.6) | +130.8 (1.4) | +235.7 (2.6) |
+| touch slip $0.20 | +105.0 (1.4) | +106.2 (1.3) | +220.1 (2.4) |
+| stop-exactly (fantasy) | +377.8 (24.9) | +439.4 (27.8) | +383.7 (32.8) |
+
+A resting stop roughly **doubles net** and lifts PF to 1.3-1.6 with a smaller worst day — but the
+"PF 24" only appears if stops fill at exactly entry (zero gap slippage), which will not happen live.
+The truth is measurable: paper-trade a resting stop on TradeStation and compare. Default stays
+`close` (the honest alerts-only number); `touch` is one config line away.
+
+**(3) Time window on primaries — VALIDATED, recommended.** Late ORB breaks (compressed choppy
+mornings) underperform. Restricting entries to 09:35-11:00 (also gates midday reversals):
+
+| variant | 2024 | 2025 | 2026 | ugly(24+25) | total |
+|---------|-----:|-----:|-----:|------------:|------:|
+| baseline | +65.8 | +79.6 | +192.4 | +145.4 | +337.7 |
+| window 09:35-10:30 | +58.9 | +113.5 | +162.7 | +172.5 | +335.1 |
+| **window 09:35-11:00** | **+74.2** | +92.6 | +179.6 | +166.8 | **+346.4** |
+
+11:00 is PF-positive in all three years and net-positive in the weak 2024 (+$8, PF 1.19->1.26). The
+exact cutoff is noisy (10:30 is *worse* than 11:00 in 2024), so this is a risk-shift — trade a little
+2026 upside for weak-regime robustness — not a free lunch. It is `enhancements.time_window`, off by
+default; enable `end: "11:00"` to adopt.
+
+**(2) Reversal — reviewer's 365d view was pre-cap; full years disagree by regime.** With the $6
+risk-parity cap already in place: deleting the reversal *helps 2025* (+$36, a shakeout year) but
+*hurts 2024* (−$17) and *2026* (−$60). `reversal_qty_mult 1.0` is the robust middle (2024 +67.2,
+2025 +88.5, 2026 +180.7 — better on both weak years, small cost in the strong one). Kept at 2×-capped
+for now; the time window already removes the worst midday reversals.
+
+**(4/5) Partial & trail — CONFIRMED as-is.** 15% partial marginally beats 25% in all three years but
+by <$10/yr (noise). Tighter runner trail (0.55/0.65×OR) *badly hurts* 2025 (+$37/+$31 vs +$80) — the
+0.75 trail is right. BE trail $0.25 has zero exits under close-fill but 9 under touch, so it is not
+cosmetic if you move to a broker stop — kept.
+
+**(6) Guardrails — agreed and already the house rule.** Every change above was judged on 2024/2025,
+not on the flattering Jun-Jul 2026 stretch. The Mon/Fri seasonality the reviewer flagged as overfit
+bait was not acted on.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic

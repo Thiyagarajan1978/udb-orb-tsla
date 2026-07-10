@@ -17,7 +17,21 @@ timezone: America/New_York
 # trigger when the bar CLOSES beyond the level and fill at that close (so a BE stop is a real
 # loss, ~$1-2, not a $0 scratch). TP/partial still fill at the target (favourable limit).
 execution:
-  exit_on_close: true
+  # HOW STOP EXITS FILL — the single biggest lever (per external review, confirmed):
+  #   "close" : ALERTS-ONLY. Trigger & fill on the bar CLOSE. You act after the candle closes,
+  #             so a BE stop is a real ~$3.68/share loss. This is the honest default for a
+  #             manual/alert workflow.
+  #   "touch" : BROKER RESTING STOP (e.g. TradeStation). Trigger on the wick, gap-aware fill at
+  #             min(stop, open). BE stops become ~0-scratches, so net roughly DOUBLES and the
+  #             worst day shrinks — BUT it also wicks out trades that dip to entry and recover.
+  #             Both effects are modelled. Charge realistic slippage (slippage_per_unit 0.10-0.20).
+  #   "stop"  : Pine intrabar reproduction — fill exactly at the stop level (an upper-bound
+  #             fantasy: assumes zero gap slippage). Used only by faithful_be035.yaml.
+  # Honest 3-year range (net): close-fill +65/+80/+192 (PF ~1.2)  ->  touch@$0.10 +135/+131/+236
+  # (PF ~1.4-2.6). The truth for YOUR fills is measurable: paper-trade a resting stop on
+  # TradeStation and compare. See docs/BE_STOP_ANALYSIS.md §18.
+  stop_fill_mode: close
+  exit_on_close: true      # legacy flag; ignored when stop_fill_mode is set
   # Resting protective stop at the OR boundary (opt-in). TESTED and left OFF: the realistic
   # worst days are whipsaws on WIDE-OR days where the loss closes *within* the OR range (above
   # the boundary), so an OR-boundary stop doesn't cap them and can even worsen a wick-and-recover

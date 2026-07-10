@@ -15,6 +15,7 @@ timezone: America/New_York
 # Exact Pine port fills stops at the stop level (intrabar). Keep exit_on_close OFF here to
 # reproduce the Pine numbers; config/config.yaml uses the realistic close-based fill.
 execution:
+  stop_fill_mode: stop     # Pine intrabar: fill exactly at the stop level
   exit_on_close: false
   protective_stop: false
 
