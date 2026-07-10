@@ -430,6 +430,65 @@ Day WITH reversal: -$8.72   |   Day AS TRADED: -$5.60   |   Gate SAVED +$3.12
 The miss people see on 07-09 is a **resume** miss (re-entering LONG), not a reversal miss — and the
 resume rule was tested and rejected in §13 (it pays +$7 here but costs -$63 in 2024).
 
+## 16. Third-eye review: "ORB Adaptive TP Best Default v1.23"
+
+An external Pine script built on the same UDB v12.4.3 lineage. Concepts triaged against our work:
+
+| Concept | Verdict |
+|---------|---------|
+| PDH/PDL **Confluence Gate** (extend trigger to PDH/PDL when within 25% OR) | Already built as `pdh_pdl_filter`; barely triggers on TSLA, holdout worse (§6) |
+| PDH/PDL as S/R generally (Ahead Block, Break+Retest, Sweep-Reclaim, Momentum Bypass) | 11 HTF levels tested: **47% failure rate in BOTH** "level in path" and "clear path" groups. No signal (§5) |
+| VWAP-cross trail | Superseded by the runner peak-trail (§7) |
+| **Max Cap Stop Distance** | **NEW — tested, REJECTED** (below) |
+| **2-close acceptance** | **NEW — tested, REJECTED decisively** (below) |
+| Block entries at/after EOD | Trivial; an EOD-bar entry costs only slippage |
+| Sweep-Reclaim block | Largely redundant — we already require a *close* beyond the trigger, so a wick-sweep never enters |
+
+### Max-cap stop (`sl_mode: "Candle High/Low + Max Cap"`) — REJECTED
+
+Caps the OR-boundary stop at `fixed_sl` from entry. Implemented and available.
+
+It *does* fix 2026-07-09: `-5.60 (BE Stop) -> -4.05 (Base SL)`. But across three years:
+
+| Cap | 2024 net | 2025 net | 2026 net | Total |
+|----:|---------:|---------:|---------:|------:|
+| off (OR stop) | +65.7 | +82.7 | **+192.3** | 340.7 |
+| $3 | +55.7 | +95.6 | +189.4 | 340.7 |
+| $4 | +70.0 | +81.3 | +185.8 | 337.1 |
+| $5 | +67.1 | **+100.1** | +185.3 | **352.5** |
+| $6 | +66.2 | +82.7 | +193.1 | 342.0 |
+
+**The surface is noise.** 2025 swings `+95.6 -> +81.3 -> +100.1 -> +82.7` across caps $3→$6 — a $19
+jump between adjacent settings, non-monotone, no optimum. The best total ($5) comes from train
+(+$18.8) while **hurting the holdout** (2026: 192.3 → 185.3). Train-helps/holdout-hurts again.
+
+Mechanically the cap rarely binds: BE fires on almost any retrace (wick ≤ `be_level`) and moves the
+stop *up* to entry, so the cap only matters on wide-OR days where price closes below the capped stop
+before touching `be_level`. Those are exactly the days `max_or_width $8` already skips.
+
+### 2-close acceptance (`enhancements.confirm_two_closes`) — REJECTED
+
+Require the *previous* bar to also close beyond the trigger.
+
+| | 2024 net | 2024 worst | 2025 net | 2026 net | 2026 worst |
+|--|---------:|-----------:|---------:|---------:|-----------:|
+| baseline | **+65.7** | **−9.7** | +82.7 | **+192.3** | **−9.7** |
+| 2-close | +43.1 | −14.9 | +84.0 | +150.3 | −10.4 |
+
+It delays the fill (worse entry price) and **worsens both net and worst day** in 2024 and 2026.
+On 07-09 it enters at 396.28 instead of 398.01 — a "better" loss (−3.87) purely by entering later
+into the same stop. That is not an edge, it is a smaller position in the same bad trade.
+
+### The most valuable insight from v1.23
+
+Its own changelog says: *"Reversal Trades default OFF because the 365-day sample improved with
+reversal disabled."* **Our data agrees with the diagnosis and rejects the cure.** Their reversal is
+the un-risk-adjusted 2× fixed-size version — the exact design we proved causes **68% of worst-day
+damage** (§10). They removed the reversal; we **sized it to risk parity** and kept the edge
+(reversal legs: +$17 in 2024, +$60 in 2026; deleting it costs $91 on the holdout).
+
+Same symptom, two fixes. Theirs throws away a profitable leg; ours keeps it and fixes the sizing bug.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic

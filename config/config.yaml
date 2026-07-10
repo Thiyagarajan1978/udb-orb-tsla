@@ -53,6 +53,11 @@ profile:
   buffer_pct_or: 10.0
 
   # Stop loss: "Candle High/Low" -> SL at OR low (long) / OR high (short)
+  # Options: "Candle High/Low" | "Fixed Distance" | "Candle High/Low + Max Cap"
+  # "+ Max Cap" (borrowed from ORB A+R v1.23) caps the OR-boundary stop at `fixed_sl` from entry.
+  # TESTED and REJECTED: it fixes 2026-07-09 (-5.60 -> -4.05) but across 3 years the surface is
+  # NOISE (2025 net swings 81 -> 100 -> 83 for caps $4 -> $5 -> $6) and the best total ($5) HURTS
+  # the holdout (2026 192.3 -> 185.3). Classic train-helps / holdout-hurts. See BE_STOP_ANALYSIS §16.
   sl_mode: "Candle High/Low"
   sl_offset: 0.0
   fixed_sl: 3.0            # only used by Fixed/Max-Cap SL modes (not this profile)
@@ -186,6 +191,12 @@ enhancements:
     risk_cap: 0.0       # 0 = off; scale qty so (entry -> OR boundary) * qty <= cap
     disarm_other: true  # true = resume/reversal compete for one slot (2 legs/day max)
                         # false = both stay armed (up to 3 legs) — worse tail, worse holdout
+
+  # 4c) 2-close acceptance (from ORB A+R v1.23). Require the PREVIOUS bar to also close beyond the
+  #     trigger before entering. TESTED and REJECTED decisively: it delays the fill and
+  #     2024 +65.7 -> +43.1 with worst day -9.7 -> -14.9; 2026 +192.3 -> +150.3. Default OFF.
+  confirm_two_closes:
+    enabled: false
 
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
   #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the

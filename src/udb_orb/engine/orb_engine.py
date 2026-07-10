@@ -341,6 +341,8 @@ class OrbEngine:
         cur_date = None
         bar_i = -1
         p = self.p
+        prev_close = None
+        prev_date = None
 
         for ts, row in df.iterrows():
             bar_i += 1
@@ -429,12 +431,19 @@ class OrbEngine:
             vwap_long_ok = (not p.use_vwap_filter) or (vw is not None and c > vw)
             vwap_short_ok = (not p.use_vwap_filter) or (vw is not None and c < vw)
 
+            # 2-close acceptance: require the PREVIOUS bar to also have closed beyond the trigger
+            # (a confirmation filter borrowed from the v1.23 PDH/PDL acceptance concept).
+            two_close = bool(self.enh.get("confirm_two_closes", {}).get("enabled", False))
+            same_day_prev = prev_close is not None and prev_date == d
+            long_confirm = (not two_close) or (same_day_prev and long_trig is not None and prev_close > long_trig)
+            short_confirm = (not two_close) or (same_day_prev and short_trig is not None and prev_close < short_trig)
+
             can_long = (
-                p.allow_longs and long_trig is not None and c > long_trig
+                p.allow_longs and long_trig is not None and c > long_trig and long_confirm
                 and min_ok and max_ok and vwap_long_ok and self._rvol_ok(rv)
             )
             can_short = (
-                p.allow_shorts and short_trig is not None and c < short_trig
+                p.allow_shorts and short_trig is not None and c < short_trig and short_confirm
                 and min_ok and max_ok and vwap_short_ok and self._rvol_ok(rv)
             )
 
@@ -518,6 +527,9 @@ class OrbEngine:
             if p.eod_exit is not None and t >= p.eod_exit and st.active and st.dir != 0:
                 self._eod_close(st, ts, bar_i, c)
 
+            prev_close = c
+            prev_date = d
+
         # finalize last day
         if cur_date is not None:
             self._finalize_day(cur_date, st)
@@ -579,15 +591,22 @@ class OrbEngine:
             st.entry_ts_day = ts
 
     def _long_sl(self, entry, or_low):
+        """OR-boundary stop, optionally capped so it is never further than `fixed_sl` below entry."""
         p = self.p
+        raw = or_low - p.sl_offset
         if p.sl_mode == "Candle High/Low":
-            return or_low - p.sl_offset
+            return raw
+        if p.sl_mode == "Candle High/Low + Max Cap":
+            return max(raw, entry - p.fixed_sl)   # tighter of the two
         return entry - p.fixed_sl
 
     def _short_sl(self, entry, or_high):
         p = self.p
+        raw = or_high + p.sl_offset
         if p.sl_mode == "Candle High/Low":
-            return or_high + p.sl_offset
+            return raw
+        if p.sl_mode == "Candle High/Low + Max Cap":
+            return min(raw, entry + p.fixed_sl)
         return entry + p.fixed_sl
 
     # ---- LONG exit engine ----------------------------------------------

@@ -248,6 +248,35 @@ def test_volatility_regime_skips_high_vol_days():
     assert skipped[0].no_trade_reason == "Vol Regime Skip"
 
 
+def test_max_cap_stop_tightens_the_or_boundary_stop():
+    """'Candle High/Low + Max Cap' never places the stop further than fixed_sl from entry."""
+    rows = [  # wide OR 95-101 (width 6) -> long trigger = 101 + 0.6 = 101.6
+        (9, 30, 100, 101.0, 95.0, 100.0, 1000),
+        (9, 35, 101, 102.2, 100.5, 102.0, 1000),     # long @102.0 (raw risk = 102.0 - 95.0 = 7.0)
+        (15, 50, 102.0, 102.5, 101.5, 102.2, 1000),
+    ]
+    plain = _run({"2024-06-03": rows})
+    capped = _run({"2024-06-03": rows},
+                  profile_overrides={"sl_mode": "Candle High/Low + Max Cap", "fixed_sl": 3.0})
+    # raw OR stop = 95.0 -> risk 7.00 ; capped stop = 102.0 - 3.0 = 99.0 -> risk 3.00
+    assert abs(plain.trades[0].risk_amount - 7.0) < 1e-9
+    assert abs(capped.trades[0].risk_amount - 3.0) < 1e-9
+
+
+def test_two_close_confirmation_delays_entry():
+    """confirm_two_closes requires the PREVIOUS bar to also close beyond the trigger."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),      # OR -> long trigger 101.2
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),     # 1st close above trigger
+        (9, 40, 101.5, 102.0, 101.3, 101.9, 1000),   # 2nd close above -> confirmed entry here
+        (15, 50, 101.9, 102.2, 101.5, 102.0, 1000),
+    ]
+    off = _run({"2024-06-03": rows})
+    on = _run({"2024-06-03": rows}, enh_overrides={"confirm_two_closes": {"enabled": True}})
+    assert abs(off.trades[0].entry_price - 101.5) < 1e-9   # enters on the first close break
+    assert abs(on.trades[0].entry_price - 101.9) < 1e-9    # waits for the second
+
+
 def test_no_trade_day_reason_no_setup():
     rows = [
         (9, 30, 100, 101.0, 99.0, 100.0, 1000),
