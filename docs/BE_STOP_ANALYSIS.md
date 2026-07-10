@@ -656,6 +656,22 @@ confirmation verified because 90d net (+114.92) tracks the 2-candle number, not 
 +150. 30d net matches within slippage; the 365d −6% is the known feed-drift + vol-gate-day
 classification divergence, not a logic bug (the cent-exact worst days rule that out).
 
+### TP1 fill model — touch/cross vs close-through (touch KEPT)
+Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
+2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and
+missed → rode to EOD (−$1.03). Pure feed divergence — the trigger logic is already touch-based and
+identical in both scripts (`low<=tp` / `high>=tp`). Tested the only stricter alternative (TP1
+counts only if the bar CLOSES beyond the target):
+
+| Mode | 3yr TP1 fills | WR | 3yr net |
+|------|--------------:|---:|--------:|
+| **touch/cross (current)** | **204** | **50.0%** | **+295.35** |
+| close-through | 187 | 48.2% | +273.69 |
+
+Touch is both more lenient AND strictly better (+17 fills, +1.8pt WR, +$21.66/unit). KEPT.
+No code change — touch is already production. Chasing the 2¢ TV miss would require a fill
+tolerance that would manufacture phantom partials elsewhere. Judge marginal fills in aggregate.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic
