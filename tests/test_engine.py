@@ -19,6 +19,7 @@ def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scal
     cfg["profile"]["be_retrace_trigger"] = be_trigger  # pin to the port value for stable geometry
     cfg["profile"]["adaptive_tp_scale"] = tp_scale     # pin for stable geometry
     cfg["profile"]["reversal_risk_cap"] = 0.0          # geometry: uncapped 2x unless opted in
+    cfg["profile"]["sl_mode"] = "Candle High/Low"      # geometry: plain OR-boundary stop
     if profile_overrides:
         cfg["profile"].update(profile_overrides)
     ex = cfg.setdefault("execution", {})
@@ -29,6 +30,8 @@ def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scal
     enh.setdefault("reversal_capture", {})["enabled"] = False
     enh.setdefault("runner_trail", {})["enabled"] = False
     enh.setdefault("volatility_regime", {})["enabled"] = False
+    enh.setdefault("confirm_breakout", {})["enabled"] = False
+    enh.setdefault("max_entry_ext", {})["enabled"] = False
     if enh_overrides:
         for k, v in enh_overrides.items():
             enh.setdefault(k, {}).update(v)
@@ -313,6 +316,20 @@ def test_confirm_breakout_waits_for_next_candle_to_hold():
     on = _run({"2024-06-03": rows}, enh_overrides={"confirm_breakout": {"enabled": True, "require_trend_candle": True}})
     assert abs(off.trades[0].entry_price - 101.5) < 1e-9     # baseline enters on the first break
     assert abs(on.trades[0].entry_price - 101.8) < 1e-9      # confirmed enters on the held candle
+
+
+def test_max_entry_ext_skips_over_extended_breakout():
+    """max_entry_ext blocks a breakout whose close is > or_mult*OR from the OR-boundary stop."""
+    rows = [  # OR 99-101 (w 2); a long that closes 104 is 5.0 from the stop (99) = 2.5x OR
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 104.5, 100.8, 104.0, 1000),   # huge break: close 104 -> 5.0 from stop 99
+        (15, 50, 104.0, 104.5, 103.5, 104.0, 1000),
+    ]
+    took = _run({"2024-06-03": rows})
+    skipped = _run({"2024-06-03": rows},
+                   enh_overrides={"max_entry_ext": {"enabled": True, "or_mult": 1.5}})  # band 3.0
+    assert len(took.trades) == 1
+    assert len(skipped.trades) == 0     # 5.0 > 3.0 -> blocked
 
 
 def test_no_trade_day_reason_no_setup():

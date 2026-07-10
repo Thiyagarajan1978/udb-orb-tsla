@@ -70,11 +70,16 @@ Toggle `exit_on_close` **off** in the inputs to see the old, optimistic numbers 
 ## Benchmarks for your 30 / 90 / 365-day Strategy Tester runs
 Python engine, **per 1 unit**, realistic fills, $0.02/exit slippage, all ending **2026-07-09**:
 
+Default = **2-candle confirmation + Max-Cap $5 stop** (higher win rate, smaller worst day):
+
 | Window | From | Trades | WR | Net | PF | Worst day | Reversals |
 |--------|------|-------:|---:|----:|---:|----------:|----------:|
-| 30d | 2026-06-09 | 26 | 65.4% | +$88.56 | 3.16 | −$6.81 | 5 |
-| 90d | 2026-04-10 | 77 | 55.8% | +$150.22 | 2.13 | −$9.07 | 17 |
-| **365d** | 2025-07-10 | **289** | **49.5%** | **+$212.95** | **1.42** | **−$13.12** | 58 |
+| 30d | 2026-06-09 | 23 | 65.2% | +$76.41 | 3.84 | −$8.29 | 3 |
+| 90d | 2026-04-10 | 71 | 53.5% | +$113.08 | 1.92 | −$10.42 | 12 |
+| **365d** | 2025-07-10 | **269** | **50.9%** | **+$188.38** | **1.41** | **−$12.25** | 42 |
+
+Reproduce the old immediate-entry numbers by turning OFF "Require confirmation candle" and setting
+"Max Stop Distance from Entry" to 0 (→ 365d 289 tr, 49.5%, +$212.95).
 
 At `Shares per unit = 100`, Strategy Tester Net P&L should read **~100×** these
 (365d ≈ **+$21,300**). It will land slightly *higher*, because Python subtracts $0.02/unit on

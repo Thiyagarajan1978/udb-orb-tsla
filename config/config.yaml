@@ -66,15 +66,15 @@ profile:
   use_breakout_buffer: true
   buffer_pct_or: 10.0
 
-  # Stop loss: "Candle High/Low" -> SL at OR low (long) / OR high (short)
-  # Options: "Candle High/Low" | "Fixed Distance" | "Candle High/Low + Max Cap"
-  # "+ Max Cap" (borrowed from ORB A+R v1.23) caps the OR-boundary stop at `fixed_sl` from entry.
-  # TESTED and REJECTED: it fixes 2026-07-09 (-5.60 -> -4.05) but across 3 years the surface is
-  # NOISE (2025 net swings 81 -> 100 -> 83 for caps $4 -> $5 -> $6) and the best total ($5) HURTS
-  # the holdout (2026 192.3 -> 185.3). Classic train-helps / holdout-hurts. See BE_STOP_ANALYSIS §16.
-  sl_mode: "Candle High/Low"
+  # Stop loss: "Candle High/Low + Max Cap" -> OR-boundary stop, but never further than fixed_sl
+  # from entry. ADOPTED (with confirm_breakout, §20): the confirmation candle enters later/more
+  # extended, so the entry can sit far from the OR-boundary stop; capping at $5 neutralises that
+  # tail. Cuts the 2024 worst day -14.9 -> -8.7 (better than the immediate-entry -9.7) while
+  # keeping ~50% win rate. Standalone the cap was noise (§16); it earns its place only paired
+  # with confirmation. Options: "Candle High/Low" | "Fixed Distance" | "Candle High/Low + Max Cap".
+  sl_mode: "Candle High/Low + Max Cap"
   sl_offset: 0.0
-  fixed_sl: 3.0            # only used by Fixed/Max-Cap SL modes (not this profile)
+  fixed_sl: 5.0            # max stop distance from entry (Max-Cap mode)
 
   # Take profit: Adaptive (% of OR width)
   # NOTE: adaptive_tp_scale = 1.0. (Optimistic-fill tuning liked 1.25, but re-tuned under the
@@ -217,8 +217,12 @@ enhancements:
   #     — green for longs / red for shorts). If it snaps back inside, wait for a fresh break.
   #     Enters at the confirmation candle's close. Avoids chasing an extended first-break bar that
   #     immediately reverses (e.g. 2026-07-09 10:00 break -> 10:05 back inside).
+  # ADOPTED (§20): higher win rate (47.6% -> 50.0% over 3 years) by skipping the immediate
+  # first-break entry and requiring the next candle to HOLD beyond the trigger (green for longs,
+  # red for shorts). Pairs with sl_mode Max-Cap $5, which caps the wider entry->stop distance the
+  # later entry creates. Trade-off: ~$14/yr less net than immediate entry; better worst day.
   confirm_breakout:
-    enabled: false
+    enabled: true
     require_trend_candle: true
 
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts

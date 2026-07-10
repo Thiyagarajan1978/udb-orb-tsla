@@ -607,6 +607,38 @@ PDH/PDL, 2-close acceptance, and now confirmation. On TSLA, filters that WAIT co
 than they save on whipsaws. The edge is in management (BE, risk-parity sizing, trailing), not entry
 selection. Kept as an opt-in (default OFF); the immediate-entry logic stays final.
 
+## 20. Higher-win-rate profile ADOPTED: 2-candle confirmation + Max-Cap $5 stop
+
+User chose to prioritise win rate. The confirmation candle (§19) raises WR but enters later, which
+widens the entry->stop distance and enlarges the worst day (2024 −9.7 → −14.9). Two fixes tested:
+
+| fix on top of 2-candle | 3yr net | 3yr WR | 3yr exp | 2024 worst |
+|------------------------|--------:|-------:|--------:|-----------:|
+| none (2-candle only) | +280 | 50.3% | +0.47 | −14.9 |
+| **+ Max-Cap $5 stop** | **+295** | 50.0% | **+0.50** | **−8.7** |
+| + skip entry ext≤1.5×OR | +182 | 48.4% | +0.38 | −8.8 |
+| + skip entry ext≤1.2×OR | +49 | 47.9% | +0.29 | −5.2 |
+
+The **skip guard is wrong** — it discards the whole trade (tail *and* winner), so net collapses.
+The **stop-cap is right** — it keeps the trade but caps the loss, so the −$14 tail becomes −$5
+while winners survive. Adopted: `confirm_breakout` ON + `sl_mode: Candle High/Low + Max Cap`,
+`fixed_sl 5.0`.
+
+Standalone the Max-Cap was noise (§16); it earns its place ONLY paired with confirmation, whose
+extended entries are exactly what it caps.
+
+### New default vs the immediate-entry profile (full years, per unit)
+| | Immediate (old) | 2-candle + cap $5 (new) |
+|--|----------------:|------------------------:|
+| 2024 | +$65.8 (WR 45.4, worst −9.7) | +$54.7 (WR **48.0**, worst **−8.7**) |
+| 2025 | +$79.6 (47.5, −13.1) | +$124.0 (**52.5**, −12.3) |
+| 2026 H1 | +$192.4 (51.3, −9.7) | +$116.6 (49.3, −10.4) |
+| 30/90/365d net | 88.6 / 150.2 / 213.0 | 76.4 / 113.1 / 188.4 |
+| 365d WR | 49.5% | **50.9%** |
+
+The new default trades ~$14/yr of net and a little 2026 upside for a higher win rate and a smaller
+worst day. Revert with `confirm_breakout.enabled: false` + `sl_mode: "Candle High/Low"`.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic

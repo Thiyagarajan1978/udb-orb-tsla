@@ -73,11 +73,14 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //      first (a paid TradingView plan loads more bars), or the run will silently start late.
 //
 //  EXPECTED (Python engine, per 1 unit, realistic fills, $0.02/exit slippage, ending 2026-07-09)
+//  DEFAULT NOW = 2-candle confirmation + Max-Cap $5 stop (higher win rate, smaller worst day).
 //    Window   From         Trades  WR     Net       PF     Worst day   Reversals
-//     30d     2026-06-09     26   65.4%  + $88.56   3.16   -$6.81          5
-//     90d     2026-04-10     77   55.8%  +$150.22   2.13   -$9.07         17
-//    365d     2025-07-10    289   49.5%  +$212.95   1.42   -$13.12        58
-//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$21,300).
+//     30d     2026-06-09     23   65.2%  + $76.41   3.84   -$8.29          3
+//     90d     2026-04-10     71   53.5%  +$113.08   1.92   -$10.42        12
+//    365d     2025-07-10    269   50.9%  +$188.38   1.41   -$12.25        42
+//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$18,800).
+//  To reproduce the old immediate-entry numbers: turn OFF "Require confirmation candle" and set
+//  "Max Stop Distance from Entry" to 0.
 //
 //  *** v2.1 FIX — NO NEW ENTRIES AT/AFTER THE EOD CUTOFF ***
 //  TradingView will NOT honour a strategy.close() issued on the SAME bar as the entry. A 15:55
@@ -123,6 +126,11 @@ grpX = "Exits"
 adaptiveTPScale = input.float(1.0,  "Adaptive TP — OR Width Multiplier", step=0.05, group=grpX)
 adaptiveTPMin   = input.float(2.14, "Adaptive TP — Minimum Floor ($)", step=0.01, group=grpX)
 beTrigger       = input.float(0.55, "BE Retrace Trigger (% of OR width)", step=0.05, group=grpX)
+maxCapSL        = input.float(5.0,  "Max Stop Distance from Entry ($, 0=off)", step=0.5, group=grpX, tooltip="Caps the OR-boundary primary stop so it is never further than this from entry. Pairs with the confirmation candle (which enters later/more extended). 0 = plain OR-boundary stop.")
+
+grpC = "Entry Confirmation"
+confirmBreakout   = input.bool(true, "Require confirmation candle (2-candle break)", group=grpC, tooltip="ON = do not enter on the first close-break; require the NEXT candle to also close beyond the trigger before entering. Higher win rate, later entry. Applies to PRIMARY entries only.")
+requireTrendCandle = input.bool(true, "Confirmation candle must be with-trend", group=grpC, tooltip="ON = the confirmation candle must be green for longs / red for shorts.")
 beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
 partialPct      = input.float(25.0, "Partial Exit Quantity (%)", step=1.0, group=grpX)
 runnerMult      = input.float(0.75, "Runner Peak-Trail (x OR width)", step=0.05, group=grpX)
@@ -211,8 +219,12 @@ tpDist = not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : 
 canTrade = session.ismarket and not isNewDay and not daySkipped and not na(orHigh) and not isFlattenBar
 
 // ==================== PRIMARY ENTRY (market -> fills at this bar's close) ====================
+// Confirmation: require the previous bar to ALSO have closed beyond the trigger (a held 2-candle
+// break), and (optionally) a with-trend confirmation candle. Enters on this (the confirming) bar.
+longConfirm  = not confirmBreakout or (close[1] > longBrk and (close >= open or not requireTrendCandle))
+shortConfirm = not confirmBreakout or (close[1] < shortBrk and (close <= open or not requireTrendCandle))
 if canTrade and not active and not firstTaken and strategy.position_size == 0
-    if close > longBrk
+    if close > longBrk and longConfirm
         entryId := "L"
         strategy.entry(entryId, strategy.long, qty=tradeQty * unitScale)
         // 25% partial as a LIMIT at the TP (fills AT the TP level, like the Python engine).
@@ -225,7 +237,7 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
         inRev := false
         suppressPartial := false
         entry := close
-        stop := orLow
+        stop := maxCapSL > 0 ? math.max(orLow, close - maxCapSL) : orLow
         tp := close + tpDist
         beLevel := orHigh - beTrigger * orWidth
         entryBar := bar_index
@@ -237,7 +249,7 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
         firstTaken := true
         if showLabels
             label.new(bar_index, low, "LONG " + str.tostring(close, format.mintick), style=label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.small)
-    else if close < shortBrk
+    else if close < shortBrk and shortConfirm
         entryId := "S"
         strategy.entry(entryId, strategy.short, qty=tradeQty * unitScale)
         strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, limit=close - tpDist)
@@ -246,7 +258,7 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
         inRev := false
         suppressPartial := false
         entry := close
-        stop := orHigh
+        stop := maxCapSL > 0 ? math.min(orHigh, close + maxCapSL) : orHigh
         tp := close - tpDist
         beLevel := orLow + beTrigger * orWidth
         entryBar := bar_index

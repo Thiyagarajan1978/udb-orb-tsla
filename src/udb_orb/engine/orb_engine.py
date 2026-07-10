@@ -460,12 +460,22 @@ class OrbEngine:
                 long_confirm = long_confirm and lc
                 short_confirm = short_confirm and sc
 
+            # Max entry-extension guard: skip a breakout whose entry (bar close) is already more
+            # than `or_mult` * OR width from the OR-boundary stop — i.e. price is over-extended and
+            # the stop would be too far away. (Pairs well with confirmation, which enters later.)
+            mee = self.enh.get("max_entry_ext", {})
+            long_ext_ok = short_ext_ok = True
+            if mee.get("enabled", False) and st.or_width:
+                band = float(mee.get("or_mult", 1.5)) * st.or_width
+                long_ext_ok = (c - st.or_low) <= band
+                short_ext_ok = (st.or_high - c) <= band
+
             can_long = (
-                p.allow_longs and long_trig is not None and c > long_trig and long_confirm
+                p.allow_longs and long_trig is not None and c > long_trig and long_confirm and long_ext_ok
                 and min_ok and max_ok and vwap_long_ok and self._rvol_ok(rv)
             )
             can_short = (
-                p.allow_shorts and short_trig is not None and c < short_trig and short_confirm
+                p.allow_shorts and short_trig is not None and c < short_trig and short_confirm and short_ext_ok
                 and min_ok and max_ok and vwap_short_ok and self._rvol_ok(rv)
             )
 
