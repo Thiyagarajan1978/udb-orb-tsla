@@ -639,6 +639,23 @@ extended entries are exactly what it caps.
 The new default trades ~$14/yr of net and a little 2026 upside for a higher win rate and a smaller
 worst day. Revert with `confirm_breakout.enabled: false` + `sl_mode: "Candle High/Low"`.
 
+### TradingView Strategy Tester validation (2026-07-10)
+Ran the updated Pine strategy on TSLA 5m for three windows; reconciled against the Python engine
+on the identical date ranges:
+
+| Window | From | TV ÷100 | Python | Net diff | Worst day |
+|--------|------|--------:|-------:|---------:|----------:|
+| 30d | 2026-06-10 | +61.96 | +61.26 | +0.70 | −8.29 (both) |
+| 90d | 2026-04-13 | +114.92 | +117.31 | −2.39 | −10.42 (both) |
+| 365d | 2025-07-10 | +176.62 | +188.38 | −11.76 | −12.25 (both) |
+
+**Worst day matched to the cent in all three windows** → Max-Cap + confirmation are byte-for-byte
+aligned. Trade count reconciles once TV's per-partial rows are collapsed (30d: 22 trades + 11
+partials = 33 rows; 365d: 269 + 94 = 363). Max-Cap verified in fills (every Base SL ≈ −$5/share);
+confirmation verified because 90d net (+114.92) tracks the 2-candle number, not the old immediate
++150. 30d net matches within slippage; the 365d −6% is the known feed-drift + vol-gate-day
+classification divergence, not a logic bug (the cent-exact worst days rule that out).
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic

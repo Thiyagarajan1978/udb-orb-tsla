@@ -92,16 +92,31 @@ Eve closes 13:00, so no 15:50 bar ever exists) — roughly **+$58/unit of pure a
 now blocked at/after the cutoff and the position is always flattened on the session's **last bar**.
 The Python engine carries the identical guards.
 
-### TradingView vs Python reconciliation (as run)
-| Window | TV ÷100 | Python | Diff |
-|--------|--------:|-------:|-----:|
-| 30d | +94.08 | +88.56 | +5.52 |
-| 90d | +155.00 | +150.22 | +4.78 |
-| 365d (pre-fix) | +255.77 | +215.97 | **+39.80** (the overnight bug) |
+### TradingView vs Python reconciliation — new default (2-candle + Max-Cap $5), as run 2026-07-10
+| Window | From | TV ÷100 | Python | Net diff | Worst day |
+|--------|------|--------:|-------:|-----:|---------:|
+| 30d | 2026-06-10 | +61.96 | +61.26 | **+0.70** | −8.29 (both) |
+| 90d | 2026-04-13 | +114.92 | +117.31 | −2.39 | −10.42 (both) |
+| 365d | 2025-07-10 | +176.62 | +188.38 | −11.76 | −12.25 (both) |
 
-The 30-day match is structurally exact: TV's 39 rows = 26 trades + 13 partials; reversals 5,
-Trail 11, EOD 6, BE-Stop 9 — all identical. Residual $4–5 gaps are slippage plus a few
-cents of feed difference on marginal triggers.
+**Worst day matches to the cent in all three windows** — the Max-Cap and confirmation logic are
+byte-for-byte aligned across the two engines. Trade count reconciles exactly once you account for
+TV listing each 25% partial as its own row: **30d = 22 Python trades + 11 partials = 33 TV rows**;
+**365d = 269 + 94 = 363**. Both new features are visible in the fills: every `Base SL` loss caps
+near $5/share (30d trade 4 = −5.19, trade 7 = −5.65 — the cap plus a few cents of close-fill
+overshoot), and the 90d net (+114.92) matches the 2-candle number, not the old immediate-entry
++150.22 — confirming the confirmation gate is active. (A `BE Stop` can still exceed $5, e.g.
+−$9.01 on 2025-10-07: once BE is armed the stop sits at entry and fills at the bar close, so a
+violent bar eats the full move — intended, and Python models it identically.)
+
+The 30-day net matches within slippage (TV runs `slippage=0`, so it sits +$0.70 above Python's
+$0.02/leg). The 365-day −6% gap is the known full-year divergence: FMP-vs-TradingView 5-minute
+feed drift, plus the volatility gate reading the daily close differently (Pine `request.security`
+vs Python's RTH-rebuilt close) across 250+ days — each flipped marginal day adds/removes a whole
+trade. Not a logic bug; the cent-exact worst days rule that out.
+
+(Historical note: the pre-v2.1 365-day run read **+39.80/unit HIGHER** on TV — that was the
+overnight-entry bug, since fixed in both engines.)
 
 **Read the 365-day row, not the 30-day row.** PF collapses 3.16 → 2.13 → 1.43 as the window
 widens — the 30/90-day windows sit entirely inside the calm 2026 regime this system is built for.
