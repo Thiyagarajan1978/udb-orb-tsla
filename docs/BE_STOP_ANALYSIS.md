@@ -489,6 +489,43 @@ damage** (§10). They removed the reversal; we **sized it to risk parity** and k
 
 Same symptom, two fixes. Theirs throws away a profitable leg; ours keeps it and fixes the sizing bug.
 
+## 17. TradingView validation found a real bug: entries at/after the EOD cutoff
+
+Strategy Tester exports (30 / 90 / 365 day, ending 2026-07-09, `Shares per unit = 100`):
+
+| Window | TV ÷100 | Python | Diff |
+|--------|--------:|-------:|-----:|
+| 30d | +94.08 | +88.56 | +5.52 |
+| 90d | +155.00 | +150.22 | +4.78 |
+| **365d** | **+255.77** | +215.97 | **+39.80** |
+
+The 30-day is a **structurally exact** match — TV's 39 rows = 26 trades + 13 partials; reversals 5,
+Trail 11, EOD 6, BE-Stop 9; fractional risk-parity sizes (161/113/72/126/82 shares) all present.
+
+The 365-day overshoot is a bug. TradingView will **not honour a `strategy.close()` issued on the
+same bar as the entry**, so an entry on the **15:55** bar (past the 15:50 cutoff) rides overnight:
+
+```
+Entry L  2025-08-08 15:55 -> Exit 2025-08-11 15:50 "EOD flat"  +1044   (over a weekend)
+Entry S  2026-01-02 15:55 -> Exit 2026-01-05 15:50 "EOD flat"  -1481
+Entry S  2025-12-24 09:35 -> Exit 2025-12-26 15:50 "EOD flat"  (half day: no 15:50 bar exists)
+```
+
+**12** such trades plus a half-session carry ≈ **+$58/unit of artifact** — the entire 365-day gap.
+It never appears in the 30/90-day windows because they contain no 15:55 entries.
+
+**Fix (both engines):** block new entries at/after the EOD cutoff, and always flatten on the
+session's **last bar** (half sessions close at 13:00 and never produce a 15:50 bar; previously the
+Python engine silently *dropped* those open trades at the day rollover).
+
+Impact on Python: 365d 291 -> 289 trades, +$215.97 -> **+$212.95**. 30d/90d unchanged.
+Full years: 2024 +$65.75 (PF 1.19) · 2025 +$79.63 (PF 1.18) · 2026H1 +$192.37 (PF 1.78).
+
+**Note on §16:** the external ORB A+R v1.23 script had `blockEntriesAtOrAfterEOD` and this review
+dismissed it as *"trivial; ~zero impact."* That was wrong. In the Python engine it *is* ~zero
+(the trade opens and closes on the same bar for −$0.02), but in Pine it is a correctness bug. The
+concept was right; only our engine's tolerance for it hid the cost.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic

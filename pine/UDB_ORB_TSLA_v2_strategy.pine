@@ -76,8 +76,15 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //    Window   From         Trades  WR     Net       PF     Worst day   Reversals
 //     30d     2026-06-09     26   65.4%  + $88.56   3.16   -$6.81          5
 //     90d     2026-04-10     77   55.8%  +$150.22   2.13   -$9.07         17
-//    365d     2025-07-10    291   49.1%  +$215.97   1.43   -$13.12        61
-//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$21,600).
+//    365d     2025-07-10    289   49.5%  +$212.95   1.42   -$13.12        58
+//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$21,300).
+//
+//  *** v2.1 FIX — NO NEW ENTRIES AT/AFTER THE EOD CUTOFF ***
+//  TradingView will NOT honour a strategy.close() issued on the SAME bar as the entry. A 15:55
+//  entry therefore rode overnight (and over weekends): a 365-day run showed 12 such trades plus a
+//  half-session carry (Christmas Eve closes 13:00, so no 15:50 bar ever exists), injecting ~+$58
+//  /unit of pure artifact. Entries are now blocked at/after the cutoff, and the position is always
+//  flattened on the session's LAST bar. The Python engine carries the identical guards.
 //
 //  READ THE 365-DAY ROW, NOT THE 30-DAY ROW. PF falls 3.16 -> 1.43 as the window widens; the
 //  30/90-day windows sit inside the calm 2026 regime this system is built for. The 365d PF 1.43
@@ -166,6 +173,10 @@ var bool primStopped = false
 // ==================== NEW DAY / OPENING RANGE ====================
 isNewDay = session.isfirstbar_regular
 isEODbar = (hour * 60 + minute) >= (eodHour * 60 + eodMin)
+// Half sessions (e.g. Christmas Eve) close at 13:00 and NEVER produce a 15:50 bar, so the EOD
+// rule alone would leave a position open overnight. Always flatten on the session's last bar.
+isLastBar = session.islastbar_regular
+isFlattenBar = isEODbar or isLastBar
 
 if isNewDay
     orHigh := high
@@ -195,7 +206,9 @@ if isNewDay
 longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
 shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
 tpDist = not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na
-canTrade = session.ismarket and not isNewDay and not daySkipped and not na(orHigh)
+// NO new entries at/after the EOD cutoff. TradingView will not honour a strategy.close() issued
+// on the SAME bar as the entry, so a 15:55 entry would ride overnight (and over weekends).
+canTrade = session.ismarket and not isNewDay and not daySkipped and not na(orHigh) and not isFlattenBar
 
 // ==================== PRIMARY ENTRY (market -> fills at this bar's close) ====================
 if canTrade and not active and not firstTaken and strategy.position_size == 0
@@ -363,7 +376,7 @@ if active and strategy.position_size == 0 and bar_index > entryBar
     stop := na
 
 // ==================== EOD FORCED CLOSE (market at this bar's close) ====================
-if active and isEODbar and tdir != 0
+if active and isFlattenBar and tdir != 0
     strategy.cancel("P1")
     strategy.close(entryId, comment=(inRev ? "REV EOD" : "EOD"))
     if showLabels
@@ -374,8 +387,8 @@ if active and isEODbar and tdir != 0
     tp := na
     stop := na
 
-// safety: never carry a position overnight
-if strategy.position_size != 0 and isEODbar and not active
+// safety: never carry a position overnight (also covers half sessions with no 15:50 bar)
+if strategy.position_size != 0 and isFlattenBar and not active
     strategy.close_all(comment="EOD flat")
 
 // ==================== VISUALS ====================

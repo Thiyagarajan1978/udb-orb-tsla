@@ -74,11 +74,29 @@ Python engine, **per 1 unit**, realistic fills, $0.02/exit slippage, all ending 
 |--------|------|-------:|---:|----:|---:|----------:|----------:|
 | 30d | 2026-06-09 | 26 | 65.4% | +$88.56 | 3.16 | −$6.81 | 5 |
 | 90d | 2026-04-10 | 77 | 55.8% | +$150.22 | 2.13 | −$9.07 | 17 |
-| **365d** | 2025-07-10 | **291** | **49.1%** | **+$215.97** | **1.43** | **−$13.12** | 61 |
+| **365d** | 2025-07-10 | **289** | **49.5%** | **+$212.95** | **1.42** | **−$13.12** | 58 |
 
 At `Shares per unit = 100`, Strategy Tester Net P&L should read **~100×** these
-(365d ≈ **+$21,600**). It will land slightly *higher*, because Python subtracts $0.02/unit on
+(365d ≈ **+$21,300**). It will land slightly *higher*, because Python subtracts $0.02/unit on
 every exit leg while the strategy runs `slippage=0`.
+
+**v2.1 fix — no new entries at/after the EOD cutoff.** TradingView will not honour a
+`strategy.close()` issued on the *same bar* as the entry, so a **15:55 entry rode overnight**
+(and over weekends). A 365-day run had **12** such trades plus a **half-session carry** (Christmas
+Eve closes 13:00, so no 15:50 bar ever exists) — roughly **+$58/unit of pure artifact**. Entries are
+now blocked at/after the cutoff and the position is always flattened on the session's **last bar**.
+The Python engine carries the identical guards.
+
+### TradingView vs Python reconciliation (as run)
+| Window | TV ÷100 | Python | Diff |
+|--------|--------:|-------:|-----:|
+| 30d | +94.08 | +88.56 | +5.52 |
+| 90d | +155.00 | +150.22 | +4.78 |
+| 365d (pre-fix) | +255.77 | +215.97 | **+39.80** (the overnight bug) |
+
+The 30-day match is structurally exact: TV's 39 rows = 26 trades + 13 partials; reversals 5,
+Trail 11, EOD 6, BE-Stop 9 — all identical. Residual $4–5 gaps are slippage plus a few
+cents of feed difference on marginal triggers.
 
 **Read the 365-day row, not the 30-day row.** PF collapses 3.16 → 2.13 → 1.43 as the window
 widens — the 30/90-day windows sit entirely inside the calm 2026 regime this system is built for.

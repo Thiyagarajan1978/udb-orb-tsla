@@ -325,6 +325,11 @@ class OrbEngine:
         vwap = indicators.session_vwap(df)
         rvol = indicators.relative_volume(df, int(self.enh.get("rvol_filter", {}).get("lookback_bars", 20)))
 
+        # Last bar of each session. Half sessions (e.g. Christmas Eve, 13:00 close) never produce
+        # a bar at/after eod_exit, so without this a position would be silently dropped at the
+        # day rollover instead of being closed.
+        last_ts_by_date = {d: g.index.max() for d, g in df.groupby(df.index.date)}
+
         # Prior-day high/low (PDH/PDL) per date, from the RTH session data itself.
         _daily = df.groupby(df.index.date).agg(hi=("high", "max"), lo=("low", "min"),
                                                cl=("close", "last"))
@@ -419,10 +424,15 @@ class OrbEngine:
             # NEW entries (an already-open position still manages to its own exit).
             breaker_ok = (p.daily_loss_limit <= 0) or (st.day_pnl > -p.daily_loss_limit)
 
+            # Flatten bar = at/after the EOD cutoff, OR the session's last bar (half days).
+            is_last_bar = ts == last_ts_by_date.get(d)
+            is_flatten_bar = (p.eod_exit is not None and t >= p.eod_exit) or is_last_bar
+
             entry_ok_common = (
                 p and st.has_or and st.or_high is not None and t > p.market_open
                 and not st.skipped_by_regime and not st.skipped_by_vol
                 and self._time_window_ok(ts) and breaker_ok
+                and not is_flatten_bar     # no new entries at/after EOD (parity with the Pine port)
             )
 
             # filter gates for entry direction
@@ -523,8 +533,8 @@ class OrbEngine:
                 elif st.dir == -1:
                     self._exit_short(st, ts, bar_i, o, h, l, c, vw)
 
-            # ---- EOD forced close ----
-            if p.eod_exit is not None and t >= p.eod_exit and st.active and st.dir != 0:
+            # ---- EOD forced close (also on the session's last bar, for half days) ----
+            if is_flatten_bar and st.active and st.dir != 0:
                 self._eod_close(st, ts, bar_i, c)
 
             prev_close = c
