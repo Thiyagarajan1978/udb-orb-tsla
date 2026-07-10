@@ -5,10 +5,12 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
      pyramiding              = 0,
      default_qty_type        = strategy.fixed,
      default_qty_value       = 1,
-     initial_capital         = 100000,
+     initial_capital         = 1000000,   // headroom so no order is ever rejected for capital
+     margin_long             = 0,
+     margin_short            = 0,
      commission_type         = strategy.commission.cash_per_contract,
      commission_value        = 0,
-     slippage                = 0,
+     slippage                = 0,         // Python charges $0.02/unit on EXITS only; see note below
      max_labels_count        = 500)
 
 //=============================================================================================
@@ -55,6 +57,42 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //  Strategy Tester will also show slightly MORE than Python because Python charges $0.02/unit
 //  slippage on every exit leg and this script sets slippage=0 (set it to 2 ticks to compare).
 //
+//  ------------------------------------------------------------------------------------------
+//  HOW TO RUN (and how to compare against the Python engine)
+//  ------------------------------------------------------------------------------------------
+//   1. Chart: NASDAQ:TSLA, 5-minute, REGULAR TRADING HOURS (no extended hours).
+//   2. Verify these three inputs — they are the usual mismatch:
+//        Breakout Buffer      = 10%    (a chart plotting Long Trigger 396.19 on 2026-07-09 is on 14%)
+//        BE Retrace Trigger   = 0.55   (the OLD script used 0.35 -> plots BE at 393.90)
+//        Shares per 'unit'    = 100    (needed for fractional risk-parity reversal sizes)
+//   3. Turn OFF "Show Labels" for 30/90/365-day runs (TradingView caps labels at 500).
+//   4. Strategy Tester -> List of Trades -> export CSV.
+//   5. DIVIDE the Strategy Tester Net P&L by 100 (Shares per unit) to compare with the
+//      per-unit Python numbers below.
+//   6. For a 365-day 5m run you need ~19,600 bars of history — scroll the chart fully back
+//      first (a paid TradingView plan loads more bars), or the run will silently start late.
+//
+//  EXPECTED (Python engine, per 1 unit, realistic fills, $0.02/exit slippage, ending 2026-07-09)
+//    Window   From         Trades  WR     Net       PF     Worst day   Reversals
+//     30d     2026-06-09     26   65.4%  + $88.56   3.16   -$6.81          5
+//     90d     2026-04-10     77   55.8%  +$150.22   2.13   -$9.07         17
+//    365d     2025-07-10    291   49.1%  +$215.97   1.43   -$13.12        61
+//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$21,600).
+//
+//  READ THE 365-DAY ROW, NOT THE 30-DAY ROW. PF falls 3.16 -> 1.43 as the window widens; the
+//  30/90-day windows sit inside the calm 2026 regime this system is built for. The 365d PF 1.43
+//  is the honest number, and 2024 (a high-vol year) was PF 1.19. Size off the weak year.
+//  TradingView will read slightly HIGHER than 100x Python, because Python subtracts $0.02/unit
+//  on every exit leg and this script runs slippage=0. Set slippage=2 ticks to be harsher
+//  (TradingView charges it on entries AND exits, so it will then be slightly worse than Python).
+//
+//  KNOWN, EXPECTED DIVERGENCE
+//   - On a violent candle that BOTH reaches the TP and closes through the stop, Python takes the
+//     stop only (it checks the stop first) while TradingView's resting LIMIT fills the 25% partial
+//     intrabar and then the market close. Rare. Not a porting bug.
+//   - TradingView's data feed differs slightly from FMP; OR boundaries can shift a few cents and
+//     flip a marginal reversal trigger.
+//
 //  APPLY TO: TSLA, 5-minute, Regular Trading Hours.  Size off 2024, not 2026.
 //=============================================================================================
 
@@ -87,7 +125,7 @@ revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step
 revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, group=grpV)
 
 grpU = "Display"
-showLabels = input.bool(true, "Show Labels", group=grpU)
+showLabels = input.bool(false, "Show Labels", group=grpU, tooltip="Turn OFF for long backtests (30/90/365 days). TradingView keeps only the last 500 labels, so on a long run they are both useless and slow. Turn ON to inspect a single day.")
 showLevels = input.bool(true, "Show Levels", group=grpU)
 
 // ==================== PRIOR-DAY REALISED VOLATILITY (no repaint) ====================

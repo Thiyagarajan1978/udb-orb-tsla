@@ -67,7 +67,25 @@ Not ported (all disabled in the Python default): `protective_stop`, `daily_loss_
 
 Toggle `exit_on_close` **off** in the inputs to see the old, optimistic numbers for comparison.
 
-## Expected results (Python, 1 unit, realistic fills, $0.02 slippage)
+## Benchmarks for your 30 / 90 / 365-day Strategy Tester runs
+Python engine, **per 1 unit**, realistic fills, $0.02/exit slippage, all ending **2026-07-09**:
+
+| Window | From | Trades | WR | Net | PF | Worst day | Reversals |
+|--------|------|-------:|---:|----:|---:|----------:|----------:|
+| 30d | 2026-06-09 | 26 | 65.4% | +$88.56 | 3.16 | −$6.81 | 5 |
+| 90d | 2026-04-10 | 77 | 55.8% | +$150.22 | 2.13 | −$9.07 | 17 |
+| **365d** | 2025-07-10 | **291** | **49.1%** | **+$215.97** | **1.43** | **−$13.12** | 61 |
+
+At `Shares per unit = 100`, Strategy Tester Net P&L should read **~100×** these
+(365d ≈ **+$21,600**). It will land slightly *higher*, because Python subtracts $0.02/unit on
+every exit leg while the strategy runs `slippage=0`.
+
+**Read the 365-day row, not the 30-day row.** PF collapses 3.16 → 2.13 → 1.43 as the window
+widens — the 30/90-day windows sit entirely inside the calm 2026 regime this system is built for.
+PF 1.43 is the honest number, and 2024 (a high-volatility year) was **PF 1.19**. Size off the weak
+year, not the flattering one.
+
+## Full-year results (Python, 1 unit, realistic fills, $0.02 slippage)
 
 | Year | Trades | WR | Net | PF | Worst day | Reversals |
 |---|---:|---:|---:|---:|---:|---:|
