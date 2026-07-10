@@ -448,6 +448,18 @@ class OrbEngine:
             long_confirm = (not two_close) or (same_day_prev and long_trig is not None and prev_close > long_trig)
             short_confirm = (not two_close) or (same_day_prev and short_trig is not None and prev_close < short_trig)
 
+            # Confirmation candle: after a fresh close-break, require the NEXT candle to HOLD beyond
+            # the trigger before entering (and optionally not be an against-trend candle). Rejects
+            # the extended first-break bar that snaps back inside — e.g. 2026-07-09 10:00 break,
+            # 10:05 back inside; only the 11:35 break + 11:40 hold is a valid entry.
+            cb = self.enh.get("confirm_breakout", {})
+            if cb.get("enabled", False):
+                trend = bool(cb.get("require_trend_candle", True))
+                lc = same_day_prev and long_trig is not None and prev_close > long_trig and (c >= o or not trend)
+                sc = same_day_prev and short_trig is not None and prev_close < short_trig and (c <= o or not trend)
+                long_confirm = long_confirm and lc
+                short_confirm = short_confirm and sc
+
             can_long = (
                 p.allow_longs and long_trig is not None and c > long_trig and long_confirm
                 and min_ok and max_ok and vwap_long_ok and self._rvol_ok(rv)

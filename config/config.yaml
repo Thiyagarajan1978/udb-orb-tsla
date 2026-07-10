@@ -212,6 +212,15 @@ enhancements:
   confirm_two_closes:
     enabled: false
 
+  # 4d) Confirmation candle (under test). Instead of entering on the first close-break, require the
+  #     NEXT candle to HOLD beyond the trigger (and, if require_trend_candle, be a with-trend candle
+  #     — green for longs / red for shorts). If it snaps back inside, wait for a fresh break.
+  #     Enters at the confirmation candle's close. Avoids chasing an extended first-break bar that
+  #     immediately reverses (e.g. 2026-07-09 10:00 break -> 10:05 back inside).
+  confirm_breakout:
+    enabled: false
+    require_trend_candle: true
+
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
   #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the
   #    breakout level (within proximity_pct of the OR width), require the bar to CLOSE BEYOND

@@ -298,6 +298,23 @@ def test_two_close_confirmation_delays_entry():
     assert abs(on.trades[0].entry_price - 101.9) < 1e-9    # waits for the second
 
 
+def test_confirm_breakout_waits_for_next_candle_to_hold():
+    """confirm_breakout: the first close-break must be HELD by the next candle, else no entry."""
+    # 09:35 breaks above 101.2 but 09:40 snaps back inside -> rejected; 09:45+09:50 hold -> enter 09:50
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),      # break (close 101.5 > 101.2)
+        (9, 40, 101.5, 101.6, 100.5, 100.9, 1000),    # snaps back inside (100.9 < 101.2) -> reject
+        (9, 45, 100.9, 101.6, 100.8, 101.4, 1000),    # fresh break
+        (9, 50, 101.4, 101.9, 101.3, 101.8, 1000),    # holds + green -> ENTER here
+        (15, 50, 101.8, 102.0, 101.5, 101.9, 1000),
+    ]
+    off = _run({"2024-06-03": rows})
+    on = _run({"2024-06-03": rows}, enh_overrides={"confirm_breakout": {"enabled": True, "require_trend_candle": True}})
+    assert abs(off.trades[0].entry_price - 101.5) < 1e-9     # baseline enters on the first break
+    assert abs(on.trades[0].entry_price - 101.8) < 1e-9      # confirmed enters on the held candle
+
+
 def test_no_trade_day_reason_no_setup():
     rows = [
         (9, 30, 100, 101.0, 99.0, 100.0, 1000),

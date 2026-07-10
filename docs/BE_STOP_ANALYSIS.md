@@ -578,6 +578,35 @@ cosmetic if you move to a broker stop — kept.
 not on the flattering Jun-Jul 2026 stretch. The Mon/Fri seasonality the reviewer flagged as overfit
 bait was not acted on.
 
+## 19. Confirmation-candle trigger — TESTED, REJECTED (5th entry filter to fail the same way)
+
+User request: instead of entering on the first close-break, require the NEXT candle to HOLD beyond
+the trigger (and, optionally, be a with-trend candle); if it snaps back inside, wait for a fresh
+break. Motivated by 2026-07-09 (10:00 break, 10:05 back inside; only the 11:35 break + 11:40 hold
+was real). Implemented as `enhancements.confirm_breakout`.
+
+**On July 2026 it looks great** — turns the 07-09 BE-stop (−$5.60) into +$4.46 and 07-06 into
++$10.77 (the failed opening short is replaced by a confirmed long). Month +$27.27 → +$34.78.
+
+**On the full sample it loses:**
+
+| variant | 2024 | 2025 | 2026 | ugly(24+25) | total | worst 2024 |
+|---------|-----:|-----:|-----:|------------:|------:|-----------:|
+| baseline (immediate) | +65.8 | +79.6 | +192.4 | +145.4 | +337.7 | −9.7 |
+| confirm hold + trend | +42.8 | +112.3 | +125.1 | +155.1 | +280.2 | −14.9 |
+| confirm hold only | +43.2 | +79.9 | +150.4 | +123.0 | +273.4 | −14.9 |
+
+Helps 2025 (+$33, a shakeout year) but hurts 2024 (−$23) and 2026 (−$67); total −$57.5; and the
+worst day gets *worse* (−9.7 → −14.9). **Why:** confirmation makes you enter later at a worse price
+on the trend days (07-02: short filled 413.76 instead of 418.70, −$5 on a runner), and TSLA's
+biggest winners are immediate follow-through breakouts. The whipsaw-saves are outnumbered by the
+trend-fill-costs, and a confirmed entry that fails is more extended from the OR, so a bigger stop.
+
+**Pattern (now 5 for 5): every entry-timing filter fails the same way** — time-of-day, RVOL,
+PDH/PDL, 2-close acceptance, and now confirmation. On TSLA, filters that WAIT cost more on trends
+than they save on whipsaws. The edge is in management (BE, risk-parity sizing, trailing), not entry
+selection. Kept as an opt-in (default OFF); the immediate-entry logic stays final.
+
 ### Final realistic 6-month 2026 (all adopted, exit_on_close)
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic
