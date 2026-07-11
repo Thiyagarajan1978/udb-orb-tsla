@@ -49,13 +49,13 @@ indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UD
 //  PYTHON-VALIDATED RESULTS — DEFAULT NOW = 2-candle confirmation + Max-Cap $5 stop
 //  (TSLA 5m, realistic fills, 1 unit, slippage $0.02)
 //  --------------------------------------------------------------------------
-//  DEFAULT NOW = RESTING STOP (touch): stop exits fill INTRABAR at the level, not on the close.
+//  DEFAULT NOW = RESTING STOP (touch) + $0.10 slippage (conservative stop-fill/sweep allowance).
 //     Year        Trades   WR      Net        PF     Worst day   Reversals
-//     2024         229    47.6%   +  $95.67   1.41   -$7.76         49
-//     2025         221    51.1%   + $119.02   1.38   -$7.77         38
-//     2026 (H1)    140    50.0%   + $134.04   1.73   -$6.24         20
-//     2024-26 H1   590    49.5%   + $348.72   1.48   -$7.77        107   (full ledger, Run #56)
-//     Prior close-fill default: 590 tr 50.0% +$295.35 PF 1.32 worst -$12.25 (resting stop = +18%)
+//     2024         229    47.6%   +  $74.51   1.30   -$7.90         49
+//     2025         221    51.1%   + $100.60   1.31   -$7.91         38
+//     2026 (H1)    140    48.6%   + $122.49   1.65   -$6.38         20
+//     2024-26 H1   590    49.2%   + $297.60   1.39   -$7.91        107   (full ledger, Run #57)
+//     Slippage 0.02 -> 0.10 haircut net -15% (stop fills can sweep; see BE_STOP_ANALYSIS 23).
 //
 //  To reproduce the OLD immediate-entry numbers: turn OFF "Require confirmation candle" and set
 //  "Max Stop Distance from Entry" to 0 (2024 253tr/45.1%/+65.67, 2025 236tr/47.5%/+82.71).
@@ -97,7 +97,7 @@ maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, g
 grpE = "Entry"
 bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE)
 tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE)
-slippage    = input.float(0.02, "Slippage Per Unit (charged on each exit)", step=0.01, group=grpE)
+slippage    = input.float(0.10, "Slippage Per Unit (charged on each exit)", step=0.01, group=grpE, tooltip="0.10 = conservative allowance for stop-fill slippage / liquidity sweeps (a resting stop becomes a market order and can fill worse than the level). Was 0.02.")
 
 grpX = "Exits (tuned under realistic fills)"
 adaptiveTPScale = input.float(1.0,  "Adaptive TP — OR Width Multiplier", step=0.05, group=grpX)

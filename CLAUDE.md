@@ -20,6 +20,9 @@ close far below. **This means the system is no longer purely alerts-only for the
 place resting stops with the broker.** Set `stop_fill_mode: close` for the prior manual/alerts model
 (BE stop = a real ~$3.68 close loss). `stop` mode (fill exactly at the stop, zero-slippage) is the
 optimistic fantasy — used only by `faithful_be035.yaml` for Pine parity. See BE_STOP_ANALYSIS §22.
+`slippage_per_unit` is **0.10** (was 0.02) — a conservative allowance for stop-fill slippage /
+liquidity sweeps (a resting stop becomes a market order; the 5m backtest can't see sub-bar sweep
+wicks). Haircuts net ~15% (+348.7 → +297.6). Paper-trading must MEASURE true fills. See §23.
 
 ## Defaults vs the faithful port
 `config/config.yaml` is the **production default** and now carries three *validated* tunings on

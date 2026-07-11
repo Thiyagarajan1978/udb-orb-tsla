@@ -10,7 +10,7 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
      margin_short            = 0,
      commission_type         = strategy.commission.cash_per_contract,
      commission_value        = 0,
-     slippage                = 0,         // Python charges $0.02/unit on EXITS only; see note below
+     slippage                = 0,         // Python charges $0.10/unit on EXITS; set TV ~10 ticks to match
      max_labels_count        = 500)
 
 //=============================================================================================
@@ -41,12 +41,13 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //    reversal: raw opposite OR break, trails to EOD, RISK-PARITY size min(2x, $6 / risk_per_unit)
 //    skip day if OR width > $8   OR   prior-20d realised daily vol > 4.92%
 //
-//  PYTHON-VALIDATED — DEFAULT = 2-candle confirm + Max-Cap $5 + RESTING STOP (TSLA 5m, 1u, $0.02 slip)
-//    2024        229 tr  47.6%  + $95.67  PF 1.41  worst - $7.76
-//    2025        221 tr  51.1%  +$119.02  PF 1.38  worst - $7.77
-//    2026 H1     140 tr  50.0%  +$134.04  PF 1.73  worst - $6.24
-//    2024-26H1   590 tr  49.5%  +$348.72  PF 1.48  worst - $7.77   (full ledger, Run #56)
-//    Prior close-fill default: 590 tr 50.0% +$295.35 PF 1.32 worst -$12.25 (resting stop = +18%)
+//  PYTHON-VALIDATED — DEFAULT = 2-candle confirm + Max-Cap $5 + RESTING STOP (TSLA 5m, 1u, $0.10 slip)
+//    2024        229 tr  47.6%  + $74.51  PF 1.30  worst - $7.90
+//    2025        221 tr  51.1%  +$100.60  PF 1.31  worst - $7.91
+//    2026 H1     140 tr  48.6%  +$122.49  PF 1.65  worst - $6.38
+//    2024-26H1   590 tr  49.2%  +$297.60  PF 1.39  worst - $7.91   (full ledger, Run #57)
+//    Slippage bumped 0.02 -> 0.10 (conservative stop-fill/sweep allowance; see BE_STOP_ANALYSIS 23).
+//    Set the Strategy Tester slippage to ~10 ticks ($0.10) to match.
 //
 //  SHARES PER UNIT (default 100) — READ THIS
 //  TradingView rounds order size to whole shares. The reversal is sized by RISK PARITY and needs
@@ -77,10 +78,10 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //  EXPECTED (Python engine, per 1 unit, realistic fills, $0.02/exit slippage, ending 2026-07-09)
 //  DEFAULT = 2-candle confirmation + Max-Cap $5 + RESTING STOP (touch fills).
 //    Window   From         Trades  WR     Net       PF     Worst day   Reversals
-//     30d     2026-06-09     23   65.2%  + $76.80   5.15   -$5.04          3
-//     90d     2026-04-10     71   52.1%  +$114.82   2.29   -$6.11         12
-//    365d     2025-07-10    269   50.6%  +$193.80   1.54   -$7.60         42
-//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$19,400).
+//     30d     2026-06-09     23   65.2%  + $74.98   4.92   -$5.18          3
+//     90d     2026-04-10     71   52.1%  +$108.99   2.18   -$6.28         12
+//    365d     2025-07-10    269   49.8%  +$171.42   1.46   -$7.75         42
+//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$17,100).
 //  NOTE: because stops are now RESTING orders, TradingView fills them intrabar exactly like the
 //  engine's touch model — expect a closer match than the old close-fill version (which had the
 //  data-feed marginal-trigger gaps). Small residual: TV applies a BE stop one bar later than the

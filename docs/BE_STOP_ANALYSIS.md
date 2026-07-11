@@ -715,6 +715,30 @@ scaled — $5 is 0.8% on META ($631, punishingly tight) vs 2.5% on NVDA ($203). 
 confounded with "levels mis-scaled." The clean re-test = express Max-Cap/TP/OR-gate as %/×ATR, then
 re-run the basket. Until then: KEEP single-symbol TSLA; do not deploy on other names.
 
+## 23. Liquidity sweeps / stop-fill slippage — slippage bumped 0.02 -> 0.10 (conservative)
+
+A resting stop becomes a MARKET order when triggered, so it can fill WORSE than the level (a "sweep"
+wicks through the stops and reverses). The 5m backtest fills AT the level and CANNOT see sub-bar
+sweep wicks (no tick/1m data on this FMP plan), so the touch model is optimistic on stop fills.
+Every trade's main leg exits via a stop/market fill (only the 25% TP partial is a protected limit),
+so slippage hits nearly the whole book. Stress (extra $/share on all stop/market exits, on top of base):
+
+| extra $/sh | 3yr net | worst day |
+|-----------:|--------:|----------:|
+| 0.00 | +348.7 | -7.8 |
+| 0.10 | +289.8 | -7.9 |
+| 0.25 | +201.4 | -8.2 |
+| 0.50 | +54.1  | -8.7 |
+| 1.00 | -240.6 | -9.7 |
+
+~$59/unit per $0.10/share; edge survives to ~$0.50, breaks even ~$0.60. TSLA is very liquid so real
+avg slip is likely $0.05-0.15, not $0.50 — but the $0.02 default was too light for stop fills.
+ADOPTED `slippage_per_unit 0.10` as the conservative working baseline. New default (Run #57):
+2024 +74.51/PF1.30 | 2025 +100.60/PF1.31 | 2026H1 +122.49/PF1.65 | combined 590tr/49.2%/+297.60/
+PF1.39/worst-7.91. Benchmarks 30/90/365: +74.98(PF4.92)/+108.99(PF2.18)/+171.42(PF1.46). The one
+number the backtest CANNOT give is your true stop-slip — paper-trading must MEASURE it. stop-market
+= guaranteed exit + slip; stop-limit = no slip but risks not filling (bigger loss). Use stop-market.
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and

@@ -57,7 +57,7 @@ One subscription delivers every event, each message self-identifying:
 | Max OR width | skip day if > $8 |
 | Volatility gate | skip day if prior-20d realised daily vol > 4.92% |
 | Stop fills | **resting stop, intrabar at the level / open-on-gap** (`stop_fill_mode: touch`) |
-| Slippage | $0.02 per unit, on every exit leg |
+| Slippage | **$0.10 per unit**, on every exit leg (conservative stop-fill/sweep allowance) |
 
 Not ported (all disabled in the Python default): `protective_stop`, `daily_loss_limit`,
 `reenter_after_whipsaw`, `pdh_pdl_filter`, `rvol_filter`, `time_window`, `or_width_regime`.
@@ -76,18 +76,21 @@ Not ported (all disabled in the Python default): `protective_stop`, `daily_loss_
 Set "Stop exits fill at bar CLOSE" **ON** in the inputs to see the old close-fill numbers.
 
 ## Benchmarks for your 30 / 90 / 365-day Strategy Tester runs
-Python engine, **per 1 unit**, realistic fills, $0.02/exit slippage, all ending **2026-07-09**:
+Python engine, **per 1 unit**, realistic fills, $0.10/exit slippage, all ending **2026-07-09**:
 
-Default = **2-candle confirmation + Max-Cap $5 + RESTING STOP** (touch fills):
+Default = **2-candle confirmation + Max-Cap $5 + RESTING STOP** (touch fills, $0.10 slippage):
 
 | Window | From | Trades | WR | Net | PF | Worst day | Reversals |
 |--------|------|-------:|---:|----:|---:|----------:|----------:|
-| 30d | 2026-06-09 | 23 | 65.2% | +$76.80 | 5.15 | −$5.04 | 3 |
-| 90d | 2026-04-10 | 71 | 52.1% | +$114.82 | 2.29 | −$6.11 | 12 |
-| **365d** | 2025-07-10 | **269** | **50.6%** | **+$193.80** | **1.54** | **−$7.60** | 42 |
+| 30d | 2026-06-09 | 23 | 65.2% | +$74.98 | 4.92 | −$5.18 | 3 |
+| 90d | 2026-04-10 | 71 | 52.1% | +$108.99 | 2.18 | −$6.28 | 12 |
+| **365d** | 2025-07-10 | **269** | **49.8%** | **+$171.42** | **1.46** | **−$7.75** | 42 |
 
-Prior close-fill default was 365d +$188.38 / PF 1.41 / worst −$12.25 — the resting stop lifts net and
-roughly halves the worst day. To see the old close-fill numbers, set "Stop exits fill at bar CLOSE" ON.
+Slippage is now **$0.10/share** (was $0.02) — a conservative allowance for stop-fill slippage and
+liquidity sweeps (a resting stop becomes a market order and can fill worse than the level; the 5m
+backtest fills *at* the level and can't see sub-bar sweep wicks). This haircuts net ~15%. Set the
+Strategy Tester slippage to ~10 ticks to match. To see the old close-fill numbers, set "Stop exits
+fill at bar CLOSE" ON.
 
 At `Shares per unit = 100`, Strategy Tester Net P&L should read **~100×** these
 (365d ≈ **+$21,300**). It will land slightly *higher*, because Python subtracts $0.02/unit on
@@ -132,17 +135,17 @@ PF 1.43 is the honest number, and 2024 (a high-volatility year) was **PF 1.19**.
 year, not the flattering one.
 
 ## Full-year results — current default (2-candle confirmation + Max-Cap $5)
-Python, 1 unit, realistic fills, $0.02 slippage:
+Python, 1 unit, realistic fills, $0.10 slippage:
 
 | Year | Trades | WR | Net | PF | Worst day | Reversals |
 |---|---:|---:|---:|---:|---:|---:|
-| 2024 | 229 | 47.6% | +$95.67 | 1.41 | −$7.76 | 49 |
-| 2025 | 221 | 51.1% | +$119.02 | 1.38 | −$7.77 | 38 |
-| 2026 H1 | 140 | 50.0% | +$134.04 | 1.73 | −$6.24 | 20 |
-| **2024→26 H1** | **590** | **49.5%** | **+$348.72** | **1.48** | **−$7.77** | 107 |
+| 2024 | 229 | 47.6% | +$74.51 | 1.30 | −$7.90 | 49 |
+| 2025 | 221 | 51.1% | +$100.60 | 1.31 | −$7.91 | 38 |
+| 2026 H1 | 140 | 48.6% | +$122.49 | 1.65 | −$6.38 | 20 |
+| **2024→26 H1** | **590** | **49.2%** | **+$297.60** | **1.39** | **−$7.91** | 107 |
 
-The last row is the full 2.5-year ledger (Run #56, resting stop). Prior close-fill default was
-+$295.35 / PF 1.32 / worst −$12.25 — the resting stop is **+18% net and ~40% smaller worst day**. **Size off 2024, not 2026** — 2026 was the
+The last row is the full 2.5-year ledger (Run #57, resting stop + $0.10 slippage). At $0.02 slippage
+it was +$348.72; the conservative $0.10 stop-slip allowance haircuts it ~15% to +$297.60. **Size off 2024, not 2026** — 2026 was the
 friendly low-vol regime. For reference, the OLD immediate-entry default was 2024 253tr/45.1%/+$65.67,
 2025 236tr/47.5%/+$82.71, 2026 H1 152tr/50.7%/+$192.31 (higher 2026 net, lower win rate, bigger
 worst day) — reproduce it by turning confirmation OFF and Max Stop Distance to 0.
