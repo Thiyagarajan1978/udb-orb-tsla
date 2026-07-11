@@ -14,21 +14,27 @@ Both mirror the Python engine's **current default config** (`config/config.yaml`
    Indicator version: the **Summary Table** (top-right) reports trades, win rate, net P&L, PF and
    worst day — the same definitions the Python engine uses (**a BE Stop counts as a failure**).
 
-## Why the strategy never uses `strategy.exit(stop=...)`
-A resting stop order fills **intrabar at the stop price** — that is the optimistic fantasy the
-original v12.4.3 script assumed, and it inflated the 6-month P&L from **+$214 to +$522**. This is
-an alerts-only system: the signal fires on the 5-minute **bar close**. So every stop-type exit is a
-**market order** and, with `process_orders_on_close=true`, fills at **that bar's close**.
+## Execution model — RESTING STOP (adopted 2026-07-11)
+Stop-type exits are now **real resting stop orders**: `strategy.exit(stop=...)` fills **intrabar at
+the stop level**, or at the **open** on a gap. This is *not* the zero-slippage fantasy — it is the
+honest model of a broker OCO stop, and it requires you to actually **place resting stops**. It lifts
+3-year net **+18% (+$295 → +$349/unit)** and roughly **halves the worst day (−12.3 → −7.8)**, because
+a BE stop now fills at ~entry instead of a bar close far below it.
 
 | Event | Order type | Fills at |
 |-------|-----------|----------|
 | Entry / reversal entry | market | signal bar's **close** |
-| 25% partial at TP | **limit** | the **TP level** |
-| BE Stop / BE Trail / Base SL / runner-trail / EOD | market | that bar's **close** |
+| 25% partial at TP (`P1`) | **limit** | the **TP level** |
+| BE/Base stop (`SL`) · runner-trail (`TR`) | **resting stop** | the **level**, or the **open** on a gap |
+| EOD | market | the flatten bar's **close** |
 
-Strategy Tester will show slightly **more** than Python, because Python charges $0.02/unit slippage
-on every exit leg and the strategy sets `slippage=0`. Set `slippage` to **2 ticks** to compare like
-for like (TradingView charges it on entries *and* exits, so it will be marginally harsher).
+Two labelled resting stops (`SL` = BE/base, `TR` = runner peak-trail) let the reversal arm correctly:
+it arms only when the primary exits via `SL`, never via `TR` or EOD.
+
+**Residual divergence to expect:** a resting order can only move *after* a bar completes, so TradingView
+applies a newly-armed BE stop one bar later than the engine. On a bar that both arms BE *and* stops out,
+TV fills at the base SL while Python fills at ~entry — TV is slightly more conservative there. Set
+"Stop exits fill at bar CLOSE" **ON** to reproduce the old alerts-only close-fill numbers.
 
 ## Alerts (for paper trading)
 Right-click chart → **Add Alert** → Condition: this indicator → **"Any alert() function call"**.
@@ -50,36 +56,38 @@ One subscription delivers every event, each message self-identifying:
 | Reversal size | `min(2×, $6 / risk_per_unit)` — **risk parity** |
 | Max OR width | skip day if > $8 |
 | Volatility gate | skip day if prior-20d realised daily vol > 4.92% |
-| Stop fills | **at the bar CLOSE** (`exit_on_close`) |
+| Stop fills | **resting stop, intrabar at the level / open-on-gap** (`stop_fill_mode: touch`) |
 | Slippage | $0.02 per unit, on every exit leg |
 
 Not ported (all disabled in the Python default): `protective_stop`, `daily_loss_limit`,
 `reenter_after_whipsaw`, `pdh_pdl_filter`, `rvol_filter`, `time_window`, `or_width_regime`.
 
 ## The two changes that matter most
-1. **`exit_on_close`** — stop exits trigger on the bar *close* and fill there. The old script
-   filled at the stop level, as if a resting order existed. That single assumption inflated the
-   6-month P&L from **+$214 → +$522**. A BE stop is a real ~$2–4 loss, not a $0 scratch.
+1. **Resting stop (`stop_fill_mode: touch`)** — stop exits fill intrabar at the level (gap-aware),
+   as a real broker OCO order. This is the single biggest lever: +18% net and ~half the worst day
+   vs the prior close-fill model, because BE stops fill at ~entry instead of a bar close far below.
+   (The *earlier* project default was close-fill precisely because we had not yet committed to
+   placing resting stops; now that we do, touch is the honest and better model.)
 2. **Volatility gate** — this is a *low-vol* breakout system. A high-vol bar closes further past
    the stop, so BE-stop cost scales with volatility. Skipping the top vol quintile rescues 2024
    (PF 1.07 → 1.19) and never fires in 2026 (which had ~no high-vol days — that's *why* 2026
    looked so good).
 
-Toggle `exit_on_close` **off** in the inputs to see the old, optimistic numbers for comparison.
+Set "Stop exits fill at bar CLOSE" **ON** in the inputs to see the old close-fill numbers.
 
 ## Benchmarks for your 30 / 90 / 365-day Strategy Tester runs
 Python engine, **per 1 unit**, realistic fills, $0.02/exit slippage, all ending **2026-07-09**:
 
-Default = **2-candle confirmation + Max-Cap $5 stop** (higher win rate, smaller worst day):
+Default = **2-candle confirmation + Max-Cap $5 + RESTING STOP** (touch fills):
 
 | Window | From | Trades | WR | Net | PF | Worst day | Reversals |
 |--------|------|-------:|---:|----:|---:|----------:|----------:|
-| 30d | 2026-06-09 | 23 | 65.2% | +$76.41 | 3.84 | −$8.29 | 3 |
-| 90d | 2026-04-10 | 71 | 53.5% | +$113.08 | 1.92 | −$10.42 | 12 |
-| **365d** | 2025-07-10 | **269** | **50.9%** | **+$188.38** | **1.41** | **−$12.25** | 42 |
+| 30d | 2026-06-09 | 23 | 65.2% | +$76.80 | 5.15 | −$5.04 | 3 |
+| 90d | 2026-04-10 | 71 | 52.1% | +$114.82 | 2.29 | −$6.11 | 12 |
+| **365d** | 2025-07-10 | **269** | **50.6%** | **+$193.80** | **1.54** | **−$7.60** | 42 |
 
-Reproduce the old immediate-entry numbers by turning OFF "Require confirmation candle" and setting
-"Max Stop Distance from Entry" to 0 (→ 365d 289 tr, 49.5%, +$212.95).
+Prior close-fill default was 365d +$188.38 / PF 1.41 / worst −$12.25 — the resting stop lifts net and
+roughly halves the worst day. To see the old close-fill numbers, set "Stop exits fill at bar CLOSE" ON.
 
 At `Shares per unit = 100`, Strategy Tester Net P&L should read **~100×** these
 (365d ≈ **+$21,300**). It will land slightly *higher*, because Python subtracts $0.02/unit on
@@ -128,12 +136,13 @@ Python, 1 unit, realistic fills, $0.02 slippage:
 
 | Year | Trades | WR | Net | PF | Worst day | Reversals |
 |---|---:|---:|---:|---:|---:|---:|
-| 2024 | 229 | 48.0% | +$54.70 | 1.18 | −$8.70 | 49 |
-| 2025 | 221 | 52.5% | +$124.02 | 1.32 | −$12.25 | 38 |
-| 2026 H1 | 140 | 49.3% | +$116.63 | 1.48 | −$10.42 | 20 |
-| **2024→26 H1** | **590** | **50.0%** | **+$295.35** | **1.32** | **−$12.25** | 107 |
+| 2024 | 229 | 47.6% | +$95.67 | 1.41 | −$7.76 | 49 |
+| 2025 | 221 | 51.1% | +$119.02 | 1.38 | −$7.77 | 38 |
+| 2026 H1 | 140 | 50.0% | +$134.04 | 1.73 | −$6.24 | 20 |
+| **2024→26 H1** | **590** | **49.5%** | **+$348.72** | **1.48** | **−$7.77** | 107 |
 
-The last row is the full 2.5-year ledger (Run #55). **Size off 2024, not 2026** — 2026 was the
+The last row is the full 2.5-year ledger (Run #56, resting stop). Prior close-fill default was
++$295.35 / PF 1.32 / worst −$12.25 — the resting stop is **+18% net and ~40% smaller worst day**. **Size off 2024, not 2026** — 2026 was the
 friendly low-vol regime. For reference, the OLD immediate-entry default was 2024 253tr/45.1%/+$65.67,
 2025 236tr/47.5%/+$82.71, 2026 H1 152tr/50.7%/+$192.31 (higher 2026 net, lower win rate, bigger
 worst day) — reproduce it by turning confirmation OFF and Max Stop Distance to 0.

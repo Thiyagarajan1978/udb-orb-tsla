@@ -11,16 +11,19 @@ timeframe_minutes: 5
 timezone: America/New_York
 
 # ---- Execution realism -------------------------------------------------
-# This is an ALERTS-ONLY system: signals fire on the 5-minute BAR CLOSE, so stop-type exits
-# cannot fill at the stop level intrabar (no resting order) — you act after the close and fill
-# at/around the close. With exit_on_close ON, BE Stop / BE Trail / Base SL / runner-trail exits
-# trigger when the bar CLOSES beyond the level and fill at that close (so a BE stop is a real
-# loss, ~$1-2, not a $0 scratch). TP/partial still fill at the target (favourable limit).
+# ADOPTED 2026-07-11: a REAL broker resting stop (OCO), modelled by "touch". Stop-type exits
+# (Base SL / BE Stop / BE Trail / runner peak-trail) fill INTRABAR at the stop level, gap-aware
+# (a bar opening beyond the stop fills at the worse open). This is NOT the zero-slippage fantasy —
+# it is the honest model of a resting stop order, and it requires placing OCO stops with the broker
+# (i.e. this is no longer purely alerts-only for the stop leg). Over 3 years it lifts net +18%
+# (+295 -> +349 /unit) AND halves the worst day (-12.3 -> -7.8) and worst trade (-9.03 -> -5.02),
+# because BE stops now fill at ~entry instead of a bar close far below it. See BE_STOP_ANALYSIS §22.
 execution:
   # HOW STOP EXITS FILL — the single biggest lever (per external review, confirmed):
-  #   "close" : ALERTS-ONLY. Trigger & fill on the bar CLOSE. You act after the candle closes,
-  #             so a BE stop is a real ~$3.68/share loss. This is the honest default for a
-  #             manual/alert workflow.
+  #   "touch" : ADOPTED. Real broker resting stop. Trigger on the wick reaching the stop; fill at
+  #             the stop level, or at the OPEN if the bar gapped through it (gap-aware, honest).
+  #   "close" : ALERTS-ONLY (prior default). Trigger & fill on the bar CLOSE — a BE stop is a real
+  #             ~$3.68/share loss. Use this if you are NOT placing resting stops (manual workflow).
   #   "touch" : BROKER RESTING STOP (e.g. TradeStation). Trigger on the wick, gap-aware fill at
   #             min(stop, open). BE stops become ~0-scratches, so net roughly DOUBLES and the
   #             worst day shrinks — BUT it also wicks out trades that dip to entry and recover.
@@ -30,7 +33,7 @@ execution:
   # Honest 3-year range (net): close-fill +65/+80/+192 (PF ~1.2)  ->  touch@$0.10 +135/+131/+236
   # (PF ~1.4-2.6). The truth for YOUR fills is measurable: paper-trade a resting stop on
   # TradeStation and compare. See docs/BE_STOP_ANALYSIS.md §18.
-  stop_fill_mode: close
+  stop_fill_mode: touch
   exit_on_close: true      # legacy flag; ignored when stop_fill_mode is set
   # Resting protective stop at the OR boundary (opt-in). TESTED and left OFF: the realistic
   # worst days are whipsaws on WIDE-OR days where the loss closes *within* the OR range (above

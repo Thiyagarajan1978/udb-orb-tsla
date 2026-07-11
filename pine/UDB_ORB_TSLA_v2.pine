@@ -13,9 +13,12 @@ indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UD
 //  the candle closes and fill at/around that close. Fixing that one thing cut the 6-month P&L
 //  from +$522 to +$214. Everything below was then RE-TUNED under realistic fills.
 //
-//   1. EXIT_ON_CLOSE (the big one) : BE Stop / BE Trail / Base SL / runner-trail all TRIGGER on
-//                                    the bar CLOSE and FILL at that close. A BE stop is a REAL
-//                                    loss (~$2-4), not a $0 scratch.
+//   1. RESTING STOP (the big one)  : ADOPTED 2026-07-11. Stop exits (BE Stop / BE Trail / Base SL
+//                                    / runner-trail) fill INTRABAR at the level, gap-aware — a REAL
+//                                    broker OCO stop, so a BE stop fills at ~entry (not a bar close
+//                                    far below). +18% net & half the worst day vs the old close-fill
+//                                    model. Set "Stop exits fill at bar CLOSE" ON to see the old
+//                                    alerts-only numbers. (You must PLACE resting stops to get this.)
 //   2. VOLATILITY REGIME GATE (NEW): skip the day when prior-20d realised daily vol > 4.92%.
 //                                    This is a LOW-VOL breakout system — a high-vol bar closes
 //                                    further past the stop, so BE-stop cost scales with vol.
@@ -46,11 +49,13 @@ indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UD
 //  PYTHON-VALIDATED RESULTS — DEFAULT NOW = 2-candle confirmation + Max-Cap $5 stop
 //  (TSLA 5m, realistic fills, 1 unit, slippage $0.02)
 //  --------------------------------------------------------------------------
+//  DEFAULT NOW = RESTING STOP (touch): stop exits fill INTRABAR at the level, not on the close.
 //     Year        Trades   WR      Net        PF     Worst day   Reversals
-//     2024         229    48.0%   +  $54.70   1.18   -$8.70         49
-//     2025         221    52.5%   + $124.02   1.32   -$12.25        38
-//     2026 (H1)    140    49.3%   + $116.63   1.48   -$10.42        20
-//     2024-26 H1   590    50.0%   + $295.35   1.32   -$12.25        107   (full ledger, Run #55)
+//     2024         229    47.6%   +  $95.67   1.41   -$7.76         49
+//     2025         221    51.1%   + $119.02   1.38   -$7.77         38
+//     2026 (H1)    140    50.0%   + $134.04   1.73   -$6.24         20
+//     2024-26 H1   590    49.5%   + $348.72   1.48   -$7.77        107   (full ledger, Run #56)
+//     Prior close-fill default: 590 tr 50.0% +$295.35 PF 1.32 worst -$12.25 (resting stop = +18%)
 //
 //  To reproduce the OLD immediate-entry numbers: turn OFF "Require confirmation candle" and set
 //  "Max Stop Distance from Entry" to 0 (2024 253tr/45.1%/+65.67, 2025 236tr/47.5%/+82.71).
@@ -102,7 +107,7 @@ maxCapSL        = input.float(5.0,  "Max Stop Distance from Entry ($, 0=off)", s
 beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
 partialPct      = input.float(25.0, "Partial Exit Quantity (%)", step=1.0, group=grpX)
 runnerMult      = input.float(0.75, "Runner Peak-Trail (x OR width)", step=0.05, group=grpX)
-exitOnClose     = input.bool(true,  "Stop exits fill at bar CLOSE (alerts-only realism)", group=grpX, tooltip="ON = the realistic model. OFF reverts to the old optimistic fill-at-stop-level assumption.")
+exitOnClose     = input.bool(false, "Stop exits fill at bar CLOSE (OFF = resting stop, ADOPTED)", group=grpX, tooltip="OFF (default, ADOPTED) = REAL broker resting stop: stop-type exits fill INTRABAR at the stop level, gap-aware. Place OCO stops with your broker. ON = the old alerts-only model (fill on the bar close); use only if you are NOT resting stops.")
 
 grpC = "Entry Confirmation"
 confirmBreakout   = input.bool(true, "Require confirmation candle (2-candle break)", group=grpC, tooltip="ON = do not enter on the first close-break; require the NEXT candle to also close beyond the trigger before entering. Higher win rate, later entry. Applies to PRIMARY entries only.")
@@ -371,9 +376,10 @@ if active and not na(stop) and bar_index > entryBar
                 runnerHit := true
                 runnerPx := exitOnClose ? close : lvl
 
-    // --- Step 4: hit checks. Stop exits are CLOSE-based when exitOnClose ---
+    // --- Step 4: hit checks. Resting stop (exitOnClose OFF): trigger on the WICK, fill at the
+    //     stop level, or at the OPEN if the bar gapped through it (gap-aware, matches engine touch).
     slHit = tdir == 1 ? (exitOnClose ? close <= stop : low <= stop) : (exitOnClose ? close >= stop : high >= stop)
-    slFill = exitOnClose ? close : stop
+    slFill = exitOnClose ? close : (tdir == 1 ? math.min(stop, open) : math.max(stop, open))
     tpHit = not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
 
     if slHit

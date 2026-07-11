@@ -686,6 +686,16 @@ A real broker resting stop (touch model) is **+18% net AND ~halves the worst day
 and worst trade (−9.03→−5.02). The +801 "stop" figure is the zero-slippage fantasy (the ~$450 gap
 to touch = gap-through-stop cost). Adopting = moving from alerts-only to placing OCO stops.
 
+**ADOPTED 2026-07-11.** `stop_fill_mode: close → touch`. New default full years (Run #56): 2024
+229tr/47.6%/+95.67/PF1.41/worst-7.76 · 2025 221tr/51.1%/+119.02/PF1.38/worst-7.77 · 2026H1
+140tr/50.0%/+134.04/PF1.73/worst-6.24 · combined 590tr/49.5%/+348.72/PF1.48/worst-7.77. Benchmarks:
+30d +76.80/PF5.15/-5.04 · 90d +114.82/PF2.29/-6.11 · 365d +193.80/PF1.54/-7.60. BOTH Pine scripts
+rewritten to native resting stops (strategy: two labelled `strategy.exit(stop=)` orders SL/TR so the
+reversal arms only on SL; indicator: `exitOnClose` default OFF + gap-aware fill). Residual Pine-vs-
+engine gap: a resting order moves only after a bar completes, so TV applies a newly-armed BE stop one
+bar later than the engine (bar that arms BE *and* stops → TV fills base SL, Python ~entry; TV more
+conservative). Needs TradingView re-validation via the CSV loop.
+
 **(2) Vol-normalized sizing — REDUNDANT on TSLA.** Sizing each primary to a constant $5 risk vs
 flat 1 unit: net +295→+297, worst day unchanged. The Max-Cap $5 already bounds per-trade risk, so
 sizing only nudges the few sub-$5-stop trades. No benefit single-symbol. (Code reverted; its real

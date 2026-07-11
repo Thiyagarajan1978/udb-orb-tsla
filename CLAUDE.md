@@ -11,15 +11,15 @@ defines the range; a buffered close-break triggers the trade; adaptive TP + 25% 
 never places broker orders.
 
 ## Execution realism (IMPORTANT)
-This is an **alerts-only** system: signals fire on the 5-minute **bar close**. `config.yaml`
-sets `execution.exit_on_close: true`, so BE Stop / BE Trail / Base SL / runner-trail exits
-trigger when a bar **closes** beyond the level and fill at that **close** — a BE stop is a real
-~$2–4 loss, not a $0 scratch. This roughly **halves** reported P&L vs the optimistic
-fill-at-stop model (6-month 2026: +$214 realistic vs +$522 optimistic) and widens the worst day
-(−$22 vs −$3). The single biggest execution improvement is to place a **resting stop order** at
-the BE level (broker OCO) instead of exiting manually on the close alert — that recovers the
-fill-at-stop behaviour and caps the tail. `faithful_be035.yaml` keeps `exit_on_close: false` to
-reproduce the Pine numbers.
+Signals fire on the 5-minute **bar close**. **ADOPTED 2026-07-11:** `config.yaml` sets
+`execution.stop_fill_mode: touch` — a **real broker resting stop (OCO)**. Stop-type exits
+(Base SL / BE Stop / BE Trail / runner peak-trail) fill **intrabar at the level**, gap-aware (a bar
+opening beyond the stop fills at the worse open). This lifts 3-year net **+18% (+$295 → +$349/unit)**
+and roughly **halves the worst day (−12.3 → −7.8)**, because BE stops fill at ~entry instead of a bar
+close far below. **This means the system is no longer purely alerts-only for the stop leg — you must
+place resting stops with the broker.** Set `stop_fill_mode: close` for the prior manual/alerts model
+(BE stop = a real ~$3.68 close loss). `stop` mode (fill exactly at the stop, zero-slippage) is the
+optimistic fantasy — used only by `faithful_be035.yaml` for Pine parity. See BE_STOP_ANALYSIS §22.
 
 ## Defaults vs the faithful port
 `config/config.yaml` is the **production default** and now carries three *validated* tunings on

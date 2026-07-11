@@ -19,33 +19,34 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //  Repo: github.com/Thiyagarajan1978/udb-orb-tsla
 //=============================================================================================
 //
-//  *** THE ONE THING THAT MATTERS ***
-//  We NEVER use strategy.exit(stop=...). A resting stop order would fill INTRABAR at the stop
-//  price — that is the optimistic fantasy the original v12.4.3 script assumed, and it inflated
-//  the 6-month P&L from +$214 to +$522. This is an ALERTS-ONLY system: the signal fires on the
-//  5-minute BAR CLOSE, so every stop-type exit is issued as a MARKET order and, with
-//  process_orders_on_close=true, fills at THAT BAR'S CLOSE. A BE stop is a real ~$2-6 loss.
-//
-//  Example (2026-07-09): long 398.01, BE stop bar closes 392.43 -> this strategy books -$5.60.
-//  The old script printed "Per Unit: 0" on that same candle.
+//  *** EXECUTION MODEL — RESTING STOP (adopted 2026-07-11) ***
+//  Stop-type exits are REAL resting stop orders: strategy.exit(stop=...) fills INTRABAR at the
+//  stop level, or at the OPEN on a gap. This is NOT the zero-slippage fantasy — it is the honest
+//  model of a broker OCO stop, and it requires you to actually PLACE resting stops. Over 3 years
+//  it lifts net +18% (295 -> 349 /unit) AND halves the worst day (-12.3 -> -7.8), because a BE
+//  stop now fills at ~entry instead of a bar close far below it. Two labelled resting stops are
+//  used so the reversal arms correctly: "SL" = BE/base stop (ARMS the reversal), "TR" = runner
+//  peak-trail (does NOT arm). See BE_STOP_ANALYSIS §22.  (To reproduce the old alerts-only
+//  close-fill numbers, this would need the market-on-close exit engine — kept in git history.)
 //
 //  ORDER SEMANTICS USED
-//    Entry            : market  -> fills at the signal bar's close        (= Python entry price)
-//    25% partial at TP: LIMIT   -> fills at the TP level                  (= Python partial fill)
-//    BE Stop/BE Trail/Base SL/runner-trail/EOD : market -> fills at close (= Python exit_on_close)
+//    Entry            : market      -> fills at the signal bar's close    (= Python entry price)
+//    25% partial at TP: LIMIT "P1"  -> fills at the TP level              (= Python partial fill)
+//    BE/Base SL "SL", runner-trail "TR" : resting STOP -> fills at level / open-on-gap (= touch)
+//    EOD              : market      -> fills at the flatten bar's close
 //
 //  CONFIG (identical to the Python default)
 //    buffer 10% of OR · adaptive TP max($2.14, OR x 1.0) · BE trigger 0.55 (wick) · BE trail $0.25
-//    25% partial, 75% runner trails 0.75 x OR below its peak
+//    25% partial, 75% runner trails 0.75 x OR below its peak · resting-stop (touch) fills
 //    reversal: raw opposite OR break, trails to EOD, RISK-PARITY size min(2x, $6 / risk_per_unit)
 //    skip day if OR width > $8   OR   prior-20d realised daily vol > 4.92%
 //
-//  PYTHON-VALIDATED — DEFAULT = 2-candle confirmation + Max-Cap $5 (TSLA 5m, 1 unit, $0.02 slip/exit)
-//    2024        229 tr  48.0%  + $54.70  PF 1.18  worst - $8.70
-//    2025        221 tr  52.5%  +$124.02  PF 1.32  worst -$12.25
-//    2026 H1     140 tr  49.3%  +$116.63  PF 1.48  worst -$10.42
-//    2024-26H1   590 tr  50.0%  +$295.35  PF 1.32  worst -$12.25   (full ledger, Run #55)
-//    Old immediate-entry (confirm OFF, cap 0): 2024 253/45.1%/+65.67 · 2025 236/47.5%/+82.71
+//  PYTHON-VALIDATED — DEFAULT = 2-candle confirm + Max-Cap $5 + RESTING STOP (TSLA 5m, 1u, $0.02 slip)
+//    2024        229 tr  47.6%  + $95.67  PF 1.41  worst - $7.76
+//    2025        221 tr  51.1%  +$119.02  PF 1.38  worst - $7.77
+//    2026 H1     140 tr  50.0%  +$134.04  PF 1.73  worst - $6.24
+//    2024-26H1   590 tr  49.5%  +$348.72  PF 1.48  worst - $7.77   (full ledger, Run #56)
+//    Prior close-fill default: 590 tr 50.0% +$295.35 PF 1.32 worst -$12.25 (resting stop = +18%)
 //
 //  SHARES PER UNIT (default 100) — READ THIS
 //  TradingView rounds order size to whole shares. The reversal is sized by RISK PARITY and needs
@@ -74,14 +75,17 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //      first (a paid TradingView plan loads more bars), or the run will silently start late.
 //
 //  EXPECTED (Python engine, per 1 unit, realistic fills, $0.02/exit slippage, ending 2026-07-09)
-//  DEFAULT NOW = 2-candle confirmation + Max-Cap $5 stop (higher win rate, smaller worst day).
+//  DEFAULT = 2-candle confirmation + Max-Cap $5 + RESTING STOP (touch fills).
 //    Window   From         Trades  WR     Net       PF     Worst day   Reversals
-//     30d     2026-06-09     23   65.2%  + $76.41   3.84   -$8.29          3
-//     90d     2026-04-10     71   53.5%  +$113.08   1.92   -$10.42        12
-//    365d     2025-07-10    269   50.9%  +$188.38   1.41   -$12.25        42
-//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$18,800).
-//  To reproduce the old immediate-entry numbers: turn OFF "Require confirmation candle" and set
-//  "Max Stop Distance from Entry" to 0.
+//     30d     2026-06-09     23   65.2%  + $76.80   5.15   -$5.04          3
+//     90d     2026-04-10     71   52.1%  +$114.82   2.29   -$6.11         12
+//    365d     2025-07-10    269   50.6%  +$193.80   1.54   -$7.60         42
+//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$19,400).
+//  NOTE: because stops are now RESTING orders, TradingView fills them intrabar exactly like the
+//  engine's touch model — expect a closer match than the old close-fill version (which had the
+//  data-feed marginal-trigger gaps). Small residual: TV applies a BE stop one bar later than the
+//  engine (a resting order can only move after a bar completes), so BE-arm-and-stop-same-bar days
+//  fill at the base SL in TV vs at ~entry in Python (TV slightly more conservative there).
 //
 //  *** v2.1 FIX — NO NEW ENTRIES AT/AFTER THE EOD CUTOFF ***
 //  TradingView will NOT honour a strategy.close() issued on the SAME bar as the entry. A 15:55
@@ -318,70 +322,53 @@ if canTrade and primStopped and not active and strategy.position_size == 0
         if showLabels
             label.new(bar_index, low, "REV LONG " + str.tostring(close, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_up, color=color.purple, textcolor=color.white, size=size.small)
 
-// ==================== EXIT ENGINE (never on the entry bar) ====================
-if active and not na(stop) and bar_index > entryBar
-    // --- Step 1: BE Retrace (WICK-based trigger) ---
-    if not beTrig and not na(beLevel)
-        beFire = tdir == 1 ? low <= beLevel : high >= beLevel
-        if beFire
-            stop := tdir == 1 ? math.max(stop, entry) : math.min(stop, entry)
-            beTrig := true
+// ==================== EXIT ENGINE — RESTING STOPS (touch model, never on the entry bar) ======
+// ADOPTED 2026-07-11: stop-type exits are REAL resting stop orders. strategy.exit(stop=) fills
+// INTRABAR at the level (or the OPEN on a gap) — the honest broker-OCO model, not a close-fill.
+// Two labelled resting stops so the reversal arms correctly:
+//   "SL" = BE/base stop  -> arming the reversal        "TR" = runner peak-trail -> does NOT arm.
+// The 25% "P1" limit at the TP is unchanged. VWAP is not used (runner peak-trail governs).
+// Guard >= entryBar so the resting stop is placed on the ENTRY bar (live from the next bar, like
+// the engine); Steps 1-4 (BE/partial/runner) only run AFTER the entry bar (no exit on entry bar).
+if active and not na(stop) and bar_index >= entryBar
+    if bar_index > entryBar
+        // --- Step 1: BE Retrace (WICK trigger) ---
+        if not beTrig and not na(beLevel)
+            if (tdir == 1 ? low <= beLevel : high >= beLevel)
+                stop := tdir == 1 ? math.max(stop, entry) : math.min(stop, entry)
+                beTrig := true
+        // --- Step 2: BE Trail ---
+        if beTrig and beTrailAmt > 0
+            stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
+        // --- Step 3: the 25% partial LIMIT fills at the TP; mirror it in our state ---
+        if not suppressPartial and not part1 and not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
+            part1 := true
+            tp := na            // TP disabled; the runner now trails
+            if showLabels
+                label.new(bar_index, tdir == 1 ? high : low, "PARTIAL " + str.tostring(partialPct, "#") + "%", style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.tiny)
+        // --- Step 4: runner peak-trail LEVEL (primary only, after the partial) ---
+        if part1 and not suppressPartial and runnerMult > 0
+            runnerPeak := na(runnerPeak) ? (tdir == 1 ? high : low) : (tdir == 1 ? math.max(runnerPeak, high) : math.min(runnerPeak, low))
+    trailLevel = (part1 and not suppressPartial and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
+    // --- Step 5: place / refresh the resting stops for the CURRENT (remaining) position ---
+    beReason = beTrig ? ((tdir == 1 ? stop > entry : stop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
+    strategy.exit("SL", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
+    if not na(trailLevel)
+        strategy.exit("TR", from_entry=entryId, stop=trailLevel, comment=(inRev ? "REV Trail" : "Trail"))
 
-    // --- Step 2: BE Trail ---
-    if beTrig and beTrailAmt > 0
-        stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
-
-    // --- Step 3: the 25% partial LIMIT fills at the TP; mirror it in our state ---
-    if not suppressPartial and not part1 and not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
-        part1 := true
-        tp := na            // TP disabled; the runner now trails
-        if showLabels
-            label.new(bar_index, tdir == 1 ? high : low, "PARTIAL " + str.tostring(partialPct, "#") + "%", style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.tiny)
-
-    // --- Step 4: runner peak-trail (primary only, after the partial) — CLOSE-based ---
-    runnerHit = false
-    if part1 and not suppressPartial and runnerMult > 0
-        if tdir == 1
-            runnerPeak := na(runnerPeak) ? high : math.max(runnerPeak, high)
-            runnerHit := close <= runnerPeak - runnerMult * orWidth
-        else
-            runnerPeak := na(runnerPeak) ? low : math.min(runnerPeak, low)
-            runnerHit := close >= runnerPeak + runnerMult * orWidth
-
-    // --- Step 5: stop exits are CLOSE-based and fill at the close (MARKET order) ---
-    slHit = tdir == 1 ? close <= stop : close >= stop
-
-    if slHit
-        isBETrail = beTrig and (tdir == 1 ? close > entry : close < entry)
-        reason = beTrig ? (isBETrail ? "BE Trail" : "BE Stop") : "Base SL"
-        strategy.cancel("P1")
-        strategy.close(entryId, comment=(inRev ? "REV " : "") + reason)
-        if not inRev
-            primStopped := true
-        if showLabels
-            revNote = (not inRev) ? "\nREV armed: need close " + (tdir == 1 ? "< " + str.tostring(orLow, format.mintick) : "> " + str.tostring(orHigh, format.mintick)) : ""
-            label.new(bar_index, tdir == 1 ? low : high, (inRev ? "REV " : "") + reason + " " + str.tostring(close, format.mintick) + revNote, style=tdir == 1 ? label.style_label_up : label.style_label_down, color=isBETrail ? color.rgb(7,170,75) : color.orange, textcolor=color.white, size=size.small)
-        active := false
-        tdir := 0
-        inRev := false
-        tp := na
-        stop := na
-    else if runnerHit
-        strategy.cancel("P1")
-        strategy.close(entryId, comment="Trail")
-        if showLabels
-            label.new(bar_index, tdir == 1 ? high : low, "TRAIL " + str.tostring(close, format.mintick), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
-        active := false
-        tdir := 0
-        inRev := false
-        tp := na
-        stop := na
-
-// ==================== STATE DE-SYNC GUARD ====================
-// If TradingView shows flat while we still believe a trade is live (e.g. an exit order filled
-// the whole position), resync. Without this the exit engine keeps managing a phantom position
-// and can arm/suppress the reversal incorrectly.
+// ==================== STATE DE-SYNC + REVERSAL ARMING ====================
+// A resting stop fills INTRABAR, so we detect the exit on the NEXT bar (position flat while we
+// still think a trade is live). Arm the reversal only if the last leg exited via "SL" (BE/base
+// stop), never via "TR" (runner trail) or EOD. (Same one-bar arming lag as the close-fill version.)
 if active and strategy.position_size == 0 and bar_index > entryBar
+    lastExit = strategy.closedtrades > 0 ? strategy.closedtrades.exit_id(strategy.closedtrades - 1) : ""
+    if not inRev and lastExit == "SL"
+        primStopped := true
+        if showLabels
+            label.new(bar_index, tdir == 1 ? low : high, "REV armed: need close " + (tdir == 1 ? "< " + str.tostring(orLow, format.mintick) : "> " + str.tostring(orHigh, format.mintick)), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
+    strategy.cancel("P1")
+    strategy.cancel("SL")
+    strategy.cancel("TR")
     active := false
     tdir := 0
     inRev := false
@@ -391,6 +378,8 @@ if active and strategy.position_size == 0 and bar_index > entryBar
 // ==================== EOD FORCED CLOSE (market at this bar's close) ====================
 if active and isFlattenBar and tdir != 0
     strategy.cancel("P1")
+    strategy.cancel("SL")
+    strategy.cancel("TR")
     strategy.close(entryId, comment=(inRev ? "REV EOD" : "EOD"))
     if showLabels
         label.new(bar_index, close, (inRev ? "REV EOD " : "EOD ") + str.tostring(close, format.mintick), style=label.style_label_left, color=color.rgb(255,140,0), textcolor=color.white, size=size.small)
