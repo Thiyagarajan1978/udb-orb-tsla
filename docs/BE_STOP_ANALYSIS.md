@@ -672,6 +672,39 @@ move's body. Non-monotonic (4-candle > 3-candle on net) = regime noise, not a st
 confirmation buys win rate at a steep cost in missed upside. KEPT 2-candle (hold_bars=1). The lever
 stays as an opt-in `enhancements.confirm_breakout.hold_bars` (default 1 = no change).
 
+## 22. System-improvement study — execution, sizing, generalization (2026-07-11)
+
+Three levers tested after entry-filtering was exhausted (edge is in management, not entry).
+
+**(1) Resting stop — REAL WIN, recommended.** Compared the three fill models across 3 years:
+| fill model | 3yr net | WR | worst day | worst trade |
+|-----------|--------:|---:|----------:|------------:|
+| close (current, alerts-only) | +295.3 | 50.0% | −12.3 | −9.03 |
+| **touch (realistic OCO, gap-aware)** | **+348.7** | 49.5% | **−7.8** | **−5.02** |
+| stop (fill exactly @ stop, 0 slip) | +801.7 | 50.5% | −6.1 | −5.02 |
+A real broker resting stop (touch model) is **+18% net AND ~halves the worst day** (−12.3→−7.8)
+and worst trade (−9.03→−5.02). The +801 "stop" figure is the zero-slippage fantasy (the ~$450 gap
+to touch = gap-through-stop cost). Adopting = moving from alerts-only to placing OCO stops.
+
+**(2) Vol-normalized sizing — REDUNDANT on TSLA.** Sizing each primary to a constant $5 risk vs
+flat 1 unit: net +295→+297, worst day unchanged. The Max-Cap $5 already bounds per-trade risk, so
+sizing only nudges the few sub-$5-stop trades. No benefit single-symbol. (Code reverted; its real
+use is ATR-scaling levels for multi-symbol — see below.)
+
+**(3) Multi-symbol generalization — EDGE IS TSLA-SPECIFIC at these settings.** Ran the default
+engine on 7 liquid names, 2024-01→2026-07 (avgR = pnl/risk is price-neutral):
+| sym | WR% | avgR | | sym | WR% | avgR |
+|-----|----:|-----:|-|-----|----:|-----:|
+| **TSLA** | **50.0** | **+0.10** | | NVDA | 43.2 | −0.00 |
+| AMD | 47.8 | +0.02 | | GOOGL | 44.5 | +0.02 |
+| MSFT | 46.0 | +0.01 | | META | 47.5 | −0.04 |
+| AMZN | 46.7 | +0.01 | | (NFLX bad FMP data, excluded) |
+TSLA's +0.10 avgR is 5x the best other name; everything else is ~0 with sub-50% WR. **The edge does
+not generalize.** CAVEAT: dollar params (Max-Cap $5, TP floor $2.14, OR-gate $8) are TSLA-price-
+scaled — $5 is 0.8% on META ($631, punishingly tight) vs 2.5% on NVDA ($203). So "no edge" is
+confounded with "levels mis-scaled." The clean re-test = express Max-Cap/TP/OR-gate as %/×ATR, then
+re-run the basket. Until then: KEEP single-symbol TSLA; do not deploy on other names.
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and
