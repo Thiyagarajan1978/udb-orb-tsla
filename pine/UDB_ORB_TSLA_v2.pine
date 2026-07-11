@@ -50,6 +50,7 @@ indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UD
 //     2024         229    48.0%   +  $54.70   1.18   -$8.70         49
 //     2025         221    52.5%   + $124.02   1.32   -$12.25        38
 //     2026 (H1)    140    49.3%   + $116.63   1.48   -$10.42        20
+//     2024-26 H1   590    50.0%   + $295.35   1.32   -$12.25        107   (full ledger, Run #55)
 //
 //  To reproduce the OLD immediate-entry numbers: turn OFF "Require confirmation candle" and set
 //  "Max Stop Distance from Entry" to 0 (2024 253tr/45.1%/+65.67, 2025 236tr/47.5%/+82.71).

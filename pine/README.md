@@ -123,15 +123,20 @@ widens — the 30/90-day windows sit entirely inside the calm 2026 regime this s
 PF 1.43 is the honest number, and 2024 (a high-volatility year) was **PF 1.19**. Size off the weak
 year, not the flattering one.
 
-## Full-year results (Python, 1 unit, realistic fills, $0.02 slippage)
+## Full-year results — current default (2-candle confirmation + Max-Cap $5)
+Python, 1 unit, realistic fills, $0.02 slippage:
 
 | Year | Trades | WR | Net | PF | Worst day | Reversals |
 |---|---:|---:|---:|---:|---:|---:|
-| 2024 | 253 | 45.1% | +$65.67 | 1.19 | −$9.72 | 65 |
-| 2025 | 236 | 47.5% | +$82.71 | 1.19 | −$13.12 | 52 |
-| 2026 H1 | 152 | 50.7% | +$192.31 | 1.78 | −$9.68 | 30 |
+| 2024 | 229 | 48.0% | +$54.70 | 1.18 | −$8.70 | 49 |
+| 2025 | 221 | 52.5% | +$124.02 | 1.32 | −$12.25 | 38 |
+| 2026 H1 | 140 | 49.3% | +$116.63 | 1.48 | −$10.42 | 20 |
+| **2024→26 H1** | **590** | **50.0%** | **+$295.35** | **1.32** | **−$12.25** | 107 |
 
-**Size off 2024, not 2026.** 2026 was the friendly regime.
+The last row is the full 2.5-year ledger (Run #55). **Size off 2024, not 2026** — 2026 was the
+friendly low-vol regime. For reference, the OLD immediate-entry default was 2024 253tr/45.1%/+$65.67,
+2025 236tr/47.5%/+$82.71, 2026 H1 152tr/50.7%/+$192.31 (higher 2026 net, lower win rate, bigger
+worst day) — reproduce it by turning confirmation OFF and Max Stop Distance to 0.
 
 ## Set your buffer to 10%
 If your chart plots a **Long Trigger of 396.19** on 2026-07-09, your buffer is **14%**, not 10%

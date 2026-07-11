@@ -40,11 +40,12 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //    reversal: raw opposite OR break, trails to EOD, RISK-PARITY size min(2x, $6 / risk_per_unit)
 //    skip day if OR width > $8   OR   prior-20d realised daily vol > 4.92%
 //
-//  PYTHON-VALIDATED (TSLA 5m, 1 unit, $0.02 slippage per exit)
-//    2024      253 tr  45.1%  + $65.67  PF 1.19  worst -$9.72
-//    2025      236 tr  47.5%  + $82.71  PF 1.19  worst -$13.12
-//    2026 H1   152 tr  50.7%  +$192.31  PF 1.78  worst -$9.68
-//    Jun+Jul26  31 tr  71.0%  +$131.42  PF 4.20  worst -$6.81
+//  PYTHON-VALIDATED — DEFAULT = 2-candle confirmation + Max-Cap $5 (TSLA 5m, 1 unit, $0.02 slip/exit)
+//    2024        229 tr  48.0%  + $54.70  PF 1.18  worst - $8.70
+//    2025        221 tr  52.5%  +$124.02  PF 1.32  worst -$12.25
+//    2026 H1     140 tr  49.3%  +$116.63  PF 1.48  worst -$10.42
+//    2024-26H1   590 tr  50.0%  +$295.35  PF 1.32  worst -$12.25   (full ledger, Run #55)
+//    Old immediate-entry (confirm OFF, cap 0): 2024 253/45.1%/+65.67 · 2025 236/47.5%/+82.71
 //
 //  SHARES PER UNIT (default 100) — READ THIS
 //  TradingView rounds order size to whole shares. The reversal is sized by RISK PARITY and needs
