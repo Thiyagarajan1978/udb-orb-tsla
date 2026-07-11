@@ -224,6 +224,11 @@ enhancements:
   confirm_breakout:
     enabled: true
     require_trend_candle: true
+    # hold_bars = prior consecutive same-day bars that must close beyond the trigger before entry.
+    # 1 = the ADOPTED 2-candle rule (break bar + entry bar). Higher values tested and REJECTED
+    # (§21): 2 (3-candle) cuts 3yr net -24% (+295 -> +224), gutting 2025 (+124 -> +47) for +0.7pt
+    # WR; later entries just miss the trend body. Keep at 1.
+    hold_bars: 1
 
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
   #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the

@@ -348,6 +348,7 @@ class OrbEngine:
         p = self.p
         prev_close = None
         prev_date = None
+        recent = []   # (date, close) history for multi-bar breakout confirmation
 
         for ts, row in df.iterrows():
             bar_i += 1
@@ -455,8 +456,16 @@ class OrbEngine:
             cb = self.enh.get("confirm_breakout", {})
             if cb.get("enabled", False):
                 trend = bool(cb.get("require_trend_candle", True))
-                lc = same_day_prev and long_trig is not None and prev_close > long_trig and (c >= o or not trend)
-                sc = same_day_prev and short_trig is not None and prev_close < short_trig and (c <= o or not trend)
+                # hold_bars = how many PRIOR consecutive same-day bars must have closed beyond the
+                # trigger before entering. 1 = the 2-candle rule (break bar + this entry bar);
+                # 2 = a 3-candle rule (break bar + 2 holds + entry), etc.
+                hold = max(1, int(cb.get("hold_bars", 1)))
+                held_long = len(recent) >= hold and all(
+                    pd_ == d and long_trig is not None and pc_ > long_trig for pd_, pc_ in recent[-hold:])
+                held_short = len(recent) >= hold and all(
+                    pd_ == d and short_trig is not None and pc_ < short_trig for pd_, pc_ in recent[-hold:])
+                lc = held_long and (c >= o or not trend)
+                sc = held_short and (c <= o or not trend)
                 long_confirm = long_confirm and lc
                 short_confirm = short_confirm and sc
 
@@ -561,6 +570,7 @@ class OrbEngine:
 
             prev_close = c
             prev_date = d
+            recent.append((d, c))
 
         # finalize last day
         if cur_date is not None:

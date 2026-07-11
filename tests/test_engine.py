@@ -318,6 +318,23 @@ def test_confirm_breakout_waits_for_next_candle_to_hold():
     assert abs(on.trades[0].entry_price - 101.8) < 1e-9      # confirmed enters on the held candle
 
 
+def test_confirm_breakout_hold_bars_two_needs_three_consecutive_closes():
+    """hold_bars=2 (3-candle): needs the break bar + TWO holds; enters on the 3rd close beyond."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),      # break (close 101.5 > 101.2)
+        (9, 40, 101.5, 101.9, 101.3, 101.7, 1000),    # 1st hold  (2-candle would ENTER here)
+        (9, 45, 101.7, 102.1, 101.5, 101.9, 1000),    # 2nd hold -> 3-candle ENTERS here (101.9)
+        (15, 50, 101.9, 102.2, 101.7, 102.0, 1000),
+    ]
+    two = _run({"2024-06-03": rows},
+               enh_overrides={"confirm_breakout": {"enabled": True, "require_trend_candle": True, "hold_bars": 1}})
+    three = _run({"2024-06-03": rows},
+                 enh_overrides={"confirm_breakout": {"enabled": True, "require_trend_candle": True, "hold_bars": 2}})
+    assert abs(two.trades[0].entry_price - 101.7) < 1e-9     # 2-candle enters on the 1st hold
+    assert abs(three.trades[0].entry_price - 101.9) < 1e-9   # 3-candle waits for the 2nd hold
+
+
 def test_max_entry_ext_skips_over_extended_breakout():
     """max_entry_ext blocks a breakout whose close is > or_mult*OR from the OR-boundary stop."""
     rows = [  # OR 99-101 (w 2); a long that closes 104 is 5.0 from the stop (99) = 2.5x OR

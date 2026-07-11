@@ -656,6 +656,22 @@ confirmation verified because 90d net (+114.92) tracks the 2-candle number, not 
 +150. 30d net matches within slippage; the 365d −6% is the known feed-drift + vol-gate-day
 classification divergence, not a logic bug (the cent-exact worst days rule that out).
 
+## 21. 3-candle (and 4-candle) confirmation — TESTED, REJECTED
+Generalised confirmation to `hold_bars` = prior consecutive same-day closes beyond the trigger
+(1 = the adopted 2-candle rule). Tested 2/3/4-candle across 3 years, all else default (Max-Cap $5):
+
+| Rule (hold_bars) | 2024 | 2025 | 2026 H1 | 3yr net | WR | exp |
+|------------------|-----:|-----:|--------:|--------:|---:|----:|
+| 2-candle (1, current) | +54.7 | **+124.0** | +116.6 | **+295.3** | 50.0% | **+0.50** |
+| 3-candle (2) | +62.6 | **+46.8** | +114.4 | +223.7 | 50.7% | +0.40 |
+| 4-candle (3) | +81.4 | +63.1 | +103.8 | +248.4 | 53.0% | +0.47 |
+
+3-candle trades 24% of net (+295 -> +224) and 20% of expectancy for +0.7pt WR — and the loss is
+almost all **2025** (+124 -> +47), the strong-trend year, because the 3rd hold bar enters after the
+move's body. Non-monotonic (4-candle > 3-candle on net) = regime noise, not a stable edge. More
+confirmation buys win rate at a steep cost in missed upside. KEPT 2-candle (hold_bars=1). The lever
+stays as an opt-in `enhancements.confirm_breakout.hold_bars` (default 1 = no change).
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and
