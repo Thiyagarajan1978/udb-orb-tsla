@@ -1,0 +1,445 @@
+//@version=6
+strategy("UDB-ORB TSLA A STRATEGY — Realistic Fills", shorttitle="UDB-ORB A S", overlay=true,
+     process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
+     calc_on_every_tick      = false,     // act only on closed bars
+     pyramiding              = 0,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     initial_capital         = 1000000,   // headroom so no order is ever rejected for capital
+     margin_long             = 0,
+     margin_short            = 0,
+     commission_type         = strategy.commission.cash_per_contract,
+     commission_value        = 0,
+     slippage                = 0,         // Python charges $0.10/unit on EXITS; set TV ~10 ticks to match
+     max_labels_count        = 500)
+
+//=============================================================================================
+//  STRATEGY version of UDB_ORB_TSLA_v2.pine — use the Strategy Tester tab for trade details.
+//  Mirrors the Python engine's current default config (config/config.yaml).
+//  Repo: github.com/Thiyagarajan1978/udb-orb-tsla
+//=============================================================================================
+//
+//  *** EXECUTION MODEL — RESTING STOP (adopted 2026-07-11) ***
+//  Stop-type exits are REAL resting stop orders: strategy.exit(stop=...) fills INTRABAR at the
+//  stop level, or at the OPEN on a gap. This is NOT the zero-slippage fantasy — it is the honest
+//  model of a broker OCO stop, and it requires you to actually PLACE resting stops. Over 3 years
+//  it lifts net +18% (295 -> 349 /unit) AND halves the worst day (-12.3 -> -7.8), because a BE
+//  stop now fills at ~entry instead of a bar close far below it. Two labelled resting stops are
+//  used so the reversal arms correctly: "SL" = BE/base stop (ARMS the reversal), "TR" = runner
+//  peak-trail (does NOT arm). See BE_STOP_ANALYSIS §22.  (To reproduce the old alerts-only
+//  close-fill numbers, this would need the market-on-close exit engine — kept in git history.)
+//
+//  ORDER SEMANTICS USED
+//    Entry            : market      -> fills at the signal bar's close    (= Python entry price)
+//    25% partial at TP: LIMIT "P1"  -> fills at the TP level              (= Python partial fill)
+//    BE/Base SL "SL", runner-trail "TR" : resting STOP -> fills at level / open-on-gap (= touch)
+//    EOD              : market      -> fills at the flatten bar's close
+//
+//  CONFIG (identical to the Python default)
+//    buffer 10% of OR · adaptive TP max($2.14, OR x 1.0) · BE trigger 0.55 (wick) · BE trail $0.25
+//    25% partial, 75% runner: PEAK-TRAIL (Config A default) OR VWAP-CROSS (Config B) — toggle input
+//                              "Runner Exit (75%)". VWAP made +574 vs +469/unit 3yr but bumpier.
+//    reversal: raw opposite OR break, trails to EOD, RISK-PARITY size min(2x, $6 / risk_per_unit)
+//    skip day if OR width > $8   OR   prior-20d realised daily vol > 4.92%
+//
+//  PYTHON-VALIDATED — DEFAULT "Config A" = Max-Cap $5 + RESTING STOP, confirmation OFF (1u, $0.10 slip)
+//    2024        251 tr  45.0%  +$137.9  PF 1.58  worst - $7.90
+//    2025        236 tr  47.0%  +$103.7  PF 1.32  worst - $8.85
+//    2026 H1     151 tr  53.6%  +$227.8  PF 2.46  worst - $6.90
+//    2024-26H1   638 tr  47.8%  +$469.4  PF 1.65  worst - $8.85   (full ledger)
+//    Confirmation now OFF: net-NEGATIVE under the resting stop (+298 -> +469, +57%; BE_STOP_ANALYSIS 24).
+//    Slippage $0.10 (set Strategy Tester slippage ~10 ticks). Turn confirmation ON only with close-fill.
+//
+//  SHARES PER UNIT (default 100) — READ THIS
+//  TradingView rounds order size to whole shares. The reversal is sized by RISK PARITY and needs
+//  FRACTIONAL units (e.g. 1.59). At 1 share/unit that rounds to 1 and the risk cap silently
+//  disappears; likewise a 25% partial of 1 share rounds to 1 and closes the WHOLE position,
+//  deleting the runner. With 100 shares/unit, 1.59 units = 159 shares and everything survives.
+//  ==> Strategy Tester P&L is therefore ~100x the Python per-unit figures. Divide by 100.
+//  (The 25% partial uses qty_percent, which is immune to this.)
+//
+//  Strategy Tester will also show slightly MORE than Python because Python charges $0.02/unit
+//  slippage on every exit leg and this script sets slippage=0 (set it to 2 ticks to compare).
+//
+//  ------------------------------------------------------------------------------------------
+//  HOW TO RUN (and how to compare against the Python engine)
+//  ------------------------------------------------------------------------------------------
+//   1. Chart: NASDAQ:TSLA, 5-minute, REGULAR TRADING HOURS (no extended hours).
+//   2. Verify these three inputs — they are the usual mismatch:
+//        Breakout Buffer      = 10%    (a chart plotting Long Trigger 396.19 on 2026-07-09 is on 14%)
+//        BE Retrace Trigger   = 0.55   (the OLD script used 0.35 -> plots BE at 393.90)
+//        Shares per 'unit'    = 100    (needed for fractional risk-parity reversal sizes)
+//   3. Turn OFF "Show Labels" for 30/90/365-day runs (TradingView caps labels at 500).
+//   4. Strategy Tester -> List of Trades -> export CSV.
+//   5. DIVIDE the Strategy Tester Net P&L by 100 (Shares per unit) to compare with the
+//      per-unit Python numbers below.
+//   6. For a 365-day 5m run you need ~19,600 bars of history — scroll the chart fully back
+//      first (a paid TradingView plan loads more bars), or the run will silently start late.
+//
+//  EXPECTED (Python engine, per 1 unit, realistic fills, $0.02/exit slippage, ending 2026-07-09)
+//  DEFAULT "Config A" = Max-Cap $5 + RESTING STOP + confirmation OFF (touch fills, $0.10 slip).
+//    Window   From         Trades  WR     Net       PF     Worst day   Reversals
+//     30d     2026-06-09     27   59.3%  + $79.27   3.93   -$5.18          6
+//     90d     2026-04-10     78   57.7%  +$160.79   3.01   -$6.02         18
+//    365d     2025-07-10    290   50.7%  +$278.95   1.81   -$8.85         59
+//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$17,100).
+//  NOTE: because stops are now RESTING orders, TradingView fills them intrabar exactly like the
+//  engine's touch model — expect a closer match than the old close-fill version (which had the
+//  data-feed marginal-trigger gaps). Small residual: TV applies a BE stop one bar later than the
+//  engine (a resting order can only move after a bar completes), so BE-arm-and-stop-same-bar days
+//  fill at the base SL in TV vs at ~entry in Python (TV slightly more conservative there).
+//
+//  *** v2.1 FIX — NO NEW ENTRIES AT/AFTER THE EOD CUTOFF ***
+//  TradingView will NOT honour a strategy.close() issued on the SAME bar as the entry. A 15:55
+//  entry therefore rode overnight (and over weekends): a 365-day run showed 12 such trades plus a
+//  half-session carry (Christmas Eve closes 13:00, so no 15:50 bar ever exists), injecting ~+$58
+//  /unit of pure artifact. Entries are now blocked at/after the cutoff, and the position is always
+//  flattened on the session's LAST bar. The Python engine carries the identical guards.
+//
+//  READ THE 365-DAY ROW, NOT THE 30-DAY ROW. PF falls 3.16 -> 1.43 as the window widens; the
+//  30/90-day windows sit inside the calm 2026 regime this system is built for. The 365d PF 1.43
+//  is the honest number, and 2024 (a high-vol year) was PF 1.19. Size off the weak year.
+//  TradingView will read slightly HIGHER than 100x Python, because Python subtracts $0.02/unit
+//  on every exit leg and this script runs slippage=0. Set slippage=2 ticks to be harsher
+//  (TradingView charges it on entries AND exits, so it will then be slightly worse than Python).
+//
+//  KNOWN, EXPECTED DIVERGENCE
+//   - On a violent candle that BOTH reaches the TP and closes through the stop, Python takes the
+//     stop only (it checks the stop first) while TradingView's resting LIMIT fills the 25% partial
+//     intrabar and then the market close. Rare. Not a porting bug.
+//   - TradingView's data feed differs slightly from FMP; OR boundaries can shift a few cents and
+//     flip a marginal reversal trigger.
+//
+//  APPLY TO: TSLA, 5-minute, Regular Trading Hours.  Size off 2024, not 2026.
+//=============================================================================================
+
+// ==================== INPUTS ====================
+grpS = "Session"
+eodHour = input.int(15, "EOD Exit Hour", minval=0, maxval=23, group=grpS)
+eodMin  = input.int(50, "EOD Exit Minute", minval=0, maxval=59, group=grpS)
+
+grpR = "Risk / Regime Gates"
+maxORWidth  = input.float(8.0,  "Max OR Width ($) — skip wider days", step=0.5, group=grpR)
+volLookback = input.int(20,     "Volatility Lookback (days)", minval=2, group=grpR)
+maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, group=grpR)
+
+grpE = "Entry"
+bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE)
+tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE)
+unitScale   = input.int(100,    "Shares per 'unit' (scale so fractional sizes survive rounding)", minval=1, group=grpE,
+     tooltip="TradingView rounds order size to whole shares. The reversal is sized by RISK PARITY and needs fractional units (e.g. 1.59). With 100 shares per unit, 1.59 units = 159 shares and the ratio survives.\n\nStrategy Tester P&L will therefore be this multiple of the Python per-unit figures — divide by this number to compare.")
+
+grpX = "Exits"
+adaptiveTPScale = input.float(1.0,  "Adaptive TP — OR Width Multiplier", step=0.05, group=grpX)
+adaptiveTPMin   = input.float(2.14, "Adaptive TP — Minimum Floor ($)", step=0.01, group=grpX)
+beTrigger       = input.float(0.55, "BE Retrace Trigger (% of OR width)", step=0.05, group=grpX)
+maxCapSL        = input.float(5.0,  "Max Stop Distance from Entry ($, 0=off)", step=0.5, group=grpX, tooltip="Caps the OR-boundary primary stop so it is never further than this from entry. Pairs with the confirmation candle (which enters later/more extended). 0 = plain OR-boundary stop.")
+
+grpC = "Entry Confirmation"
+confirmBreakout   = input.bool(false, "Require confirmation candle (2-candle break)", group=grpC, tooltip="DEFAULT OFF (Config A): under the resting stop, confirmation is net-negative (the stop already caps whipsaws at $5). ON = enter only after the NEXT candle also closes beyond the trigger (higher win rate but ~-$57/yr net; use with close-fill).")
+requireTrendCandle = input.bool(true, "Confirmation candle must be with-trend", group=grpC, tooltip="ON = the confirmation candle must be green for longs / red for shorts.")
+beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
+partialPct      = input.float(25.0, "Partial Exit Quantity (%)", step=1.0, group=grpX)
+runnerMult      = input.float(0.75, "Runner Peak-Trail (x OR width)", step=0.05, group=grpX)
+runnerExit      = input.string("Peak Trail", "Runner Exit (75%)", options=["Peak Trail", "VWAP Cross"], group=grpX, tooltip="Peak Trail = Config A (DEFAULT): the 75% runner trails runnerMult x OR below its peak (a resting stop). VWAP Cross = Config B: the runner rides until price CLOSES back through the session VWAP (after +$ arm-profit). Backtest: VWAP made more net over 3yr (+574 vs +469/unit) but with bigger give-backs. Toggle to A/B test live.")
+vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit ($)", step=0.25, group=grpX, tooltip="The VWAP-cross exit only arms once the trade is this many $ in profit (matches the engine's partial_activation).")
+
+grpV = "Reversal"
+revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step=0.5, group=grpV)
+revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, group=grpV)
+
+grpU = "Display"
+showLabels = input.bool(false, "Show Labels", group=grpU, tooltip="Turn OFF for long backtests (30/90/365 days). TradingView keeps only the last 500 labels, so on a long run they are both useless and slow. Turn ON to inspect a single day.")
+showLevels = input.bool(true, "Show Levels", group=grpU)
+
+// ==================== PRIOR-DAY REALISED VOLATILITY (no repaint) ====================
+f_priorRvol() =>
+    r = ta.change(close) / close[1] * 100.0
+    s = ta.stdev(r, volLookback, false)   // biased=false -> sample stdev (pandas ddof=1)
+    s[1]
+rvol20 = request.security(syminfo.tickerid, "D", f_priorRvol(), lookahead=barmerge.lookahead_on)
+
+// ==================== STATE ====================
+var float orHigh = na
+var float orLow = na
+var float orWidth = na
+var bool skipVol = false
+var bool skipWide = false
+var bool daySkipped = false
+
+var bool firstTaken = false
+var bool active = false
+var int tdir = 0
+var float entry = na
+var float stop = na
+var float tp = na
+var int entryBar = na
+var bool inRev = false
+var bool suppressPartial = false
+var string entryId = ""
+
+var bool beTrig = false
+var float beLevel = na
+var bool part1 = false
+var bool vwapArmed = false
+var float qtyTotal = na
+var float runnerPeak = na
+
+var int primDir = 0
+var bool primStopped = false
+
+// ==================== NEW DAY / OPENING RANGE ====================
+isNewDay = session.isfirstbar_regular
+sessVwap = ta.vwap(hlc3, isNewDay)   // session-anchored VWAP (resets each RTH open) for the VWAP-cross runner exit
+isEODbar = (hour * 60 + minute) >= (eodHour * 60 + eodMin)
+// Half sessions (e.g. Christmas Eve) close at 13:00 and NEVER produce a 15:50 bar, so the EOD
+// rule alone would leave a position open overnight. Always flatten on the session's last bar.
+isLastBar = session.islastbar_regular
+isFlattenBar = isEODbar or isLastBar
+
+if isNewDay
+    orHigh := high
+    orLow := low
+    orWidth := high - low
+    skipVol := not na(rvol20) and rvol20 > maxRvolPct
+    skipWide := orWidth > maxORWidth
+    daySkipped := skipVol or skipWide
+    firstTaken := false
+    active := false
+    tdir := 0
+    entry := na
+    stop := na
+    tp := na
+    entryBar := na
+    inRev := false
+    suppressPartial := false
+    entryId := ""
+    beTrig := false
+    beLevel := na
+    part1 := false
+    qtyTotal := na
+    runnerPeak := na
+    primDir := 0
+    primStopped := false
+
+longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
+shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
+tpDist = not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na
+// NO new entries at/after the EOD cutoff. TradingView will not honour a strategy.close() issued
+// on the SAME bar as the entry, so a 15:55 entry would ride overnight (and over weekends).
+canTrade = session.ismarket and not isNewDay and not daySkipped and not na(orHigh) and not isFlattenBar
+
+// ==================== PRIMARY ENTRY (market -> fills at this bar's close) ====================
+// Confirmation: require the previous bar to ALSO have closed beyond the trigger (a held 2-candle
+// break), and (optionally) a with-trend confirmation candle. Enters on this (the confirming) bar.
+longConfirm  = not confirmBreakout or (close[1] > longBrk and (close >= open or not requireTrendCandle))
+shortConfirm = not confirmBreakout or (close[1] < shortBrk and (close <= open or not requireTrendCandle))
+if canTrade and not active and not firstTaken and strategy.position_size == 0
+    if close > longBrk and longConfirm
+        entryId := "L"
+        strategy.entry(entryId, strategy.long, qty=tradeQty * unitScale)
+        // 25% partial as a LIMIT at the TP (fills AT the TP level, like the Python engine).
+        // MUST use qty_percent: a fractional `qty` (0.25) rounds up to 1 whole share and closes
+        // the ENTIRE position, which silently removes the runner.
+        // Placed now -> active from the NEXT bar, matching the engine's "no exit on the entry bar".
+        strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, limit=close + tpDist)
+        active := true
+        tdir := 1
+        inRev := false
+        suppressPartial := false
+        entry := close
+        stop := maxCapSL > 0 ? math.max(orLow, close - maxCapSL) : orLow
+        tp := close + tpDist
+        beLevel := orHigh - beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := tradeQty
+        part1 := false
+        beTrig := false
+        runnerPeak := na
+        primDir := 1
+        firstTaken := true
+        if showLabels
+            label.new(bar_index, low, "LONG " + str.tostring(close, format.mintick), style=label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.small)
+    else if close < shortBrk and shortConfirm
+        entryId := "S"
+        strategy.entry(entryId, strategy.short, qty=tradeQty * unitScale)
+        strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, limit=close - tpDist)
+        active := true
+        tdir := -1
+        inRev := false
+        suppressPartial := false
+        entry := close
+        stop := maxCapSL > 0 ? math.min(orHigh, close + maxCapSL) : orHigh
+        tp := close - tpDist
+        beLevel := orLow + beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := tradeQty
+        part1 := false
+        beTrig := false
+        runnerPeak := na
+        primDir := -1
+        firstTaken := true
+        if showLabels
+            label.new(bar_index, high, "SHORT " + str.tostring(close, format.mintick), style=label.style_label_down, color=color.rgb(243,76,76), textcolor=color.white, size=size.small)
+
+// ==================== REVERSAL ENTRY (raw OR break · trail-to-EOD · risk-parity size) ====================
+if canTrade and primStopped and not active and strategy.position_size == 0
+    if primDir == 1 and close < orLow
+        rpu = math.abs(close - orHigh)
+        rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
+        entryId := "RS"
+        // risk-parity size, scaled to whole shares (1.59 units x 100 = 159 shares)
+        strategy.entry(entryId, strategy.short, qty=rq * unitScale)   // no partial: trails to EOD
+        active := true
+        tdir := -1
+        inRev := true
+        suppressPartial := true
+        entry := close
+        stop := orHigh
+        tp := na
+        beLevel := orLow + beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := rq
+        part1 := false
+        beTrig := false
+        runnerPeak := na
+        primStopped := false
+        if showLabels
+            label.new(bar_index, high, "REV SHORT " + str.tostring(close, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
+    else if primDir == -1 and close > orHigh
+        rpu = math.abs(close - orLow)
+        rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
+        entryId := "RL"
+        strategy.entry(entryId, strategy.long, qty=rq * unitScale)
+        active := true
+        tdir := 1
+        inRev := true
+        suppressPartial := true
+        entry := close
+        stop := orLow
+        tp := na
+        beLevel := orHigh - beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := rq
+        part1 := false
+        beTrig := false
+        runnerPeak := na
+        primStopped := false
+        if showLabels
+            label.new(bar_index, low, "REV LONG " + str.tostring(close, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_up, color=color.purple, textcolor=color.white, size=size.small)
+
+// ==================== EXIT ENGINE — RESTING STOPS (touch model, never on the entry bar) ======
+// ADOPTED 2026-07-11: stop-type exits are REAL resting stop orders. strategy.exit(stop=) fills
+// INTRABAR at the level (or the OPEN on a gap) — the honest broker-OCO model, not a close-fill.
+// Two labelled resting stops so the reversal arms correctly:
+//   "SL" = BE/base stop  -> arming the reversal        "TR" = runner peak-trail -> does NOT arm.
+// The 25% "P1" limit at the TP is unchanged. VWAP is not used (runner peak-trail governs).
+// Guard >= entryBar so the resting stop is placed on the ENTRY bar (live from the next bar, like
+// the engine); Steps 1-4 (BE/partial/runner) only run AFTER the entry bar (no exit on entry bar).
+vwapMode = runnerExit == "VWAP Cross"
+if active and not na(stop) and bar_index >= entryBar
+    vwapExited = false
+    if bar_index > entryBar
+        // --- Step 1: BE Retrace (WICK trigger) ---
+        if not beTrig and not na(beLevel)
+            if (tdir == 1 ? low <= beLevel : high >= beLevel)
+                stop := tdir == 1 ? math.max(stop, entry) : math.min(stop, entry)
+                beTrig := true
+        // --- Step 2: BE Trail ---
+        if beTrig and beTrailAmt > 0
+            stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
+        // --- Step 3: the 25% partial LIMIT fills at the TP; mirror it in our state ---
+        if not suppressPartial and not part1 and not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
+            part1 := true
+            tp := na            // TP disabled; the runner now trails
+            if showLabels
+                label.new(bar_index, tdir == 1 ? high : low, "PARTIAL " + str.tostring(partialPct, "#") + "%", style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.tiny)
+        // --- Step 4a: runner PEAK-TRAIL level (Config A: peak-trail mode) ---
+        if part1 and not suppressPartial and not vwapMode and runnerMult > 0
+            runnerPeak := na(runnerPeak) ? (tdir == 1 ? high : low) : (tdir == 1 ? math.max(runnerPeak, high) : math.min(runnerPeak, low))
+        // --- Step 4b: runner VWAP-CROSS exit (Config B: arm after $ profit, exit on close thru VWAP) ---
+        if part1 and not suppressPartial and vwapMode
+            if not vwapArmed and (tdir == 1 ? close - entry : entry - close) >= vwapArmProfit
+                vwapArmed := true
+            if vwapArmed and not na(sessVwap) and (tdir == 1 ? close <= sessVwap : close >= sessVwap)
+                strategy.cancel("P1")
+                strategy.cancel("SL")
+                strategy.close(entryId, comment=(inRev ? "REV VWAP" : "VWAP Cross"))
+                if showLabels
+                    label.new(bar_index, tdir == 1 ? high : low, (inRev ? "REV " : "") + "VWAP " + str.tostring(close, format.mintick), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
+                active := false
+                tdir := 0
+                inRev := false
+                tp := na
+                stop := na
+                vwapArmed := false
+                vwapExited := true
+    if not vwapExited
+        trailLevel = (part1 and not suppressPartial and not vwapMode and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
+        // --- Step 5: place / refresh the resting stops for the CURRENT (remaining) position ---
+        beReason = beTrig ? ((tdir == 1 ? stop > entry : stop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
+        strategy.exit("SL", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
+        if not na(trailLevel)
+            strategy.exit("TR", from_entry=entryId, stop=trailLevel, comment=(inRev ? "REV Trail" : "Trail"))
+
+// ==================== STATE DE-SYNC + REVERSAL ARMING ====================
+// A resting stop fills INTRABAR, so we detect the exit on the NEXT bar (position flat while we
+// still think a trade is live). Arm the reversal only if the last leg exited via "SL" (BE/base
+// stop), never via "TR" (runner trail) or EOD. (Same one-bar arming lag as the close-fill version.)
+if active and strategy.position_size == 0 and bar_index > entryBar
+    lastExit = strategy.closedtrades > 0 ? strategy.closedtrades.exit_id(strategy.closedtrades - 1) : ""
+    if not inRev and lastExit == "SL"
+        primStopped := true
+        if showLabels
+            label.new(bar_index, tdir == 1 ? low : high, "REV armed: need close " + (tdir == 1 ? "< " + str.tostring(orLow, format.mintick) : "> " + str.tostring(orHigh, format.mintick)), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
+    strategy.cancel("P1")
+    strategy.cancel("SL")
+    strategy.cancel("TR")
+    active := false
+    tdir := 0
+    inRev := false
+    tp := na
+    stop := na
+    vwapArmed := false
+
+// ==================== EOD FORCED CLOSE (market at this bar's close) ====================
+if active and isFlattenBar and tdir != 0
+    strategy.cancel("P1")
+    strategy.cancel("SL")
+    strategy.cancel("TR")
+    strategy.close(entryId, comment=(inRev ? "REV EOD" : "EOD"))
+    if showLabels
+        label.new(bar_index, close, (inRev ? "REV EOD " : "EOD ") + str.tostring(close, format.mintick), style=label.style_label_left, color=color.rgb(255,140,0), textcolor=color.white, size=size.small)
+    active := false
+    tdir := 0
+    inRev := false
+    tp := na
+    stop := na
+
+// safety: never carry a position overnight (also covers half sessions with no 15:50 bar)
+if strategy.position_size != 0 and isFlattenBar and not active
+    strategy.close_all(comment="EOD flat")
+
+// ==================== VISUALS ====================
+plot(showLevels and not daySkipped and not na(orHigh) ? orHigh : na, "OR High", color=color.new(color.aqua, 0), style=plot.style_linebr)
+plot(showLevels and not daySkipped and not na(orLow) ? orLow : na, "OR Low", color=color.new(color.aqua, 0), style=plot.style_linebr)
+plot(showLevels and not daySkipped and not na(longBrk) ? longBrk : na, "Long Trigger", color=color.new(color.lime, 0), style=plot.style_linebr)
+plot(showLevels and not daySkipped and not na(shortBrk) ? shortBrk : na, "Short Trigger", color=color.new(color.red, 0), style=plot.style_linebr)
+plot(active ? stop : na, "Active Stop (close-based)", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(active and not na(tp) ? tp : na, "Active TP", color=color.lime, linewidth=2, style=plot.style_linebr)
+plot(active and not beTrig and not na(beLevel) ? beLevel : na, "BE Trigger", color=color.new(color.yellow, 0), style=plot.style_circles)
+// Reversal trigger — the OPPOSITE raw OR boundary; price must CLOSE beyond it.
+plot(primStopped and not active ? (primDir == 1 ? orLow : orHigh) : na, "Reversal Trigger", color=color.new(color.purple, 0), linewidth=2, style=plot.style_circles)
+bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol regime / wide OR)")
+
+// ==================== GATE INFO TABLE ====================
+var table t = table.new(position.top_right, 2, 4, border_width=1)
+if barstate.islast
+    table.cell(t, 0, 0, "UDB-ORB v2.0 STRATEGY", text_color=color.white, bgcolor=color.rgb(50,30,10), text_size=size.small)
+    table.cell(t, 1, 0, "Realistic Fills", text_color=color.orange, bgcolor=color.rgb(50,30,10), text_size=size.small)
+    table.cell(t, 0, 1, "Prior RVol (gate ≤ " + str.tostring(maxRvolPct, "#.##") + "%)", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 1, 1, na(rvol20) ? "n/a" : str.tostring(rvol20, "#.##") + "%", text_color=skipVol ? color.red : color.lime, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 0, 2, "OR Width (gate ≤ $" + str.tostring(maxORWidth, "#") + ")", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 1, 2, na(orWidth) ? "n/a" : str.tostring(orWidth, "#.##"), text_color=skipWide ? color.red : color.lime, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 0, 3, "Today", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 1, 3, daySkipped ? "SKIPPED" : "tradable", text_color=daySkipped ? color.red : color.lime, bgcolor=color.rgb(25,25,25), text_size=size.small)

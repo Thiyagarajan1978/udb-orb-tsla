@@ -1,5 +1,5 @@
 //@version=6
-indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UDB-ORB v2.0", overlay=true, max_labels_count=500)
+indicator("UDB-ORB TSLA B - VWAP-Cross (Config B)", shorttitle="UDB-ORB B", overlay=true, max_labels_count=500)
 
 //=============================================================================================
 //  UDB-ORB TSLA v2.0  —  Pine port of the Python engine's CURRENT DEFAULT config
@@ -108,7 +108,7 @@ maxCapSL        = input.float(5.0,  "Max Stop Distance from Entry ($, 0=off)", s
 beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
 partialPct      = input.float(25.0, "Partial Exit Quantity (%)", step=1.0, group=grpX)
 runnerMult      = input.float(0.75, "Runner Peak-Trail (x OR width)", step=0.05, group=grpX)
-runnerExit      = input.string("Peak Trail", "Runner Exit (75%)", options=["Peak Trail", "VWAP Cross"], group=grpX, tooltip="Peak Trail = Config A (DEFAULT): the 75% runner trails runnerMult x OR below its peak. VWAP Cross = Config B: the runner rides until price CLOSES back through the session VWAP (after +$ arm-profit). Backtest: VWAP made more net over 3yr (+574 vs +469/unit) but bumpier. Toggle to A/B test live.")
+runnerExit      = input.string("VWAP Cross", "Runner Exit (75%)", options=["Peak Trail", "VWAP Cross"], group=grpX, tooltip="Peak Trail = Config A (DEFAULT): the 75% runner trails runnerMult x OR below its peak. VWAP Cross = Config B: the runner rides until price CLOSES back through the session VWAP (after +$ arm-profit). Backtest: VWAP made more net over 3yr (+574 vs +469/unit) but bumpier. Toggle to A/B test live.")
 vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit ($)", step=0.25, group=grpX)
 exitOnClose     = input.bool(false, "Stop exits fill at bar CLOSE (OFF = resting stop, ADOPTED)", group=grpX, tooltip="OFF (default, ADOPTED) = REAL broker resting stop: stop-type exits fill INTRABAR at the stop level, gap-aware. Place OCO stops with your broker. ON = the old alerts-only model (fill on the bar close); use only if you are NOT resting stops.")
 

@@ -1,11 +1,20 @@
-# Pine port — two scripts
+# Pine port — two configs (A & B), each as indicator + strategy
 
-Both mirror the Python engine's **current default config** (`config/config.yaml`) on TSLA 5m.
+Four scripts on TSLA 5m. **A** and **B** are identical except the **runner (75%) exit** — pick one to
+run/paper-trade, or load both to A/B test live. Everything else (resting stop, Max-Cap $5, confirmation
+OFF, vol gate, reversal risk-parity, $0.10 slippage) is the same.
 
-| File | Type | Use it for |
-|------|------|-----------|
-| `UDB_ORB_TSLA_v2_strategy.pine` | `strategy()` | **Strategy Tester** → List of Trades + Performance Summary |
-| `UDB_ORB_TSLA_v2.pine` | `indicator()` | Chart + alerts for paper trading, custom summary table |
+| File | Config | Runner exit | Use it for |
+|------|--------|-------------|-----------|
+| `UDB_ORB_TSLA_v2_A.pine` | **A** (default) | **Peak-Trail** (0.75×OR below peak) | Indicator: chart + alerts |
+| `UDB_ORB_TSLA_v2_A_strategy.pine` | **A** | Peak-Trail | Strategy Tester |
+| `UDB_ORB_TSLA_v2_B.pine` | **B** | **VWAP-Cross** (ride until close thru VWAP) | Indicator: chart + alerts |
+| `UDB_ORB_TSLA_v2_B_strategy.pine` | **B** | VWAP-Cross | Strategy Tester |
+
+Full 2.5-yr (per unit, touch + $0.10 slippage): **A = +$469 (47.8% WR, PF 1.65)**, **B = +$574 (46.4% WR,
+PF 1.79)**. B makes more net (runners ride further) but with bigger give-backs. A's Python config is the
+default `config/config.yaml`; B's is `config/tsla_best_B.yaml`. Each file still carries the "Runner Exit
+(75%)" input if you want to flip it — the A/B split just sets the default.
 
 ## Install
 1. TradingView → **Pine Editor** → paste the file → **Add to chart**.
@@ -78,13 +87,21 @@ Set "Stop exits fill at bar CLOSE" **ON** in the inputs to see the old close-fil
 ## Benchmarks for your 30 / 90 / 365-day Strategy Tester runs
 Python engine, **per 1 unit**, realistic fills, $0.10/exit slippage, all ending **2026-07-09**:
 
-Default = **Config A: Max-Cap $5 + RESTING STOP + confirmation OFF** (touch fills, $0.10 slippage):
+**Config A** (Peak-Trail runner, default) — touch fills, $0.10 slippage:
 
-| Window | From | Trades | WR | Net | PF | Worst day | Reversals |
-|--------|------|-------:|---:|----:|---:|----------:|----------:|
-| 30d | 2026-06-09 | 27 | 59.3% | +$79.27 | 3.93 | −$5.18 | 6 |
-| 90d | 2026-04-10 | 78 | 57.7% | +$160.79 | 3.01 | −$6.02 | 18 |
-| **365d** | 2025-07-10 | **290** | **50.7%** | **+$278.95** | **1.81** | **−$8.85** | 59 |
+| Window | From | Trades | WR | Net | PF | Worst day |
+|--------|------|-------:|---:|----:|---:|----------:|
+| 30d | 2026-06-09 | 27 | 59.3% | +$79.27 | 3.93 | −$5.18 |
+| 90d | 2026-04-10 | 78 | 57.7% | +$160.79 | 3.01 | −$6.02 |
+| **365d** | 2025-07-10 | **290** | **50.7%** | **+$278.95** | **1.81** | **−$8.85** |
+
+**Config B** (VWAP-Cross runner) — same everything else:
+
+| Window | From | Trades | WR | Net | PF | Worst day |
+|--------|------|-------:|---:|----:|---:|----------:|
+| 30d | 2026-06-09 | 27 | 55.6% | +$90.49 | 4.02 | −$5.18 |
+| 90d | 2026-04-10 | 78 | 55.1% | +$177.72 | 3.13 | −$6.02 |
+| **365d** | 2025-07-10 | **290** | **49.3%** | **+$371.89** | **2.07** | **−$8.85** |
 
 **Config A (default): confirmation OFF.** Confirmation was adopted under close-fill for win rate, but
 it is net-negative under the resting stop (which already caps whipsaws at $5) — turning it off lifts

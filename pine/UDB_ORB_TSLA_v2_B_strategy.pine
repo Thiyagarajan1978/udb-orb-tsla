@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v2.0 S", overlay=true,
+strategy("UDB-ORB TSLA B STRATEGY — Realistic Fills", shorttitle="UDB-ORB B S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,     // act only on closed bars
      pyramiding              = 0,
@@ -141,7 +141,7 @@ requireTrendCandle = input.bool(true, "Confirmation candle must be with-trend", 
 beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
 partialPct      = input.float(25.0, "Partial Exit Quantity (%)", step=1.0, group=grpX)
 runnerMult      = input.float(0.75, "Runner Peak-Trail (x OR width)", step=0.05, group=grpX)
-runnerExit      = input.string("Peak Trail", "Runner Exit (75%)", options=["Peak Trail", "VWAP Cross"], group=grpX, tooltip="Peak Trail = Config A (DEFAULT): the 75% runner trails runnerMult x OR below its peak (a resting stop). VWAP Cross = Config B: the runner rides until price CLOSES back through the session VWAP (after +$ arm-profit). Backtest: VWAP made more net over 3yr (+574 vs +469/unit) but with bigger give-backs. Toggle to A/B test live.")
+runnerExit      = input.string("VWAP Cross", "Runner Exit (75%)", options=["Peak Trail", "VWAP Cross"], group=grpX, tooltip="Peak Trail = Config A (DEFAULT): the 75% runner trails runnerMult x OR below its peak (a resting stop). VWAP Cross = Config B: the runner rides until price CLOSES back through the session VWAP (after +$ arm-profit). Backtest: VWAP made more net over 3yr (+574 vs +469/unit) but with bigger give-backs. Toggle to A/B test live.")
 vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit ($)", step=0.25, group=grpX, tooltip="The VWAP-cross exit only arms once the trade is this many $ in profit (matches the engine's partial_activation).")
 
 grpV = "Reversal"
