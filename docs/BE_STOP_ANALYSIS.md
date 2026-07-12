@@ -831,6 +831,33 @@ Aggressive multi-param tunes hit +503 (0.35/0.50/0.35) to +535 (looser) but wors
 mechanistically clear, robust); leave stop/reversal fixed. `atr_normalize` kept opt-in (default off).
 Still the key to MULTI-SYMBOL (§22).
 
+## 28. ATR gate adoption REJECTED (per-year) + multi-symbol RE-TEST (edge now generalizes!)
+
+**Task 1 — ATR OR-gate per-year (TSLA), for adoption:** the +3% (§27) is a 2025-ONLY effect:
+| year | fixed $8 | ATR-gate | delta |
+|------|---------:|---------:|------:|
+| 2024 | +137.9 | +121.1 | **-16.8** |
+| 2025 | +103.7 | +138.7 | +35.0 |
+| 2026 | +227.8 | +223.0 | -4.8 |
+Worse in 2024 AND 2026, better only in high-vol 2025. Fails the "robust across all years" bar (the
+usual single-year trap). NOT adopted — kept fixed $8. `atr_normalize` stays opt-in.
+
+**Task 2 — multi-symbol RE-TEST under Config A, FIXED vs ATR-normalized (avgR = price-neutral):**
+| sym | FIXED avgR | ATR avgR | | sym | FIXED avgR | ATR avgR |
+|-----|-----------:|---------:|-|-----|-----------:|---------:|
+| TSLA | +0.149 | +0.140 | | AMZN | +0.077 | +0.083 |
+| NVDA | +0.044 | +0.048 | | GOOGL | +0.056 | +0.064 |
+| AMD | +0.073 | +0.081 | | MSFT | +0.087 | +0.077 |
+| META | +0.070 | +0.066 | | | | |
+
+TWO findings: (1) **ATR-normalization barely moves generalization** (±0.01, mixed) — it is NOT the key
+to multi-symbol after all. (2) **THE EDGE NOW GENERALIZES:** under Config A ALL 7 symbols have POSITIVE
+avgR (+0.04..+0.15), even with fixed $ params — vs §22's "TSLA-only (+0.10, others ~0.00)". What changed
+was NOT ATR but **Config A itself** (resting stop + confirmation OFF): §22's multi-symbol ran on the OLD
+close-fill/confirmation config. So the earlier "edge is TSLA-specific" was a config artifact. TSLA is
+still strongest (+0.149) but AMD/MSFT/AMZN are viable (+0.07-0.09) → a diversified basket is now real.
+ATR gives nothing here; the generalization came free with the Config A upgrades.
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and
