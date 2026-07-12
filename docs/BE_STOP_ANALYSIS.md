@@ -874,6 +874,25 @@ day (-7.3) but far FEWER trades -> much less total profit; per-trade quality (PF
 at 15m/30m they tie (fewer trends for the VWAP runner to ride). CAVEAT: 15m/30m use 5m-calibrated $
 params; re-tuning might narrow the gap but wouldn't beat 5m on net. DECISION: stay 5-minute, run A + B.
 
+## 30. OR start-time + timeframe + hybrid decision-resolution (all explored)
+
+**Breakout timeframe (2026, OR = first bar @ 9:30):** 1m +218/40%WR · 3m +110/46% · **5m +229/53%** ·
+15m +222 · 30m +176. 5-MINUTE is the clean peak — finer (1m/3m) adds noise (low WR), coarser (15m/30m)
+loses shots. SETTLED at 5m.
+
+**OR start-time (3-year, both configs):** shifting market_open later. 09:45 wins the 3yr TOTAL and is
+better in 2024+2025 (A: 09:45 +554 vs 09:30 +469; B: +621 vs +574) — but the NEIGHBORHOOD is NOISY, not
+a plateau: Config A 09:40 +511 / 09:45 +554 but 09:35 +431 / 09:50 +426; B 09:35 +628 / 09:45 +621 but
+09:50 +539. 09:45 is worse in 2026. VERDICT: suggestive (later start skips opening noise, helps size-off
+years) but the bumpy surface = overfitting risk. KEPT 09:30 as the principled/robust default; 09:45 is a
+documented alternative worth paper-trading (market_open is a 1-line config change). NOT hardcoded.
+
+**Hybrid (wider OR + 1m decision) — REJECTED.** Added `or_bars` (OR spans N bars from open) + tested on
+1m data: 15m OR @9:45 with 1m decision = +64 (A) vs current +229; ALL 1m-decision variants (+64/+73/+86)
+crushed by 5m-decision (+229). The 1-minute breakout is too NOISY — price crosses the level constantly
+on 1m -> false signals, WR 35-44%. The 5-minute CLOSE is the right breakout-decision resolution. `or_bars`
+kept opt-in (default 1). DECISION RESOLUTION matters as much as OR width: 5m close >> 1m close for entries.
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and

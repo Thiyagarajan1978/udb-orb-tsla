@@ -112,6 +112,7 @@ class _DayState:
         self.or_high: Optional[float] = None
         self.or_low: Optional[float] = None
         self.or_width: Optional[float] = None
+        self.or_bar_count = 0            # bars accumulated into the opening range (multi-bar OR)
         self.skipped_by_regime = False
         self.skipped_by_vol = False
 
@@ -396,11 +397,19 @@ class OrbEngine:
 
             t = ts.time()
 
-            # ---- capture opening-range bar ----
+            # ---- capture opening-range (spans p.or_bars bars from market_open) ----
+            or_completing_now = False
             if t == p.market_open:
                 st.or_high, st.or_low = h, l
-                st.or_width = abs(h - l)
+                st.or_bar_count = 1
+            elif st.or_bar_count and not st.has_or and st.or_bar_count < p.or_bars:
+                st.or_high = max(st.or_high, h)
+                st.or_low = min(st.or_low, l)
+                st.or_bar_count += 1
+            if st.or_bar_count and not st.has_or and st.or_bar_count >= p.or_bars:
+                st.or_width = abs(st.or_high - st.or_low)
                 st.has_or = True
+                or_completing_now = True   # do NOT enter on the bar that completes the OR
                 if p.min_or_width_enabled and st.or_width < p.min_or_width:
                     st.or_too_narrow = True
                 if p.max_or_width_enabled and st.or_width > self._atr_or(self._atr_gate_on, self._atr_gate_mult, p.max_or_width):
@@ -457,6 +466,7 @@ class OrbEngine:
 
             entry_ok_common = (
                 p and st.has_or and st.or_high is not None and t > p.market_open
+                and not or_completing_now  # not on the bar that just completed a multi-bar OR
                 and not st.skipped_by_regime and not st.skipped_by_vol
                 and self._time_window_ok(ts) and breaker_ok
                 and not is_flatten_bar     # no new entries at/after EOD (parity with the Pine port)
