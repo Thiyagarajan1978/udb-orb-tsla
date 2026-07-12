@@ -786,6 +786,28 @@ present or already rejected: candle-close entry (have), RVOL/volume filter (buil
 filters all fail), trend/gap alignment (§ pre-market: real but unexploitable), runner-trail (have),
 vol gate (have, but ours skips HIGH vol — a low-vol system), EOD/time exit (have).
 
+## 26. ATR-scaled stop cap — TESTED, IMPROVES TSLA + unlocks multi-symbol
+
+The fixed dollar params were fitted to TSLA ~$400. But TSLA's ATR(14) ranged **4.6x** over 2024-2026
+($6.2 -> $28.8), so the fixed $5 stop silently meant **0.24x to 0.80x ATR** at different times (tight
+in high-vol 2025, loose in calm 2024). Added sl_mode "Candle High/Low + ATR Cap" (cap = atr_mult*ATR,
+ATR shifted = no lookahead). Test vs fixed $5 (Config A, TSLA):
+
+| stop cap | 2024 | 2025 | 2026 | 3yr | avg risk |
+|----------|-----:|-----:|-----:|----:|---------:|
+| Fixed $5 (current) | +138 | +104 | +228 | +469 | $3.7->$4.9 |
+| ATR 0.35x | +137 | +132 | +232 | +501 | vol-scaled |
+| ATR 0.40x | +136 | +131 | +236 | **+503** | $3.5->$5.7 |
+| ATR 0.50x | +135 | +131 | +236 | +502 | |
+
+ATR cap is +~7% net (+469 -> +503), better in ALL 3 years, gain concentrated in high-vol **2025**
+(+104 -> +131, where the fixed $5 was too tight at 0.24x ATR). Plateau 0.35-0.50x (robust, not a fit
+peak); mechanism is sound (constant vol-normalized risk). Worst day ~unchanged. avgRisk now ADAPTS
+($3.5 calm -> $5.7 volatile). KEY: this is also the fix for MULTI-SYMBOL (§22) — with ATR-scaled
+levels the edge can scale across prices/symbols. Kept as opt-in sl_mode; adopting + re-running the
+basket with ATR-normalized max-cap/TP-floor/OR-gate is the decisive next test. (OR-based TP already
+adapts — OR/ATR ~0.31 stable — so only the FIXED params need ATR-scaling.)
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and

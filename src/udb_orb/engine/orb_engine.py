@@ -342,6 +342,13 @@ class OrbEngine:
         _rvol = (_daily["cl"].pct_change().rolling(_lb).std() * 100.0).shift(1)
         rvol_map = _rvol.to_dict()
 
+        # 14-day ATR (from daily H/L/C), shifted so it is known at the open (no lookahead). Used by
+        # the "ATR Cap" stop mode to size the cap by volatility instead of a fixed dollar amount.
+        _pc = _daily["cl"].shift(1)
+        _tr = pd.concat([_daily["hi"] - _daily["lo"], (_daily["hi"] - _pc).abs(),
+                         (_daily["lo"] - _pc).abs()], axis=1).max(axis=1)
+        atr_map = _tr.rolling(int(self.p.atr_period)).mean().shift(1).to_dict()
+
         st = _DayState()
         cur_date = None
         bar_i = -1
@@ -362,11 +369,13 @@ class OrbEngine:
             if cur_date is None:
                 cur_date = d
                 st.skipped_by_vol = self._vol_regime_skip(rvol_map.get(d))
+                self._cur_atr = atr_map.get(d)
             elif d != cur_date:
                 self._finalize_day(cur_date, st)
                 st = _DayState()
                 cur_date = d
                 st.skipped_by_vol = self._vol_regime_skip(rvol_map.get(d))
+                self._cur_atr = atr_map.get(d)
 
             t = ts.time()
 
@@ -640,6 +649,10 @@ class OrbEngine:
             return raw
         if p.sl_mode == "Candle High/Low + Max Cap":
             return max(raw, entry - p.fixed_sl)   # tighter of the two
+        # ATR-scaled cap: like Max-Cap but the cap is atr_mult * ATR (volatility-normalized).
+        if p.sl_mode == "Candle High/Low + ATR Cap":
+            cap = p.atr_mult * self._cur_atr if getattr(self, "_cur_atr", None) else p.fixed_sl
+            return max(raw, entry - cap)
         # OR-midpoint stop (LuxAlgo "moderate" 1:1.5): tighter than the boundary; cancel the
         # breakout if price pulls back through the middle of the opening range.
         if p.sl_mode in ("OR Midpoint", "OR Midpoint + Max Cap") and or_high is not None:
@@ -654,6 +667,9 @@ class OrbEngine:
             return raw
         if p.sl_mode == "Candle High/Low + Max Cap":
             return min(raw, entry + p.fixed_sl)
+        if p.sl_mode == "Candle High/Low + ATR Cap":
+            cap = p.atr_mult * self._cur_atr if getattr(self, "_cur_atr", None) else p.fixed_sl
+            return min(raw, entry + cap)
         if p.sl_mode in ("OR Midpoint", "OR Midpoint + Max Cap") and or_low is not None:
             mid = (or_high + or_low) / 2.0
             return min(mid, entry + p.fixed_sl) if p.sl_mode.endswith("Max Cap") else mid

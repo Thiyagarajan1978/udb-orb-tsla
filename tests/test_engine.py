@@ -287,6 +287,18 @@ def test_max_cap_stop_tightens_the_or_boundary_stop():
     assert abs(capped.trades[0].risk_amount - 3.0) < 1e-9
 
 
+def test_atr_cap_falls_back_to_fixed_when_atr_unavailable():
+    """'Candle High/Low + ATR Cap' uses atr_mult*ATR; with no ATR history it falls back to fixed_sl."""
+    rows = [  # single day -> ATR unavailable -> cap = fixed_sl (3.0). Wide OR 95-101, long @102.
+        (9, 30, 100, 101.0, 95.0, 100.0, 1000),
+        (9, 35, 101, 102.2, 100.5, 102.0, 1000),
+        (15, 50, 102.0, 102.5, 101.5, 102.2, 1000),
+    ]
+    atr = _run({"2024-06-03": rows},
+               profile_overrides={"sl_mode": "Candle High/Low + ATR Cap", "fixed_sl": 3.0, "atr_mult": 0.35})
+    assert abs(atr.trades[0].risk_amount - 3.0) < 1e-9   # fell back to the fixed cap
+
+
 def test_or_midpoint_stop_sits_at_the_range_middle():
     """'OR Midpoint' places the base stop at (or_high+or_low)/2 — tighter than the boundary."""
     rows = [  # OR 99-101 -> midpoint 100; long trigger 101.2, enters 101.5, rides to EOD

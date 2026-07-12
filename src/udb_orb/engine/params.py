@@ -87,6 +87,10 @@ class Params:
     #   "touch" : broker resting stop — trigger on the wick, gap-aware fill at min(stop, open)
     exit_on_close: bool = False      # derived: True iff stop_fill_mode == "close"
     stop_fill_touch: bool = False    # derived: True iff stop_fill_mode == "touch"
+    # ATR-scaled stop cap ("Candle High/Low + ATR Cap" sl_mode): cap = atr_mult * ATR(atr_period),
+    # volatility-normalized instead of a fixed dollar cap. Enables cross-symbol / cross-regime scaling.
+    atr_mult: float = 0.35
+    atr_period: int = 14
     # hybrid: a resting protective stop at the OR boundary fills intrabar (caps crash bars)
     protective_stop: bool = False
 
@@ -135,6 +139,8 @@ class Params:
             be_trail_amount=float(p["be_trail_amount"]),
             be_retrace_use_close=bool(p["be_retrace_use_close"]),
             use_partial_exit=bool(p["use_partial_exit"]),
+            atr_mult=float(p.get("atr_mult", 0.35)),
+            atr_period=int(p.get("atr_period", 14)),
             partial_qty_pct=float(p["partial_qty_pct"]),
             partial_activation=float(p["partial_activation"]),
             use_reversal=bool(p["use_reversal"]),
