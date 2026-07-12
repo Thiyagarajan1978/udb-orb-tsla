@@ -37,7 +37,8 @@ strategy("UDB-ORB TSLA v2.0 STRATEGY — Realistic Fills", shorttitle="UDB-ORB v
 //
 //  CONFIG (identical to the Python default)
 //    buffer 10% of OR · adaptive TP max($2.14, OR x 1.0) · BE trigger 0.55 (wick) · BE trail $0.25
-//    25% partial, 75% runner trails 0.75 x OR below its peak · resting-stop (touch) fills
+//    25% partial, 75% runner: PEAK-TRAIL (Config A default) OR VWAP-CROSS (Config B) — toggle input
+//                              "Runner Exit (75%)". VWAP made +574 vs +469/unit 3yr but bumpier.
 //    reversal: raw opposite OR break, trails to EOD, RISK-PARITY size min(2x, $6 / risk_per_unit)
 //    skip day if OR width > $8   OR   prior-20d realised daily vol > 4.92%
 //
@@ -140,6 +141,8 @@ requireTrendCandle = input.bool(true, "Confirmation candle must be with-trend", 
 beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
 partialPct      = input.float(25.0, "Partial Exit Quantity (%)", step=1.0, group=grpX)
 runnerMult      = input.float(0.75, "Runner Peak-Trail (x OR width)", step=0.05, group=grpX)
+runnerExit      = input.string("Peak Trail", "Runner Exit (75%)", options=["Peak Trail", "VWAP Cross"], group=grpX, tooltip="Peak Trail = Config A (DEFAULT): the 75% runner trails runnerMult x OR below its peak (a resting stop). VWAP Cross = Config B: the runner rides until price CLOSES back through the session VWAP (after +$ arm-profit). Backtest: VWAP made more net over 3yr (+574 vs +469/unit) but with bigger give-backs. Toggle to A/B test live.")
+vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit ($)", step=0.25, group=grpX, tooltip="The VWAP-cross exit only arms once the trade is this many $ in profit (matches the engine's partial_activation).")
 
 grpV = "Reversal"
 revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step=0.5, group=grpV)
@@ -178,6 +181,7 @@ var string entryId = ""
 var bool beTrig = false
 var float beLevel = na
 var bool part1 = false
+var bool vwapArmed = false
 var float qtyTotal = na
 var float runnerPeak = na
 
@@ -186,6 +190,7 @@ var bool primStopped = false
 
 // ==================== NEW DAY / OPENING RANGE ====================
 isNewDay = session.isfirstbar_regular
+sessVwap = ta.vwap(hlc3, isNewDay)   // session-anchored VWAP (resets each RTH open) for the VWAP-cross runner exit
 isEODbar = (hour * 60 + minute) >= (eodHour * 60 + eodMin)
 // Half sessions (e.g. Christmas Eve) close at 13:00 and NEVER produce a 15:50 bar, so the EOD
 // rule alone would leave a position open overnight. Always flatten on the session's last bar.
@@ -331,7 +336,9 @@ if canTrade and primStopped and not active and strategy.position_size == 0
 // The 25% "P1" limit at the TP is unchanged. VWAP is not used (runner peak-trail governs).
 // Guard >= entryBar so the resting stop is placed on the ENTRY bar (live from the next bar, like
 // the engine); Steps 1-4 (BE/partial/runner) only run AFTER the entry bar (no exit on entry bar).
+vwapMode = runnerExit == "VWAP Cross"
 if active and not na(stop) and bar_index >= entryBar
+    vwapExited = false
     if bar_index > entryBar
         // --- Step 1: BE Retrace (WICK trigger) ---
         if not beTrig and not na(beLevel)
@@ -347,15 +354,33 @@ if active and not na(stop) and bar_index >= entryBar
             tp := na            // TP disabled; the runner now trails
             if showLabels
                 label.new(bar_index, tdir == 1 ? high : low, "PARTIAL " + str.tostring(partialPct, "#") + "%", style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.tiny)
-        // --- Step 4: runner peak-trail LEVEL (primary only, after the partial) ---
-        if part1 and not suppressPartial and runnerMult > 0
+        // --- Step 4a: runner PEAK-TRAIL level (Config A: peak-trail mode) ---
+        if part1 and not suppressPartial and not vwapMode and runnerMult > 0
             runnerPeak := na(runnerPeak) ? (tdir == 1 ? high : low) : (tdir == 1 ? math.max(runnerPeak, high) : math.min(runnerPeak, low))
-    trailLevel = (part1 and not suppressPartial and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
-    // --- Step 5: place / refresh the resting stops for the CURRENT (remaining) position ---
-    beReason = beTrig ? ((tdir == 1 ? stop > entry : stop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
-    strategy.exit("SL", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
-    if not na(trailLevel)
-        strategy.exit("TR", from_entry=entryId, stop=trailLevel, comment=(inRev ? "REV Trail" : "Trail"))
+        // --- Step 4b: runner VWAP-CROSS exit (Config B: arm after $ profit, exit on close thru VWAP) ---
+        if part1 and not suppressPartial and vwapMode
+            if not vwapArmed and (tdir == 1 ? close - entry : entry - close) >= vwapArmProfit
+                vwapArmed := true
+            if vwapArmed and not na(sessVwap) and (tdir == 1 ? close <= sessVwap : close >= sessVwap)
+                strategy.cancel("P1")
+                strategy.cancel("SL")
+                strategy.close(entryId, comment=(inRev ? "REV VWAP" : "VWAP Cross"))
+                if showLabels
+                    label.new(bar_index, tdir == 1 ? high : low, (inRev ? "REV " : "") + "VWAP " + str.tostring(close, format.mintick), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
+                active := false
+                tdir := 0
+                inRev := false
+                tp := na
+                stop := na
+                vwapArmed := false
+                vwapExited := true
+    if not vwapExited
+        trailLevel = (part1 and not suppressPartial and not vwapMode and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
+        // --- Step 5: place / refresh the resting stops for the CURRENT (remaining) position ---
+        beReason = beTrig ? ((tdir == 1 ? stop > entry : stop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
+        strategy.exit("SL", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
+        if not na(trailLevel)
+            strategy.exit("TR", from_entry=entryId, stop=trailLevel, comment=(inRev ? "REV Trail" : "Trail"))
 
 // ==================== STATE DE-SYNC + REVERSAL ARMING ====================
 // A resting stop fills INTRABAR, so we detect the exit on the NEXT bar (position flat while we
@@ -375,6 +400,7 @@ if active and strategy.position_size == 0 and bar_index > entryBar
     inRev := false
     tp := na
     stop := na
+    vwapArmed := false
 
 // ==================== EOD FORCED CLOSE (market at this bar's close) ====================
 if active and isFlattenBar and tdir != 0

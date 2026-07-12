@@ -26,9 +26,10 @@ indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UD
 //   3. BE trigger 0.35 -> 0.55     : fewer premature BE stops.
 //   4. Reversal capture            : enter the reversal on a RAW opposite OR break (earlier) and
 //                                    let it TRAIL TO EOD (no fixed $5 TP, no partial).
-//   5. Runner peak-trail (NEW)     : after the 25% partial, the 75% runner trails 0.75 x OR below
-//                                    its peak. Previously it had NO trail until a BE retrace, so
-//                                    trend days handed the whole fade back.
+//   5. Runner exit (75%)           : PEAK-TRAIL (Config A default): trails 0.75 x OR below the peak.
+//                                    OR toggle "Runner Exit (75%)" -> VWAP CROSS (Config B): ride
+//                                    until close crosses back thru session VWAP. VWAP made more net
+//                                    3yr (+574 vs +469/unit) but bumpier -> A/B test it live.
 //   6. Max OR width $8             : skip wide-OR whipsaw days.
 //   7. Reversal RISK PARITY (NEW)  : the 2x size was never risk-adjusted. The reversal enters
 //                                    after price crossed the whole OR, so its stop is far away;
@@ -107,6 +108,8 @@ maxCapSL        = input.float(5.0,  "Max Stop Distance from Entry ($, 0=off)", s
 beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
 partialPct      = input.float(25.0, "Partial Exit Quantity (%)", step=1.0, group=grpX)
 runnerMult      = input.float(0.75, "Runner Peak-Trail (x OR width)", step=0.05, group=grpX)
+runnerExit      = input.string("Peak Trail", "Runner Exit (75%)", options=["Peak Trail", "VWAP Cross"], group=grpX, tooltip="Peak Trail = Config A (DEFAULT): the 75% runner trails runnerMult x OR below its peak. VWAP Cross = Config B: the runner rides until price CLOSES back through the session VWAP (after +$ arm-profit). Backtest: VWAP made more net over 3yr (+574 vs +469/unit) but bumpier. Toggle to A/B test live.")
+vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit ($)", step=0.25, group=grpX)
 exitOnClose     = input.bool(false, "Stop exits fill at bar CLOSE (OFF = resting stop, ADOPTED)", group=grpX, tooltip="OFF (default, ADOPTED) = REAL broker resting stop: stop-type exits fill INTRABAR at the stop level, gap-aware. Place OCO stops with your broker. ON = the old alerts-only model (fill on the bar close); use only if you are NOT resting stops.")
 
 grpC = "Entry Confirmation"
@@ -152,6 +155,7 @@ var bool suppressPartial = false
 var bool beTrig = false
 var float beLevel = na
 var bool part1 = false
+var bool vwapArmed = false
 var float qtyTotal = na
 var float effQty = na
 var float part1Pnl = 0.0
@@ -199,6 +203,7 @@ aEOD = false
 
 // ==================== NEW DAY / OPENING RANGE ====================
 isNewDay = session.isfirstbar_regular
+sessVwap = ta.vwap(hlc3, isNewDay)   // session-anchored VWAP for the optional VWAP-cross runner exit
 isEODbar = (hour * 60 + minute) >= (eodHour * 60 + eodMin)
 
 if isNewDay
@@ -359,10 +364,23 @@ if active and not na(stop) and bar_index > entryBar
     if beTrig and beTrailAmt > 0
         stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
 
-    // --- Step 3: Runner peak-trail (primary only, after the partial) ---
+    // --- Step 3: Runner exit (primary only, after the partial). Peak-Trail (A) or VWAP-Cross (B). ---
+    if not part1
+        vwapArmed := false          // not in a runner yet -> resets per trade
     runnerHit = false
     float runnerPx = na
-    if part1 and not suppressPartial and runnerMult > 0
+    string runnerReason = "Trail"
+    vwapMode = runnerExit == "VWAP Cross"
+    if part1 and not suppressPartial and vwapMode
+        // Config B: arm once the trade is +$vwapArmProfit, then exit when close crosses back thru VWAP
+        if not vwapArmed and (tdir == 1 ? close - entry : entry - close) >= vwapArmProfit
+            vwapArmed := true
+        if vwapArmed and not na(sessVwap) and (tdir == 1 ? close <= sessVwap : close >= sessVwap)
+            runnerHit := true
+            runnerPx := close
+            runnerReason := "VWAP Cross"
+    else if part1 and not suppressPartial and runnerMult > 0
+        // Config A: peak-trail (resting stop at runnerMult x OR below the peak)
         if tdir == 1
             runnerPeak := na(runnerPeak) ? high : math.max(runnerPeak, high)
             lvl = runnerPeak - runnerMult * orWidth
@@ -446,7 +464,7 @@ if active and not na(stop) and bar_index > entryBar
         dayPnl += pnlTotal
         dayHasTrades := true
         if showLabels
-            label.new(bar_index, tdir == 1 ? high : low, "TRAIL " + str.tostring(exitPx, format.mintick) + "\n" + (pnlTotal >= 0 ? "+" : "") + str.tostring(pnlTotal, "#.##"), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
+            label.new(bar_index, tdir == 1 ? high : low, runnerReason + " " + str.tostring(exitPx, format.mintick) + "\n" + (pnlTotal >= 0 ? "+" : "") + str.tostring(pnlTotal, "#.##"), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
         active := false
         tdir := 0
         inRev := false
