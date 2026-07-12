@@ -651,7 +651,8 @@ class OrbEngine:
             return max(raw, entry - p.fixed_sl)   # tighter of the two
         # ATR-scaled cap: like Max-Cap but the cap is atr_mult * ATR (volatility-normalized).
         if p.sl_mode == "Candle High/Low + ATR Cap":
-            cap = p.atr_mult * self._cur_atr if getattr(self, "_cur_atr", None) else p.fixed_sl
+            _a = getattr(self, "_cur_atr", None)
+            cap = p.atr_mult * _a if (_a is not None and _a == _a) else p.fixed_sl   # _a==_a excludes NaN
             return max(raw, entry - cap)
         # OR-midpoint stop (LuxAlgo "moderate" 1:1.5): tighter than the boundary; cancel the
         # breakout if price pulls back through the middle of the opening range.
@@ -668,7 +669,8 @@ class OrbEngine:
         if p.sl_mode == "Candle High/Low + Max Cap":
             return min(raw, entry + p.fixed_sl)
         if p.sl_mode == "Candle High/Low + ATR Cap":
-            cap = p.atr_mult * self._cur_atr if getattr(self, "_cur_atr", None) else p.fixed_sl
+            _a = getattr(self, "_cur_atr", None)
+            cap = p.atr_mult * _a if (_a is not None and _a == _a) else p.fixed_sl
             return min(raw, entry + cap)
         if p.sl_mode in ("OR Midpoint", "OR Midpoint + Max Cap") and or_low is not None:
             mid = (or_high + or_low) / 2.0

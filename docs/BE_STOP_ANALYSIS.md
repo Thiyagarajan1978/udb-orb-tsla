@@ -796,17 +796,18 @@ ATR shifted = no lookahead). Test vs fixed $5 (Config A, TSLA):
 | stop cap | 2024 | 2025 | 2026 | 3yr | avg risk |
 |----------|-----:|-----:|-----:|----:|---------:|
 | Fixed $5 (current) | +138 | +104 | +228 | +469 | $3.7->$4.9 |
-| ATR 0.35x | +137 | +132 | +232 | +501 | vol-scaled |
-| ATR 0.40x | +136 | +131 | +236 | **+503** | $3.5->$5.7 |
-| ATR 0.50x | +135 | +131 | +236 | +502 | |
+| ATR 0.35x | +137 | +108 | +232 | +477 | $3.3->$5.3 |
+| ATR 0.40x | +136 | +107 | +236 | **+479** | $3.5->$5.6 |
+| ATR 0.50x | +135 | +107 | +236 | +478 | $3.8->$5.8 |
 
-ATR cap is +~7% net (+469 -> +503), better in ALL 3 years, gain concentrated in high-vol **2025**
-(+104 -> +131, where the fixed $5 was too tight at 0.24x ATR). Plateau 0.35-0.50x (robust, not a fit
-peak); mechanism is sound (constant vol-normalized risk). Worst day ~unchanged. avgRisk now ADAPTS
-($3.5 calm -> $5.7 volatile). KEY: this is also the fix for MULTI-SYMBOL (§22) — with ATR-scaled
-levels the edge can scale across prices/symbols. Kept as opt-in sl_mode; adopting + re-running the
-basket with ATR-normalized max-cap/TP-floor/OR-gate is the decisive next test. (OR-based TP already
-adapts — OR/ATR ~0.31 stable — so only the FIXED params need ATR-scaling.)
+ATR cap is +~2% net (+469 -> +479), modestly better (neutral 2024, small gains 2025/2026). Plateau
+0.35-0.50x (robust, not a fit peak); mechanism sound (constant vol-normalized risk); worst day
+~unchanged; avgRisk now ADAPTS ($3.5 calm -> $5.6 volatile). (NOTE: an earlier run showed +503/+7%
+but that was a NaN-fallback BUG — the first ~14 days had no ATR and ran UNCAPPED; fixed, clean = +479.)
+So on TSLA-alone the win is small. The REAL prize is MULTI-SYMBOL (§22): with ATR-scaled levels the
+fixed dollar params (max-cap/TP-floor/OR-gate) stop being TSLA-price-specific, so the edge can scale
+across symbols. Kept as opt-in sl_mode; the decisive next test = ATR-normalize ALL fixed levels + re-run
+the basket. (OR-based TP already adapts — OR/ATR ~0.31 stable — only the FIXED params need scaling.)
 
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
