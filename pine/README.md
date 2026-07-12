@@ -18,7 +18,8 @@ default `config/config.yaml`; B's is `config/tsla_best_B.yaml`. Each file still 
 
 ## Install
 1. TradingView → **Pine Editor** → paste the file → **Add to chart**.
-2. Chart must be **TSLA, 5-minute, Regular Trading Hours**.
+2. Chart must be **TSLA, 5-minute, Regular Trading Hours**. (5-minute is the tested-optimal opening
+   range — 15m/30m ORBs take fewer trades and make ~2-3x LESS net over 3 years; see BE_STOP_ANALYSIS.)
 3. Strategy version: open the **Strategy Tester** tab for the trade list.
    Indicator version: the **Summary Table** (top-right) reports trades, win rate, net P&L, PF and
    worst day — the same definitions the Python engine uses (**a BE Stop counts as a failure**).

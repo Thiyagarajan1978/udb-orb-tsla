@@ -50,13 +50,13 @@ indicator("UDB-ORB TSLA B - VWAP-Cross (Config B)", shorttitle="UDB-ORB B", over
 //  PYTHON-VALIDATED RESULTS — DEFAULT NOW = 2-candle confirmation + Max-Cap $5 stop
 //  (TSLA 5m, realistic fills, 1 unit, slippage $0.02)
 //  --------------------------------------------------------------------------
-//  DEFAULT "Config A" = RESTING STOP (touch) + $0.10 slippage + CONFIRMATION OFF.
+//  "Config B" = RESTING STOP (touch) + $0.10 slippage + confirmation OFF + VWAP-CROSS runner.
 //     Year        Trades   WR      Net        PF     Worst day   Reversals
-//     2024         251    45.0%   + $137.9    1.58   -$7.90         63
-//     2025         236    47.0%   + $103.7    1.32   -$8.85         51
-//     2026 (H1)    151    53.6%   + $227.8    2.46   -$6.90         29
-//     2024-26 H1   638    47.8%   + $469.4    1.65   -$8.85        143   (full ledger)
-//     Confirmation now OFF: net-negative under the resting stop (+298 -> +469, +57%; see §24).
+//     2024         251    43.4%   + $126.6    1.52   -$7.90         63
+//     2025         236    46.2%   + $199.3    1.62   -$8.85         51
+//     2026 (H1)    151    51.7%   + $248.3    2.56   -$6.90         29
+//     2024-26 H1   638    46.4%   + $574.2    1.79   -$8.85        143   (full ledger)
+//     Runner rides to a VWAP-cross (vs Config A peak-trail): more net (+574 vs +469), bumpier. 5m ORB.
 //
 //  To reproduce the OLD immediate-entry numbers: turn OFF "Require confirmation candle" and set
 //  "Max Stop Distance from Entry" to 0 (2024 253tr/45.1%/+65.67, 2025 236tr/47.5%/+82.71).

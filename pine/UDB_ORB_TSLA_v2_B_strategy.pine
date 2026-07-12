@@ -42,13 +42,13 @@ strategy("UDB-ORB TSLA B STRATEGY — Realistic Fills", shorttitle="UDB-ORB B S"
 //    reversal: raw opposite OR break, trails to EOD, RISK-PARITY size min(2x, $6 / risk_per_unit)
 //    skip day if OR width > $8   OR   prior-20d realised daily vol > 4.92%
 //
-//  PYTHON-VALIDATED — DEFAULT "Config A" = Max-Cap $5 + RESTING STOP, confirmation OFF (1u, $0.10 slip)
-//    2024        251 tr  45.0%  +$137.9  PF 1.58  worst - $7.90
-//    2025        236 tr  47.0%  +$103.7  PF 1.32  worst - $8.85
-//    2026 H1     151 tr  53.6%  +$227.8  PF 2.46  worst - $6.90
-//    2024-26H1   638 tr  47.8%  +$469.4  PF 1.65  worst - $8.85   (full ledger)
-//    Confirmation now OFF: net-NEGATIVE under the resting stop (+298 -> +469, +57%; BE_STOP_ANALYSIS 24).
-//    Slippage $0.10 (set Strategy Tester slippage ~10 ticks). Turn confirmation ON only with close-fill.
+//  PYTHON-VALIDATED — "Config B" = Max-Cap $5 + RESTING STOP + confirm OFF + VWAP-CROSS runner (1u, $0.10)
+//    2024        251 tr  43.4%  +$126.6  PF 1.52  worst - $7.90
+//    2025        236 tr  46.2%  +$199.3  PF 1.62  worst - $8.85
+//    2026 H1     151 tr  51.7%  +$248.3  PF 2.56  worst - $6.90
+//    2024-26H1   638 tr  46.4%  +$574.2  PF 1.79  worst - $8.85   (full ledger)
+//    Runner rides to a VWAP-cross (vs Config A's peak-trail): more net (+574 vs +469) but bumpier.
+//    5-minute ORB (tested best vs 15m/30m). Slippage $0.10 (set Strategy Tester slippage ~10 ticks).
 //
 //  SHARES PER UNIT (default 100) — READ THIS
 //  TradingView rounds order size to whole shares. The reversal is sized by RISK PARITY and needs
@@ -77,12 +77,12 @@ strategy("UDB-ORB TSLA B STRATEGY — Realistic Fills", shorttitle="UDB-ORB B S"
 //      first (a paid TradingView plan loads more bars), or the run will silently start late.
 //
 //  EXPECTED (Python engine, per 1 unit, realistic fills, $0.02/exit slippage, ending 2026-07-09)
-//  DEFAULT "Config A" = Max-Cap $5 + RESTING STOP + confirmation OFF (touch fills, $0.10 slip).
+//  "Config B" = Max-Cap $5 + RESTING STOP + confirmation OFF + VWAP-CROSS runner (touch, $0.10 slip).
 //    Window   From         Trades  WR     Net       PF     Worst day   Reversals
-//     30d     2026-06-09     27   59.3%  + $79.27   3.93   -$5.18          6
-//     90d     2026-04-10     78   57.7%  +$160.79   3.01   -$6.02         18
-//    365d     2025-07-10    290   50.7%  +$278.95   1.81   -$8.85         59
-//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$17,100).
+//     30d     2026-06-09     27   55.6%  + $90.49   4.02   -$5.18          6
+//     90d     2026-04-10     78   55.1%  +$177.72   3.13   -$6.02         18
+//    365d     2025-07-10    290   49.3%  +$371.89   2.07   -$8.85         59
+//  At Shares/unit = 100, Strategy Tester Net P&L should be ~100x these (e.g. 365d ~ +$37,200).
 //  NOTE: because stops are now RESTING orders, TradingView fills them intrabar exactly like the
 //  engine's touch model — expect a closer match than the old close-fill version (which had the
 //  data-feed marginal-trigger gaps). Small residual: TV applies a BE stop one bar later than the

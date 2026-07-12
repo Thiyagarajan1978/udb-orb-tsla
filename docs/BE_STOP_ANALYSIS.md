@@ -858,6 +858,22 @@ close-fill/confirmation config. So the earlier "edge is TSLA-specific" was a con
 still strongest (+0.149) but AMD/MSFT/AMZN are viable (+0.07-0.09) → a diversified basket is now real.
 ATR gives nothing here; the generalization came free with the Config A upgrades.
 
+## 29. ORB timeframe — 5-minute is best (15m/30m tested, REJECTED)
+
+Resampled 5m -> 15m/30m (OR = first bar at each resolution), ran Config A and B, 2.5yr TSLA:
+
+| OR TF | trades | WR | Config A net | Config B net | worst |
+|-------|-------:|---:|-------------:|-------------:|------:|
+| **5m** | 638 | ~47% | **+469** | **+574** | -8.8 |
+| 15m | 438 | ~48% | +222 | +217 | -7.3 |
+| 30m | 288 | ~53% | +176 | +178 | -7.3 |
+
+5m makes **2-3x more net** in both configs. 15m/30m have HIGHER win rate (up to 53%) and SMALLER worst
+day (-7.3) but far FEWER trades -> much less total profit; per-trade quality (PF) is similar (30m 1.68
+~= 5m 1.65), so 5m wins by sheer number of shots at the same edge. Config B > A at 5m (+574 vs +469);
+at 15m/30m they tie (fewer trends for the VWAP runner to ride). CAVEAT: 15m/30m use 5m-calibrated $
+params; re-tuning might narrow the gap but wouldn't beat 5m on net. DECISION: stay 5-minute, run A + B.
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and
