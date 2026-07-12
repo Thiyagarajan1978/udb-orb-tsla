@@ -760,6 +760,32 @@ combined 638tr/47.8%/+469.4/PF1.65/worst-8.85/143rev. Benchmarks 30/90/365: 27tr
 strip risk controls (max-cap, vol gate) were NOT chosen — they add net but remove tail protection
 (no-max-cap worst -13.7). Re-enable confirmation ONLY if reverting to close-fill.
 
+## 25. OR-midpoint stop (LuxAlgo "moderate 1:1.5") — TESTED, REJECTED
+
+Idea (LuxAlgo ORB page + user): stop at the OR MIDPOINT — cancel the breakout if price pulls back
+through the middle of the opening range. Added sl_mode "OR Midpoint" / "OR Midpoint + Max Cap".
+Tested vs Config A (all at touch + $0.10):
+
+| stop mode | 2024 | 2025 | 2026 | 3yr | avg risk |
+|-----------|-----:|-----:|-----:|----:|---------:|
+| Max-Cap $5 (Config A) | +138 | +104 | +228 | **+469** | $4.5 |
+| OR Midpoint | +125 | +101 | +210 | +436 | $3.7 |
+| OR Midpoint + Max-Cap | +129 | +100 | +211 | +440 | $3.6 |
+| OR boundary (no cap) | +135 | +131 | +236 | +501 | $5.4 |
+
+Midpoint is WORSE in ALL 3 years (+436 vs +469). The tighter stop (avg $3.7 vs $4.5) causes
+premature exits: the OR midpoint acts as an early-session CHOP MAGNET (the page even calls it a
+"magnet"), so price routinely dips through it before the real move, stopping us out. The resting
+stop already caps losses cleanly at the boundary/cap, so a tighter invalidation costs more in lost
+runners than it saves. KEPT as an opt-in sl_mode; NOT adopted.
+
+Bonus finding: OR boundary with NO cap = +501 (> Config A +469) under the resting stop — but it
+raises per-trade risk (avg $5.4, worst ~$8.8) for marginal net; KEPT the Max-Cap for tail safety
+(same "don't strip a risk control for net" rule as §24). Other LuxAlgo techniques were already
+present or already rejected: candle-close entry (have), RVOL/volume filter (built, off — entry
+filters all fail), trend/gap alignment (§ pre-market: real but unexploitable), runner-trail (have),
+vol gate (have, but ours skips HIGH vol — a low-vol system), EOD/time exit (have).
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and

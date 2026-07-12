@@ -287,6 +287,21 @@ def test_max_cap_stop_tightens_the_or_boundary_stop():
     assert abs(capped.trades[0].risk_amount - 3.0) < 1e-9
 
 
+def test_or_midpoint_stop_sits_at_the_range_middle():
+    """'OR Midpoint' places the base stop at (or_high+or_low)/2 — tighter than the boundary."""
+    rows = [  # OR 99-101 -> midpoint 100; long trigger 101.2, enters 101.5, rides to EOD
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),
+        (9, 35, 101, 101.6, 101.0, 101.5, 1000),
+        (9, 40, 101.5, 102.5, 101.4, 102.3, 1000),
+        (15, 50, 102.3, 102.6, 102.2, 102.4, 1000),
+    ]
+    mid = _run({"2024-06-03": rows}, profile_overrides={"sl_mode": "OR Midpoint"})
+    bnd = _run({"2024-06-03": rows}, profile_overrides={"sl_mode": "Candle High/Low"})
+    # midpoint stop = 100 -> risk = 101.5 - 100 = 1.5 ; boundary stop = 99 -> risk = 2.5
+    assert abs(mid.trades[0].risk_amount - 1.5) < 1e-9
+    assert mid.trades[0].risk_amount < bnd.trades[0].risk_amount
+
+
 def test_two_close_confirmation_delays_entry():
     """confirm_two_closes requires the PREVIOUS bar to also close beyond the trigger."""
     rows = [

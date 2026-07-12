@@ -596,12 +596,12 @@ class OrbEngine:
                 st.prim_dir = direction
                 st.first_taken = True
             if direction == 1:
-                st.stop = self._long_sl(c, st.or_low)
+                st.stop = self._long_sl(c, st.or_low, st.or_high)
                 tp_dist = max(p.adaptive_tp_min, or_size * p.adaptive_tp_scale) if p.use_adaptive_tp else p.fixed_tp
                 st.tp = c + tp_dist
                 st.be_level = st.or_high - (p.be_retrace_trigger * or_size) if or_size else None
             else:
-                st.stop = self._short_sl(c, st.or_high)
+                st.stop = self._short_sl(c, st.or_high, st.or_low)
                 tp_dist = max(p.adaptive_tp_min, or_size * p.adaptive_tp_scale) if p.use_adaptive_tp else p.fixed_tp
                 st.tp = c - tp_dist
                 st.be_level = st.or_low + (p.be_retrace_trigger * or_size) if or_size else None
@@ -632,7 +632,7 @@ class OrbEngine:
         if st.entry_ts_day is None:
             st.entry_ts_day = ts
 
-    def _long_sl(self, entry, or_low):
+    def _long_sl(self, entry, or_low, or_high=None):
         """OR-boundary stop, optionally capped so it is never further than `fixed_sl` below entry."""
         p = self.p
         raw = or_low - p.sl_offset
@@ -640,15 +640,23 @@ class OrbEngine:
             return raw
         if p.sl_mode == "Candle High/Low + Max Cap":
             return max(raw, entry - p.fixed_sl)   # tighter of the two
+        # OR-midpoint stop (LuxAlgo "moderate" 1:1.5): tighter than the boundary; cancel the
+        # breakout if price pulls back through the middle of the opening range.
+        if p.sl_mode in ("OR Midpoint", "OR Midpoint + Max Cap") and or_high is not None:
+            mid = (or_high + or_low) / 2.0
+            return max(mid, entry - p.fixed_sl) if p.sl_mode.endswith("Max Cap") else mid
         return entry - p.fixed_sl
 
-    def _short_sl(self, entry, or_high):
+    def _short_sl(self, entry, or_high, or_low=None):
         p = self.p
         raw = or_high + p.sl_offset
         if p.sl_mode == "Candle High/Low":
             return raw
         if p.sl_mode == "Candle High/Low + Max Cap":
             return min(raw, entry + p.fixed_sl)
+        if p.sl_mode in ("OR Midpoint", "OR Midpoint + Max Cap") and or_low is not None:
+            mid = (or_high + or_low) / 2.0
+            return min(mid, entry + p.fixed_sl) if p.sl_mode.endswith("Max Cap") else mid
         return entry + p.fixed_sl
 
     # ---- LONG exit engine ----------------------------------------------
