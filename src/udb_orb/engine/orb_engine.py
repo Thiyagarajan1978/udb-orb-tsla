@@ -177,6 +177,23 @@ class OrbEngine:
         self.p = params
         self.enh = enhancements or {}
         self.result = Result()
+        # ATR normalization: when on, replace the FIXED dollar params (stop cap, OR-width gate,
+        # reversal risk cap) with multiples of the current ATR, so the risk profile is constant
+        # across volatility regimes and transferable across symbols/prices. Off => fixed dollars.
+        _an = self.enh.get("atr_normalize", {})
+        self._atr_norm = bool(_an.get("enabled", False))
+        self._atr_stop_mult = float(_an.get("stop_mult", 0.40))
+        self._atr_gate_mult = float(_an.get("gate_mult", 0.55))
+        self._atr_rev_mult = float(_an.get("rev_mult", 0.40))
+        self._atr_stop_on = bool(_an.get("stop", True))    # per-param toggles to isolate each effect
+        self._atr_gate_on = bool(_an.get("gate", True))
+        self._atr_rev_on = bool(_an.get("rev", True))
+        self._cur_atr = None
+
+    def _atr_or(self, on: bool, mult: float, fixed: float) -> float:
+        """mult*ATR when atr_normalize+this param are on and ATR is available, else the fixed value."""
+        a = getattr(self, "_cur_atr", None)
+        return mult * a if (self._atr_norm and on and a is not None and a == a) else fixed
 
     # ---- enhancement gates (no-ops unless enabled in config) -------------
     def _rvol_ok(self, rvol: float) -> bool:
@@ -279,7 +296,7 @@ class OrbEngine:
         stop = (st.or_high + p.sl_offset) if direction == -1 else (st.or_low - p.sl_offset)
         risk_per_unit = abs(c - stop)
         qty = p.trade_qty * p.reversal_qty_mult
-        cap = p.reversal_risk_cap
+        cap = self._atr_or(self._atr_rev_on, self._atr_rev_mult, p.reversal_risk_cap)
         if cap and cap > 0 and risk_per_unit > 0:
             if p.reversal_risk_mode == "skip":
                 if risk_per_unit * qty > cap:
@@ -386,7 +403,7 @@ class OrbEngine:
                 st.has_or = True
                 if p.min_or_width_enabled and st.or_width < p.min_or_width:
                     st.or_too_narrow = True
-                if p.max_or_width_enabled and st.or_width > p.max_or_width:
+                if p.max_or_width_enabled and st.or_width > self._atr_or(self._atr_gate_on, self._atr_gate_mult, p.max_or_width):
                     st.or_too_wide = True
                 st.skipped_by_regime = self._regime_skip(st.or_width)
 
@@ -447,7 +464,7 @@ class OrbEngine:
 
             # filter gates for entry direction
             min_ok = (not p.min_or_width_enabled) or (st.or_width is not None and st.or_width >= p.min_or_width)
-            max_ok = (not p.max_or_width_enabled) or (st.or_width is not None and st.or_width <= p.max_or_width)
+            max_ok = (not p.max_or_width_enabled) or (st.or_width is not None and st.or_width <= self._atr_or(self._atr_gate_on, self._atr_gate_mult, p.max_or_width))
             vwap_long_ok = (not p.use_vwap_filter) or (vw is not None and c > vw)
             vwap_short_ok = (not p.use_vwap_filter) or (vw is not None and c < vw)
 
@@ -648,7 +665,7 @@ class OrbEngine:
         if p.sl_mode == "Candle High/Low":
             return raw
         if p.sl_mode == "Candle High/Low + Max Cap":
-            return max(raw, entry - p.fixed_sl)   # tighter of the two
+            return max(raw, entry - self._atr_or(self._atr_stop_on, self._atr_stop_mult, p.fixed_sl))
         # ATR-scaled cap: like Max-Cap but the cap is atr_mult * ATR (volatility-normalized).
         if p.sl_mode == "Candle High/Low + ATR Cap":
             _a = getattr(self, "_cur_atr", None)

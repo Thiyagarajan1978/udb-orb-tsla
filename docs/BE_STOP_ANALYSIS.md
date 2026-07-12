@@ -809,6 +809,28 @@ fixed dollar params (max-cap/TP-floor/OR-gate) stop being TSLA-price-specific, s
 across symbols. Kept as opt-in sl_mode; the decisive next test = ATR-normalize ALL fixed levels + re-run
 the basket. (OR-based TP already adapts — OR/ATR ~0.31 stable — only the FIXED params need scaling.)
 
+## 27. Full ATR-normalization sweep — the OR-GATE is the winner, not the stop
+
+Extended ATR-scaling to ALL fixed-$ params via `atr_normalize` enh (per-param stop/gate/rev toggles +
+mults), isolating each (Config A, TSLA):
+
+| ATR-normalized | 2024 | 2025 | 2026 | 3yr | worst |
+|----------------|-----:|-----:|-----:|----:|------:|
+| Baseline (fixed $) | +138 | +104 | +228 | +469 | -8.8 |
+| stop only 0.40x | +138 | +103 | +228 | +468 | -8.5 |
+| **gate only 0.55x** | +121 | **+139** | +223 | **+483** | -8.8 |
+| reversal only 0.40x | +138 | +104 | +229 | +471 | -10.1 |
+| all (0.40/0.55/0.40) | +118 | +141 | +222 | +481 | -9.4 |
+
+**The OR-WIDTH GATE is the fixed param that benefits from ATR (+3%, +469->+483), all from high-vol
+2025 (+104->+139).** The fixed $8 gate got too tight as TSLA's ATR grew (skipping wide-OR days that
+were only "wide" in dollars, not in vol) — ATR-scaling the gate lets those good 2025 days back in, with
+the SAME worst day (-8.8). The STOP is neutral (§26) and REVERSAL is neutral-with-worse-tail (-10.1).
+Aggressive multi-param tunes hit +503 (0.35/0.50/0.35) to +535 (looser) but worsen the worst day (-9 to
+-11) and are overfit-prone — NOT chosen. Clean takeaway: **ATR-normalize the OR-gate** (single-param,
+mechanistically clear, robust); leave stop/reversal fixed. `atr_normalize` kept opt-in (default off).
+Still the key to MULTI-SYMBOL (§22).
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and
