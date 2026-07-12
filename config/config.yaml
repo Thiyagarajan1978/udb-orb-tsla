@@ -222,12 +222,14 @@ enhancements:
   #     — green for longs / red for shorts). If it snaps back inside, wait for a fresh break.
   #     Enters at the confirmation candle's close. Avoids chasing an extended first-break bar that
   #     immediately reverses (e.g. 2026-07-09 10:00 break -> 10:05 back inside).
-  # ADOPTED (§20): higher win rate (47.6% -> 50.0% over 3 years) by skipping the immediate
-  # first-break entry and requiring the next candle to HOLD beyond the trigger (green for longs,
-  # red for shorts). Pairs with sl_mode Max-Cap $5, which caps the wider entry->stop distance the
-  # later entry creates. Trade-off: ~$14/yr less net than immediate entry; better worst day.
+  # DISABLED 2026-07-11 (§24, "Config A"): confirmation was adopted (§20) under the CLOSE-FILL
+  # model to lift win rate. Under the RESTING STOP it is net-NEGATIVE — the resting stop already
+  # caps whipsaws at $5, so confirmation's benefit vanished while its cost (later, worse entries
+  # that miss the move) remained. Turning it OFF lifts 3yr net +298 -> +469 (+57%), BETTER in all
+  # three years, PF 1.39 -> 1.65, worst day ~unchanged, WR ~2pt lower (49->48%). Re-enable only
+  # if you revert to close-fill (stop_fill_mode: close). See BE_STOP_ANALYSIS §24.
   confirm_breakout:
-    enabled: true
+    enabled: false
     require_trend_candle: true
     # hold_bars = prior consecutive same-day bars that must close beyond the trigger before entry.
     # 1 = the ADOPTED 2-candle rule (break bar + entry bar). Higher values tested and REJECTED

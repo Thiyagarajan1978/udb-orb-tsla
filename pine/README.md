@@ -78,19 +78,20 @@ Set "Stop exits fill at bar CLOSE" **ON** in the inputs to see the old close-fil
 ## Benchmarks for your 30 / 90 / 365-day Strategy Tester runs
 Python engine, **per 1 unit**, realistic fills, $0.10/exit slippage, all ending **2026-07-09**:
 
-Default = **2-candle confirmation + Max-Cap $5 + RESTING STOP** (touch fills, $0.10 slippage):
+Default = **Config A: Max-Cap $5 + RESTING STOP + confirmation OFF** (touch fills, $0.10 slippage):
 
 | Window | From | Trades | WR | Net | PF | Worst day | Reversals |
 |--------|------|-------:|---:|----:|---:|----------:|----------:|
-| 30d | 2026-06-09 | 23 | 65.2% | +$74.98 | 4.92 | −$5.18 | 3 |
-| 90d | 2026-04-10 | 71 | 52.1% | +$108.99 | 2.18 | −$6.28 | 12 |
-| **365d** | 2025-07-10 | **269** | **49.8%** | **+$171.42** | **1.46** | **−$7.75** | 42 |
+| 30d | 2026-06-09 | 27 | 59.3% | +$79.27 | 3.93 | −$5.18 | 6 |
+| 90d | 2026-04-10 | 78 | 57.7% | +$160.79 | 3.01 | −$6.02 | 18 |
+| **365d** | 2025-07-10 | **290** | **50.7%** | **+$278.95** | **1.81** | **−$8.85** | 59 |
 
-Slippage is now **$0.10/share** (was $0.02) — a conservative allowance for stop-fill slippage and
-liquidity sweeps (a resting stop becomes a market order and can fill worse than the level; the 5m
-backtest fills *at* the level and can't see sub-bar sweep wicks). This haircuts net ~15%. Set the
-Strategy Tester slippage to ~10 ticks to match. To see the old close-fill numbers, set "Stop exits
-fill at bar CLOSE" ON.
+**Config A (default): confirmation OFF.** Confirmation was adopted under close-fill for win rate, but
+it is net-negative under the resting stop (which already caps whipsaws at $5) — turning it off lifts
+net +$298 → +$469 over 3 years (+57%), better in all three. Turn "Require confirmation candle" ON only
+if you revert to close-fill. Slippage is **$0.10/share** (conservative stop-fill/sweep allowance; set
+the Strategy Tester slippage to ~10 ticks). To see the old close-fill numbers, set "Stop exits fill at
+bar CLOSE" ON.
 
 At `Shares per unit = 100`, Strategy Tester Net P&L should read **~100×** these
 (365d ≈ **+$21,300**). It will land slightly *higher*, because Python subtracts $0.02/unit on
@@ -139,13 +140,14 @@ Python, 1 unit, realistic fills, $0.10 slippage:
 
 | Year | Trades | WR | Net | PF | Worst day | Reversals |
 |---|---:|---:|---:|---:|---:|---:|
-| 2024 | 229 | 47.6% | +$74.51 | 1.30 | −$7.90 | 49 |
-| 2025 | 221 | 51.1% | +$100.60 | 1.31 | −$7.91 | 38 |
-| 2026 H1 | 140 | 48.6% | +$122.49 | 1.65 | −$6.38 | 20 |
-| **2024→26 H1** | **590** | **49.2%** | **+$297.60** | **1.39** | **−$7.91** | 107 |
+| 2024 | 251 | 45.0% | +$137.9 | 1.58 | −$7.90 | 63 |
+| 2025 | 236 | 47.0% | +$103.7 | 1.32 | −$8.85 | 51 |
+| 2026 H1 | 151 | 53.6% | +$227.8 | 2.46 | −$6.90 | 29 |
+| **2024→26 H1** | **638** | **47.8%** | **+$469.4** | **1.65** | **−$8.85** | 143 |
 
-The last row is the full 2.5-year ledger (Run #57, resting stop + $0.10 slippage). At $0.02 slippage
-it was +$348.72; the conservative $0.10 stop-slip allowance haircuts it ~15% to +$297.60. **Size off 2024, not 2026** — 2026 was the
+The last row is the full 2.5-year ledger (Config A: resting stop + $0.10 slippage + confirmation OFF).
+The prior default (confirmation ON) was +$297.60 — dropping confirmation under the resting stop adds
++57%, better in all three years. Config B (also drops the runner-trail) reaches +$574; see `config/`. **Size off 2024, not 2026** — 2026 was the
 friendly low-vol regime. For reference, the OLD immediate-entry default was 2024 253tr/45.1%/+$65.67,
 2025 236tr/47.5%/+$82.71, 2026 H1 152tr/50.7%/+$192.31 (higher 2026 net, lower win rate, bigger
 worst day) — reproduce it by turning confirmation OFF and Max Stop Distance to 0.

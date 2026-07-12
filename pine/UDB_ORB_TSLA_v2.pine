@@ -36,12 +36,12 @@ indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UD
 //                                    worst-day damage. Its qty is now scaled so its DOLLAR RISK
 //                                    <= $6 (the primary's average risk).
 //   8. Slippage $0.02 / unit charged on every exit leg.
-//   9. CONFIRMATION CANDLE (NEW)   : do NOT enter on the first close-break; require the NEXT
-//                                    candle to ALSO close beyond the trigger (green for longs /
-//                                    red for shorts). Higher win rate (47.6 -> 50.9% over 3yr),
-//                                    later & more extended entry. Primary entries only.
-//  10. MAX-CAP $5 STOP (NEW)       : the confirmation enters further from the OR-boundary stop, so
-//                                    the primary stop is capped at $5 from entry. Cuts the 2024
+//   9. CONFIRMATION CANDLE (now OFF): a 2-candle-hold entry filter. Adopted under close-fill for
+//                                    win rate, but net-NEGATIVE under the resting stop (which
+//                                    already caps whipsaws at $5) -> turned OFF (Config A, §24;
+//                                    +298 -> +469/unit, better all 3 yrs). ON only with close-fill.
+//  10. MAX-CAP $5 STOP             : the primary stop is capped at $5 from entry (also bounds the
+//                                    entry->stop distance). Cuts the 2024
 //                                    worst day (-14.9 -> -8.7) that the later entry would create.
 //                                    (These two are a package: the cap earns its place only with
 //                                    confirmation — standalone it was noise.)
@@ -49,13 +49,13 @@ indicator("UDB-ORB TSLA v2.0 — Python-tuned (Realistic Fills)", shorttitle="UD
 //  PYTHON-VALIDATED RESULTS — DEFAULT NOW = 2-candle confirmation + Max-Cap $5 stop
 //  (TSLA 5m, realistic fills, 1 unit, slippage $0.02)
 //  --------------------------------------------------------------------------
-//  DEFAULT NOW = RESTING STOP (touch) + $0.10 slippage (conservative stop-fill/sweep allowance).
+//  DEFAULT "Config A" = RESTING STOP (touch) + $0.10 slippage + CONFIRMATION OFF.
 //     Year        Trades   WR      Net        PF     Worst day   Reversals
-//     2024         229    47.6%   +  $74.51   1.30   -$7.90         49
-//     2025         221    51.1%   + $100.60   1.31   -$7.91         38
-//     2026 (H1)    140    48.6%   + $122.49   1.65   -$6.38         20
-//     2024-26 H1   590    49.2%   + $297.60   1.39   -$7.91        107   (full ledger, Run #57)
-//     Slippage 0.02 -> 0.10 haircut net -15% (stop fills can sweep; see BE_STOP_ANALYSIS 23).
+//     2024         251    45.0%   + $137.9    1.58   -$7.90         63
+//     2025         236    47.0%   + $103.7    1.32   -$8.85         51
+//     2026 (H1)    151    53.6%   + $227.8    2.46   -$6.90         29
+//     2024-26 H1   638    47.8%   + $469.4    1.65   -$8.85        143   (full ledger)
+//     Confirmation now OFF: net-negative under the resting stop (+298 -> +469, +57%; see §24).
 //
 //  To reproduce the OLD immediate-entry numbers: turn OFF "Require confirmation candle" and set
 //  "Max Stop Distance from Entry" to 0 (2024 253tr/45.1%/+65.67, 2025 236tr/47.5%/+82.71).
@@ -110,7 +110,7 @@ runnerMult      = input.float(0.75, "Runner Peak-Trail (x OR width)", step=0.05,
 exitOnClose     = input.bool(false, "Stop exits fill at bar CLOSE (OFF = resting stop, ADOPTED)", group=grpX, tooltip="OFF (default, ADOPTED) = REAL broker resting stop: stop-type exits fill INTRABAR at the stop level, gap-aware. Place OCO stops with your broker. ON = the old alerts-only model (fill on the bar close); use only if you are NOT resting stops.")
 
 grpC = "Entry Confirmation"
-confirmBreakout   = input.bool(true, "Require confirmation candle (2-candle break)", group=grpC, tooltip="ON = do not enter on the first close-break; require the NEXT candle to also close beyond the trigger before entering. Higher win rate, later entry. Applies to PRIMARY entries only.")
+confirmBreakout   = input.bool(false, "Require confirmation candle (2-candle break)", group=grpC, tooltip="DEFAULT OFF (Config A): under the resting stop, confirmation is net-negative (the stop already caps whipsaws at $5). ON = enter only after the NEXT candle also closes beyond the trigger (higher win rate but ~-$57/yr net; use with close-fill).")
 requireTrendCandle = input.bool(true, "Confirmation candle must be with-trend", group=grpC, tooltip="ON = the confirmation candle must be green for longs / red for shorts.")
 
 grpV = "Reversal"

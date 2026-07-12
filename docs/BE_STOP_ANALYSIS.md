@@ -739,6 +739,27 @@ PF1.39/worst-7.91. Benchmarks 30/90/365: +74.98(PF4.92)/+108.99(PF2.18)/+171.42(
 number the backtest CANNOT give is your true stop-slip — paper-trading must MEASURE it. stop-market
 = guaranteed exit + slip; stop-limit = no slip but risks not filling (bigger loss). Use stop-market.
 
+## 24. Re-tune under the resting stop — confirmation DROPPED ("Config A" adopted as default)
+
+Ablating the current default (all at touch + $0.10) showed features tuned under CLOSE-FILL are now
+suboptimal — the resting stop caps whipsaws at $5, so "avoid-whipsaw" filters lost their benefit but
+kept their cost:
+
+| variant (touch+0.10) | 3yr net | PF | worst |
+|----------------------|--------:|---:|------:|
+| CURRENT (confirm ON) | +298 | 1.39 | -7.9 |
+| **Config A: confirm OFF** | **+469** | **1.65** | -8.9 |
+| Config B: confirm+runner OFF | +574 | 1.79 | -8.9 |
+| (net-max but strips risk control) no-max-cap | +352 | 1.48 | **-13.7** |
+
+**ADOPTED Config A** (confirm OFF, keep runner-trail + ALL risk controls). Better every year:
+2024 251tr/45.0%/+137.9/PF1.58 | 2025 236tr/47.0%/+103.7/PF1.32 | 2026H1 151tr/53.6%/+227.8/PF2.46 |
+combined 638tr/47.8%/+469.4/PF1.65/worst-8.85/143rev. Benchmarks 30/90/365: 27tr/+79.27/PF3.93 |
+78tr/+160.79/PF3.01 | 290tr/+278.95/PF1.81. Trade-off: WR 49->48% (-2pt) for +57% net. Config A =
+`config.yaml` default now; Config B saved as `config/tsla_best_B.yaml`. NOTE: net-max ablations that
+strip risk controls (max-cap, vol gate) were NOT chosen — they add net but remove tail protection
+(no-max-cap worst -13.7). Re-enable confirmation ONLY if reverting to close-fill.
+
 ### TP1 fill model — touch/cross vs close-through (touch KEPT)
 Prompted by 2026-07-08: the short's TP1 sat at 390.53; FMP's 14:55 low was 390.51 (clipped it by
 2¢) so Python took the partial (+$1.59), but TradingView's feed printed the low ~2¢ higher and
