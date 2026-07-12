@@ -20,6 +20,9 @@ default `config/config.yaml`; B's is `config/tsla_best_B.yaml`. Each file still 
 1. TradingView → **Pine Editor** → paste the file → **Add to chart**.
 2. Chart must be **TSLA, 5-minute, Regular Trading Hours**. (5-minute is the tested-optimal opening
    range — 15m/30m ORBs take fewer trades and make ~2-3x LESS net over 3 years; see BE_STOP_ANALYSIS.)
+3. **"Opening Range start bar"** input: **09:30** (default) or **09:45**. 09:45 skips the noisy opening
+   15 min and uses the 09:45 bar as the OR — better in 2024/2025 backtest but on a noisy surface and
+   WORSE in 2026 (incl. recent Jun/Jul). Default 09:30 is the principled choice; 09:45 is there to A/B.
 3. Strategy version: open the **Strategy Tester** tab for the trade list.
    Indicator version: the **Summary Table** (top-right) reports trades, win rate, net P&L, PF and
    worst day — the same definitions the Python engine uses (**a BE Stop counts as a failure**).

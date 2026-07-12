@@ -190,6 +190,8 @@ var bool primStopped = false
 
 // ==================== NEW DAY / OPENING RANGE ====================
 isNewDay = session.isfirstbar_regular
+orStart = input.string("09:30", "Opening Range start bar", options=["09:30", "09:45"], group="Opening Range", tooltip="09:30 = classic first-bar OR. 09:45 = skip the noisy opening 15 min and use the 09:45-09:50 bar as the OR (better in 2024/2025 backtest but on a NOISY surface; WORSE in 2026). Trades still start after the OR bar.")
+isORbar = orStart == "09:45" ? (hour == 9 and minute == 45) : isNewDay
 sessVwap = ta.vwap(hlc3, isNewDay)   // session-anchored VWAP (resets each RTH open) for the VWAP-cross runner exit
 isEODbar = (hour * 60 + minute) >= (eodHour * 60 + eodMin)
 // Half sessions (e.g. Christmas Eve) close at 13:00 and NEVER produce a 15:50 bar, so the EOD
@@ -198,12 +200,10 @@ isLastBar = session.islastbar_regular
 isFlattenBar = isEODbar or isLastBar
 
 if isNewDay
-    orHigh := high
-    orLow := low
-    orWidth := high - low
-    skipVol := not na(rvol20) and rvol20 > maxRvolPct
-    skipWide := orWidth > maxORWidth
-    daySkipped := skipVol or skipWide
+    orHigh := na
+    orLow := na
+    orWidth := na
+    daySkipped := false
     firstTaken := false
     active := false
     tdir := 0
@@ -222,12 +222,21 @@ if isNewDay
     primDir := 0
     primStopped := false
 
+// Capture the opening range at the SELECTED OR bar (09:30 or 09:45). Trades start after it.
+if isORbar
+    orHigh := high
+    orLow := low
+    orWidth := high - low
+    skipVol := not na(rvol20) and rvol20 > maxRvolPct
+    skipWide := orWidth > maxORWidth
+    daySkipped := skipVol or skipWide
+
 longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
 shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
 tpDist = not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na
 // NO new entries at/after the EOD cutoff. TradingView will not honour a strategy.close() issued
 // on the SAME bar as the entry, so a 15:55 entry would ride overnight (and over weekends).
-canTrade = session.ismarket and not isNewDay and not daySkipped and not na(orHigh) and not isFlattenBar
+canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar
 
 // ==================== PRIMARY ENTRY (market -> fills at this bar's close) ====================
 // Confirmation: require the previous bar to ALSO have closed beyond the trigger (a held 2-candle
