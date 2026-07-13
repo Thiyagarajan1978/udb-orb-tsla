@@ -352,7 +352,10 @@ if active and not na(stop) and bar_index > entryBar
         dayPnl += pnlTotal
         dayHasTrades := true
         if not inRev
-            primStopped := true    // Base SL / BE Stop / BE Trail arms the reversal (engine L933)
+            // Arms on the STOP-HIT bar (immediate), so the reversal fires on the NEXT bar (N+1) - matches
+            // orb_engine.py L933 and the v3 STRATEGY (whose de-sync/arming was reordered 2026-07-13 to also
+            // arm on N+1). Base SL / BE Stop / BE Trail arm; peak-trail ("Trail") / VWAP / TP / EOD do not.
+            primStopped := true
         if showLabels
             label.new(bar_index, tdir == 1 ? low : high, (inRev ? "REV " : "") + reason + " " + str.tostring(exitPx, format.mintick) + "\n" + (pnlTotal >= 0 ? "+" : "") + str.tostring(pnlTotal, "#.##"), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=isBETrail ? color.rgb(7,170,75) : color.orange, textcolor=color.white, size=size.small)
         active := false
