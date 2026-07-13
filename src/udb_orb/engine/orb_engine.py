@@ -190,6 +190,15 @@ class OrbEngine:
         self._atr_gate_on = bool(_an.get("gate", True))
         self._atr_rev_on = bool(_an.get("rev", True))
         self._cur_atr = None
+        # Regime-conditional TP (needs tp_mode == "ATR"): classify the day at entry from the opening-
+        # range width relative to daily ATR (OR/ATR ratio). Wide OR = expansion/trend day -> wider
+        # target (ride the move); narrow OR = range/chop day -> tighter target (bank the quick win,
+        # raising hit rate). The ratio is known once the OR bar closes -> no lookahead.
+        _rt = self.enh.get("regime_tp", {})
+        self._regime_tp_on = bool(_rt.get("enabled", False))
+        self._regime_tp_thresh = float(_rt.get("or_atr_thresh", 0.16))
+        self._regime_tp_trend = float(_rt.get("trend_mult", 0.40))
+        self._regime_tp_range = float(_rt.get("range_mult", 0.15))
 
     def _atr_or(self, on: bool, mult: float, fixed: float) -> float:
         """mult*ATR when atr_normalize+this param are on and ATR is available, else the fixed value."""
@@ -677,7 +686,11 @@ class OrbEngine:
         if m.startswith("atr"):
             _a = getattr(self, "_cur_atr", None)
             if _a is not None and _a == _a:           # _a==_a excludes NaN (early warmup days)
-                return max(p.atr_tp_min, p.atr_tp_mult * _a)
+                mult = p.atr_tp_mult
+                if self._regime_tp_on and or_size and _a:
+                    ratio = or_size / _a               # OR width relative to daily ATR
+                    mult = self._regime_tp_trend if ratio >= self._regime_tp_thresh else self._regime_tp_range
+                return max(p.atr_tp_min, mult * _a)
             return p.fixed_tp                          # fallback before ATR is available
         return p.fixed_tp
 
