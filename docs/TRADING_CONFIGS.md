@@ -1,5 +1,10 @@
 # Trading Configs — quick reference (for live / paper trading)
 
+## ✅ FINAL CHOSEN SETUP (2026-07-13): **Config A + Config B, 5-minute, OR start 09:30, 100 shares**
+Run both A and B in parallel (paper) and pick by preference: **A = steadier** (peak-trail runner),
+**B = higher net** (VWAP runner, +$574 vs +$469/unit over 3yr). All the range/timeframe/start-time
+exploration converged here — see decisions at the bottom.
+
 TSLA, **5-minute** ORB, Regular Trading Hours. Two configs (A & B), each as indicator + strategy, each
 with a **09:30 / 09:45 Opening-Range start** selector. All numbers are **per 1 unit**; at **100 shares**
 multiply by 100.
@@ -47,3 +52,25 @@ Full June+July 2026 trade lists at **100 shares** (date, dir, entry/stop/exit pr
 
 **@09:30 beats @09:45 in these recent months** (09:45's edge is 2024/2025-only). **Config B @09:30** is
 the best of the four here. Note: June was an unusually strong month; July is closer to typical.
+
+## More reference CSVs in `exports/` (2026, @100 shares, both configs @09:30)
+- `failuredays_2026_Config{A,B}_OR0930.csv` — **failure DAYS** (day net < 0 *after* the reversal;
+  reversal-recovered days excluded). 2026: A 48/122 days (−$13,403); B 51/122 (−$13,761).
+- `reversal_saved_days_2026_Config{A,B}_OR0930.csv` — days the reversal **rescued** (primary red →
+  day green). 2026: 9 days (identical A & B) turning −$1,645 into +$6,800.
+
+## Decisions / rejected alternatives (why this is the setup)
+- **Timeframe = 5-min** (best vs 1m/3m too noisy, 15m/30m too few trades). §29/§30.
+- **OR start = 09:30** (principled; 09:45 better 2024/2025 but noisy surface + worse 2026 incl Jun/Jul).
+  Selectable input either way. §30.
+- **Confirmation OFF** (net-negative under the resting stop; +57% net). §24.
+- **Resting stop (touch) + $0.10 slippage** (conservative stop-fill/sweep allowance). §22-23.
+- **Long+short with reversal KEPT** (long-only leaves most of the money on the table).
+- **REJECTED "faithful long-only (10, 3.0×OR, gate 10) + 20-SMA gate"**: its headline (+$3,996/2026,
+  PF 66) is a FILL-MODEL ARTIFACT (fill-at-stop, ~$0 losses). Under honest fills it's +$1,969 (resting
+  stop) to −$1,303 (close-fill) — far below Config A/B, and only ~23 trades concentrated in May. Not adopted.
+
+## Python parity (reconcile the Pine against these)
+`python cli.py backtest --start 2024-01-02 --end 2026-07-09 --from-db` → Config A (config.yaml).
+`python cli.py --config config/tsla_best_B.yaml backtest --start 2024-01-02 --end 2026-07-09 --from-db` → Config B.
+For 09:45: set `session.market_open: "09:45"` in the config.
