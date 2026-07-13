@@ -27,6 +27,17 @@ risk-parity, $0.10 slippage. Python parity: A = `config/config.yaml`; B = `confi
 | Win rate (2026) | 53.6% | 51.7% | **67.6%** |
 | Style | steadier | higher net | **highest win-rate / consistency** |
 
+### Config C-ATR — volatility-adaptive take-profit (the "increase both" answer)
+`config/tsla_config_C_atr.yaml` — TP = **0.25 × 14-day ATR** (auto-widens in high-vol regimes, tightens
+in calm ones), $6 BE-stop, full exit. A new `tp_mode: "ATR"` in the engine (Fixed/Adaptive unchanged).
+**It shifts the whole profit frontier outward ~$5k/100sh at any given win rate** and generalizes
+out-of-sample (walk-forward, mult fit on 2022-24 → OOS 2025-26 **+$40,578** vs flat-$2 C's +$21,811).
+2022-2026 net @100sh: 2022 +20,022 · 2023 +17,823 · 2024 +12,520 · 2025 +15,618 · 2026 +21,612 =
+**+$87,595 (+33% vs flat-$2 C)**, all years positive, worst day −9.4. **Cost:** WR ~50% (flat-C was 57%)
+— it trades win-rate for net. **Honest limit:** no single-target config (fixed *or* ATR) raises BOTH
+win% and profit above flat-C at once; the WR↔net trade-off is intrinsic. ATR just gives a better menu.
+Pine C/C-ATR files: still TODO. Run: `python cli.py --config config/tsla_config_C_atr.yaml backtest`.
+
 **Config C** (`config/tsla_config_C.yaml`) — fixed **$2 take-profit** (full exit, no partial/runner) +
 **$5 BE-stop**, long+short+reversal, resting stop. Trades many small $2 wins; caps upside so it makes
 less total net than A/B, but it's the smoothest and **positive in EVERY year 2022-2026 (100 shares):**

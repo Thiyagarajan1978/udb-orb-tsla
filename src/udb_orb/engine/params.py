@@ -91,6 +91,10 @@ class Params:
     # volatility-normalized instead of a fixed dollar cap. Enables cross-symbol / cross-regime scaling.
     atr_mult: float = 0.35
     atr_period: int = 14
+    # ATR-adaptive TP (tp_mode == "ATR"): target distance = atr_tp_mult * ATR(atr_period), floored at
+    # atr_tp_min. Volatility-normalized so the same rule fits high- and low-price/vol regimes.
+    atr_tp_mult: float = 0.25
+    atr_tp_min: float = 1.0
     # Opening range spans this many bars from market_open (1 = the single first bar; on 1m data
     # or_bars=15 = a 15-minute range, then trade breakouts on the base (1m) resolution).
     or_bars: int = 1
@@ -144,6 +148,8 @@ class Params:
             use_partial_exit=bool(p["use_partial_exit"]),
             atr_mult=float(p.get("atr_mult", 0.35)),
             atr_period=int(p.get("atr_period", 14)),
+            atr_tp_mult=float(p.get("atr_tp_mult", 0.25)),
+            atr_tp_min=float(p.get("atr_tp_min", 1.0)),
             or_bars=int(cfg["session"].get("or_bars", 1)),
             partial_qty_pct=float(p["partial_qty_pct"]),
             partial_activation=float(p["partial_activation"]),

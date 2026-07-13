@@ -633,12 +633,12 @@ class OrbEngine:
                 st.first_taken = True
             if direction == 1:
                 st.stop = self._long_sl(c, st.or_low, st.or_high)
-                tp_dist = max(p.adaptive_tp_min, or_size * p.adaptive_tp_scale) if p.use_adaptive_tp else p.fixed_tp
+                tp_dist = self._tp_dist(or_size)
                 st.tp = c + tp_dist
                 st.be_level = st.or_high - (p.be_retrace_trigger * or_size) if or_size else None
             else:
                 st.stop = self._short_sl(c, st.or_high, st.or_low)
-                tp_dist = max(p.adaptive_tp_min, or_size * p.adaptive_tp_scale) if p.use_adaptive_tp else p.fixed_tp
+                tp_dist = self._tp_dist(or_size)
                 st.tp = c - tp_dist
                 st.be_level = st.or_low + (p.be_retrace_trigger * or_size) if or_size else None
             st.qty_total = qty if qty is not None else p.trade_qty
@@ -667,6 +667,19 @@ class OrbEngine:
         st.suppress_partial = bool(reversal and self._rev_on and self._rev_cfg.get("trail_to_eod", False))
         if st.entry_ts_day is None:
             st.entry_ts_day = ts
+
+    def _tp_dist(self, or_size: float) -> float:
+        """Primary TP distance. Fixed (default), Adaptive (OR-scaled), or ATR (volatility-scaled)."""
+        p = self.p
+        m = p.tp_mode.lower()
+        if m.startswith("adapt"):
+            return max(p.adaptive_tp_min, or_size * p.adaptive_tp_scale)
+        if m.startswith("atr"):
+            _a = getattr(self, "_cur_atr", None)
+            if _a is not None and _a == _a:           # _a==_a excludes NaN (early warmup days)
+                return max(p.atr_tp_min, p.atr_tp_mult * _a)
+            return p.fixed_tp                          # fallback before ATR is available
+        return p.fixed_tp
 
     def _long_sl(self, entry, or_low, or_high=None):
         """OR-boundary stop, optionally capped so it is never further than `fixed_sl` below entry."""
