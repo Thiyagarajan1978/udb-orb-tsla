@@ -1,5 +1,24 @@
 # Trading Configs — quick reference (for live / paper trading)
 
+## ⭐ FINAL SET (2026-07-13): one Pine, 4 profiles — `pine/UDB_ORB_TSLA_v3.pine` (+ `_v3_strategy.pine`)
+Pick the profile from the **"Profile"** input. All share the same entry engine / resting stops (OCO-fixed)
+/ gates / risk-parity reversal; they differ only in the exit. Reconcile the strategy on TSLA 5m RTH
+(divide Strategy Tester Net P&L by the 100 shares/unit).
+
+| Profile | Exit | Max Stop | Full 2022-26 @100 | 365d @100 | WR | PF | Python config |
+|--|--|--|--:|--:|--:|--:|--|
+| **A1** | Adaptive TP + 25% partial + peak-trail | $5 | +$80,140 | +$28,647 | 51% | 1.85 | `config/config.yaml` |
+| **B1** | Adaptive TP + 25% partial + VWAP runner | $5 | +$100,668 | +$37,940 | 50% | 2.12 | `config/tsla_best_B.yaml` |
+| **C1** | ATR 0.25×ATR + 25% partial + VWAP | $6 | +$98,912 | **+$38,464** | **54%** | **2.28** | `config/tsla_config_C1.yaml` |
+| **C2** | Fixed $2 target, FULL exit (no partial) | $5 | +$65,992 | +$16,824 | **65%** | 1.76 | `config/tsla_config_C.yaml` |
+
+(365d window = 2025-07-14 → 2026-07-13; WR/PF quoted for that window.) v3 supersedes the individual
+A/B/C Pine files (kept for reference). Every profile MUST show stop exits (Base SL / BE Stop / BE Trail)
+and cap losses near its Max Stop — that confirms the OCO is working (see the 2026-07-13 TV-bug fix).
+
+---
+
+
 ## ✅ FINAL CHOSEN SETUP (2026-07-13): **Config A + Config B, 5-minute, OR start 09:30, 100 shares**
 Run both A and B in parallel (paper) and pick by preference: **A = steadier** (peak-trail runner),
 **B = higher net** (VWAP runner, +$574 vs +$469/unit over 3yr). All the range/timeframe/start-time
