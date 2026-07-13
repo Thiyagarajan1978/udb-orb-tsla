@@ -13,6 +13,8 @@ strategy("UDB-ORB TSLA B STRATEGY — Realistic Fills", shorttitle="UDB-ORB B S"
      slippage                = 0,         // Python charges $0.10/unit on EXITS; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// STATUS 2026-07-13: FINAL live setup = Config B (VWAP-Cross runner), TSLA 5-minute, OR start 09:30 (selectable 09:30/09:45), confirmation OFF, resting stop, 100 shares.
+// Reference: docs/TRADING_CONFIGS.md. Run BOTH A + B in parallel and pick by preference.
 //=============================================================================================
 //  STRATEGY version of UDB_ORB_TSLA_v2.pine — use the Strategy Tester tab for trade details.
 //  Mirrors the Python engine's current default config (config/config.yaml).

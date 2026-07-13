@@ -1,6 +1,8 @@
 //@version=6
 indicator("UDB-ORB TSLA B - VWAP-Cross (Config B)", shorttitle="UDB-ORB B", overlay=true, max_labels_count=500)
 
+// STATUS 2026-07-13: FINAL live setup = Config B (VWAP-Cross runner), TSLA 5-minute, OR start 09:30 (selectable 09:30/09:45), confirmation OFF, resting stop, 100 shares.
+// Reference: docs/TRADING_CONFIGS.md. Run BOTH A + B in parallel and pick by preference.
 //=============================================================================================
 //  UDB-ORB TSLA v2.0  —  Pine port of the Python engine's CURRENT DEFAULT config
 //  Source of truth: github.com/Thiyagarajan1978/udb-orb-tsla   (config/config.yaml)
