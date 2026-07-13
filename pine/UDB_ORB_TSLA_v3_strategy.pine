@@ -244,6 +244,29 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
         if showLabels
             label.new(bar_index, high, "SHORT " + str.tostring(close, format.mintick), style=label.style_label_down, color=color.rgb(243,76,76), textcolor=color.white, size=size.small)
 
+// ==================== STATE DE-SYNC + REVERSAL ARMING (runs BEFORE the reversal entry) ============
+// The OCO fills INTRABAR and is detected on the NEXT bar (position flat, active still true). This block
+// MUST run before the reversal-entry block: a primary stop that fills on bar N is then armed here on N+1
+// and the reversal can fire the SAME bar (N+1), matching orb_engine.py / the indicator. (When it ran
+// AFTER the reversal block, arming happened a bar too late and the reversal entered ~1 bar worse -> it
+// bled the reversal edge, ~35% of net.) Arm only on a BASE/BE STOP (reasons Base SL/BE Stop/BE Trail,
+// L933): a peak-trail exit is reason "Trail" (lastWasTrail) and does NOT arm; C2 arms unless a TP win.
+if active and strategy.position_size == 0 and bar_index > entryBar
+    stoppedOut = usePartial ? (not lastWasTrail) : (not tpWasHit)
+    if not inRev and stoppedOut
+        primStopped := true
+        if showLabels
+            label.new(bar_index, tdir == 1 ? low : high, "REV armed: need close " + (tdir == 1 ? "< " + str.tostring(orLow, format.mintick) : "> " + str.tostring(orHigh, format.mintick)), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
+    strategy.cancel("P1")
+    strategy.cancel("RUN")
+    strategy.cancel("X")
+    active := false
+    tdir := 0
+    inRev := false
+    tp := na
+    stop := na
+    vwapArmed := false
+
 // ==================== REVERSAL ENTRY (raw OR break · trail-to-EOD · risk-parity · NO target) ====
 if canTrade and primStopped and not active and strategy.position_size == 0
     if primDir == 1 and close < orLow
@@ -355,27 +378,6 @@ if active and not na(stop) and bar_index >= entryBar
                 isTrail = not na(trailLevel) and (tdir == 1 ? trailLevel >= stop : trailLevel <= stop)
                 lastWasTrail := isTrail
                 strategy.exit("RUN", from_entry=entryId, stop=runnerStop, comment=(inRev ? "REV " : "") + (isTrail ? "Trail" : beReason))
-
-// ==================== STATE DE-SYNC + REVERSAL ARMING ====================
-// The OCO fills INTRABAR -> detect the exit on the NEXT bar. Arm the reversal only when the primary
-// exited via a BASE/BE STOP (engine reasons Base SL / BE Stop / BE Trail), matching orb_engine.py L933.
-// Partial profiles: a peak-trail runner exit is reason "Trail" and does NOT arm (lastWasTrail); a BE/base
-// stop does. C2: a stop-out arms, a target win (tpWasHit) does not. VWAP/EOD set active=false first.
-if active and strategy.position_size == 0 and bar_index > entryBar
-    stoppedOut = usePartial ? (not lastWasTrail) : (not tpWasHit)
-    if not inRev and stoppedOut
-        primStopped := true
-        if showLabels
-            label.new(bar_index, tdir == 1 ? low : high, "REV armed: need close " + (tdir == 1 ? "< " + str.tostring(orLow, format.mintick) : "> " + str.tostring(orHigh, format.mintick)), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
-    strategy.cancel("P1")
-    strategy.cancel("RUN")
-    strategy.cancel("X")
-    active := false
-    tdir := 0
-    inRev := false
-    tp := na
-    stop := na
-    vwapArmed := false
 
 // ==================== EOD FORCED CLOSE ====================
 if active and isFlattenBar and tdir != 0
