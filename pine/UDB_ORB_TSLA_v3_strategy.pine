@@ -40,6 +40,16 @@ strategy("UDB-ORB TSLA v3 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-OR
 //    C2          +65,992          +16,824  (272tr, 65%, PF 1.76)          config/tsla_config_C.yaml
 //  A stop-exit (Base SL / BE Stop / BE Trail) MUST appear in every profile's trade list, and the worst
 //  loss must cap near the Max Stop ($5 or $6). If not, the OCO is misconfigured. Size off 2024, not 2026.
+//
+//  FULL 4.5-YEAR DECISION METRICS (2022-2026, @100 shares) — 365d is for TUNING, this is for DECIDING:
+//    Profile   Net       PF     WinRate  WorstDay  MaxDrawdown  Net/MaxDD  LosingMonths
+//    A1        +80,140   1.61   48%      -885      -3,320       24.1       9/53
+//    B1       +100,668   1.76   47%      -885      -3,440       29.3       7/53   (max net)
+//    C1        +98,912   1.79   48%      -936      -3,278       30.2       8/53   (BEST all-round)
+//    C2        +65,992   1.69   57%      -836      -3,541       18.6      11/53   (high WR, weakest net/DD)
+//  READ: C1 = best risk-adjusted (top PF, smallest drawdown, best net/DD, ~=B1 net). B1 = raw-net leader.
+//  A1 = dominated by B1/C1. C2's 57% WR is a mirage (lowest net, WORST drawdown, most losing months -
+//  it caps winners at $2 but still eats full stops). Every profile is positive in all 5 years.
 //=============================================================================================
 
 // ==================== PROFILE ====================

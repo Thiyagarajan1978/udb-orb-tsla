@@ -10,6 +10,10 @@ indicator("UDB-ORB TSLA v3 - A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3", ove
 //   C2 = Fixed $2 target, FULL exit (no partial/runner)  (Max Stop $5)   <- highest win rate
 //  PYTHON RECONCILE (net per 1 unit; x100 for the strategy at 100 sh): FULL 2022-2026 -> A1 +801, B1
 //  +1007, C1 +989, C2 +660. Table Net P&L is per 1 unit. Size off 2024/2025, not the flattering 2026.
+//  4.5-YEAR DECISION (@100sh): PF A1 1.61 / B1 1.76 / C1 1.79 / C2 1.69 ; MaxDrawdown A1 -3,320 /
+//  B1 -3,440 / C1 -3,278 / C2 -3,541. C1 = best risk-adjusted (top PF + smallest DD, ~=B1 net). B1 =
+//  max net. A1 dominated. C2 = high win rate (57%) but lowest net & worst drawdown (a mirage). All +ve
+//  every year 2022-2026. 365 days is for TUNING; judge go/no-go on the full 4.5-year picture.
 //=============================================================================================
 
 // ==================== PROFILE ====================
