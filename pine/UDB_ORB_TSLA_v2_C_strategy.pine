@@ -24,18 +24,21 @@ strategy("UDB-ORB TSLA C STRATEGY — Full-Exit (Fixed/ATR TP)", shorttitle="UDB
 //  Repo: github.com/Thiyagarajan1978/udb-orb-tsla
 //=============================================================================================
 //
-//  *** EXECUTION MODEL — RESTING STOP (adopted 2026-07-11) ***
-//  Stop-type exits are REAL resting stop orders: strategy.exit(stop=) fills INTRABAR at the level (or
-//  the OPEN on a gap) — the honest broker-OCO model. Category C uses ONE labelled resting stop "SL"
-//  (base/BE stop, ARMS the reversal) plus a full-position LIMIT "TP" at the target. There is NO
-//  25% partial and NO runner — the WHOLE position exits at the target or the stop. See BE_STOP_ANALYSIS.
+//  *** EXECUTION MODEL — ONE OCO BRACKET (fixed 2026-07-13) ***
+//  Category C is a FULL exit: the whole position leaves at the STOP or the TARGET, whichever hits first.
+//  This is ONE strategy.exit("X", stop=, limit=) — a single OCO bracket. (BUG FIXED 2026-07-13: it was
+//  two separate full-size orders, a limit-only "TP" and a stop-only "SL"; TradingView let the limit
+//  RESERVE the entire quantity so the stop never filled and every loser rode to EOD. A single OCO fixes
+//  it.) The stop leg fills INTRABAR at the level / open-on-gap (touch) and ratchets with BE; there is NO
+//  25% partial and NO runner. Reversal arming is tracked in state (tpWasHit): a stop-out arms, a TP win
+//  does not. See BE_STOP_ANALYSIS.
 //
 //  ORDER SEMANTICS USED
-//    Entry              : market       -> fills at the signal bar's close  (= Python entry price)
-//    Target (full exit) : LIMIT "TP"   -> fills at the target level        (= Python fixed/ATR TP)
-//    BE/Base SL "SL"    : resting STOP -> fills at level / open-on-gap     (= touch), ARMS reversal
+//    Entry              : market         -> fills at the signal bar's close  (= Python entry price)
+//    OCO bracket "X"    : stop + limit   -> stop fills at level/open-on-gap (touch), limit at the target
+//                         comment_loss = Base SL / BE Stop / BE Trail (arms reversal); comment_profit = TP
 //    Reversal           : 2x risk-parity, NO target, trails to EOD via BE + flatten
-//    EOD                : market       -> fills at the flatten bar's close
+//    EOD                : market         -> fills at the flatten bar's close
 //
 //  WHY C (vs A/B): C banks one fixed/ATR target on the whole position. Higher win rate & smoother
 //  equity than A/B, but caps upside (no runner). Full 2022-2026 validation, 100 shares:
@@ -138,6 +141,7 @@ var string entryId = ""
 var bool beTrig = false
 var float beLevel = na
 var float qtyTotal = na
+var bool tpWasHit = false   // did price reach the target this trade? (win -> do NOT arm the reversal)
 
 var int primDir = 0
 var bool primStopped = false
@@ -167,6 +171,7 @@ if isNewDay
     beTrig := false
     beLevel := na
     qtyTotal := na
+    tpWasHit := false
     primDir := 0
     primStopped := false
 
@@ -192,9 +197,6 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
     if close > longBrk and longConfirm
         entryId := "L"
         strategy.entry(entryId, strategy.long, qty=tradeQty * unitScale)
-        // FULL-position target as a LIMIT at the TP (fills AT the level, like the Python full exit).
-        // No qty_percent -> closes 100%. Placed now -> live from the NEXT bar (no exit on entry bar).
-        strategy.exit("TP", from_entry=entryId, limit=close + tpDist, comment="TP")
         active := true
         tdir := 1
         inRev := false
@@ -205,6 +207,7 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
         entryBar := bar_index
         qtyTotal := tradeQty
         beTrig := false
+        tpWasHit := false
         primDir := 1
         firstTaken := true
         if showLabels
@@ -212,7 +215,6 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
     else if close < shortBrk and shortConfirm
         entryId := "S"
         strategy.entry(entryId, strategy.short, qty=tradeQty * unitScale)
-        strategy.exit("TP", from_entry=entryId, limit=close - tpDist, comment="TP")
         active := true
         tdir := -1
         inRev := false
@@ -223,6 +225,7 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
         entryBar := bar_index
         qtyTotal := tradeQty
         beTrig := false
+        tpWasHit := false
         primDir := -1
         firstTaken := true
         if showLabels
@@ -245,6 +248,7 @@ if canTrade and primStopped and not active and strategy.position_size == 0
         entryBar := bar_index
         qtyTotal := rq
         beTrig := false
+        tpWasHit := false
         primStopped := false
         if showLabels
             label.new(bar_index, high, "REV SHORT " + str.tostring(close, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
@@ -263,14 +267,18 @@ if canTrade and primStopped and not active and strategy.position_size == 0
         entryBar := bar_index
         qtyTotal := rq
         beTrig := false
+        tpWasHit := false
         primStopped := false
         if showLabels
             label.new(bar_index, low, "REV LONG " + str.tostring(close, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_up, color=color.purple, textcolor=color.white, size=size.small)
 
-// ==================== EXIT ENGINE — RESTING STOP (touch model, never on the entry bar) ============
-// Category C: full-position TP limit (placed at entry) + ONE resting stop "SL" (base/BE, arms reversal).
-// No partial, no runner. Steps 1-2 (BE) only run AFTER the entry bar; the "SL" stop is (re)placed each
-// bar from the entry bar so it is live from the next bar, matching the engine's "no exit on entry bar".
+// ==================== EXIT ENGINE — ONE OCO BRACKET (stop + target, never on the entry bar) ========
+// Category C is a FULL exit: the WHOLE position leaves at the STOP or the TARGET, whichever hits first.
+// This MUST be a SINGLE strategy.exit() carrying both stop= and limit=. Splitting them into two orders
+// (one limit-only "TP", one stop-only "SL") lets the full-size limit RESERVE the entire quantity, so
+// the stop can never fill — every loser then rides to EOD. The single OCO below fixes that. The order
+// is (re)placed each bar from the entry bar so it is live from the next bar (no exit on the entry bar);
+// the stop ratchets with BE. comment_loss/comment_profit label which leg filled in the Strategy Tester.
 if active and not na(stop) and bar_index >= entryBar
     if bar_index > entryBar
         // --- Step 1: BE Retrace (WICK trigger) ---
@@ -281,22 +289,24 @@ if active and not na(stop) and bar_index >= entryBar
         // --- Step 2: BE Trail ---
         if beTrig and beTrailAmt > 0
             stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
-    // --- Step 3: place / refresh the resting stop for the full position ---
+        // --- mirror the TARGET touch in state: a TP win must NOT arm the reversal (only a stop-out does) ---
+        if not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
+            tpWasHit := true
+    // --- Step 3: place / refresh the single OCO bracket for the full position ---
     beReason = beTrig ? ((tdir == 1 ? stop > entry : stop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
-    strategy.exit("SL", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
+    strategy.exit("X", from_entry=entryId, stop=stop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit=(inRev ? "REV TP" : "TP"))
 
 // ==================== STATE DE-SYNC + REVERSAL ARMING ====================
-// A resting stop/limit fills INTRABAR, so we detect the exit on the NEXT bar (position flat while we
-// still think a trade is live). Arm the reversal only if the last leg exited via "SL" (base/BE stop),
-// never via "TP" (target win) or EOD.
+// The OCO fills INTRABAR, so we detect the exit on the NEXT bar (position flat while we still think a
+// trade is live). Arm the reversal only when the primary exited via the STOP leg (tpWasHit == false);
+// a TP win (tpWasHit == true) does NOT arm, and EOD is handled below (it sets active=false first, so
+// this block never runs for EOD exits).
 if active and strategy.position_size == 0 and bar_index > entryBar
-    lastExit = strategy.closedtrades > 0 ? strategy.closedtrades.exit_id(strategy.closedtrades - 1) : ""
-    if not inRev and lastExit == "SL"
+    if not inRev and not tpWasHit
         primStopped := true
         if showLabels
             label.new(bar_index, tdir == 1 ? low : high, "REV armed: need close " + (tdir == 1 ? "< " + str.tostring(orLow, format.mintick) : "> " + str.tostring(orHigh, format.mintick)), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
-    strategy.cancel("TP")
-    strategy.cancel("SL")
+    strategy.cancel("X")
     active := false
     tdir := 0
     inRev := false
@@ -305,8 +315,7 @@ if active and strategy.position_size == 0 and bar_index > entryBar
 
 // ==================== EOD FORCED CLOSE (market at this bar's close) ====================
 if active and isFlattenBar and tdir != 0
-    strategy.cancel("TP")
-    strategy.cancel("SL")
+    strategy.cancel("X")
     strategy.close(entryId, comment=(inRev ? "REV EOD" : "EOD"))
     if showLabels
         label.new(bar_index, close, (inRev ? "REV EOD " : "EOD ") + str.tostring(close, format.mintick), style=label.style_label_left, color=color.rgb(255,140,0), textcolor=color.white, size=size.small)
