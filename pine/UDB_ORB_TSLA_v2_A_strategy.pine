@@ -249,11 +249,6 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
     if close > longBrk and longConfirm
         entryId := "L"
         strategy.entry(entryId, strategy.long, qty=tradeQty * unitScale)
-        // 25% partial as a LIMIT at the TP (fills AT the TP level, like the Python engine).
-        // MUST use qty_percent: a fractional `qty` (0.25) rounds up to 1 whole share and closes
-        // the ENTIRE position, which silently removes the runner.
-        // Placed now -> active from the NEXT bar, matching the engine's "no exit on the entry bar".
-        strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, limit=close + tpDist)
         active := true
         tdir := 1
         inRev := false
@@ -274,7 +269,6 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
     else if close < shortBrk and shortConfirm
         entryId := "S"
         strategy.entry(entryId, strategy.short, qty=tradeQty * unitScale)
-        strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, limit=close - tpDist)
         active := true
         tdir := -1
         inRev := false
@@ -342,9 +336,10 @@ if canTrade and primStopped and not active and strategy.position_size == 0
 // ==================== EXIT ENGINE — RESTING STOPS (touch model, never on the entry bar) ======
 // ADOPTED 2026-07-11: stop-type exits are REAL resting stop orders. strategy.exit(stop=) fills
 // INTRABAR at the level (or the OPEN on a gap) — the honest broker-OCO model, not a close-fill.
-// Two labelled resting stops so the reversal arms correctly:
-//   "SL" = BE/base stop  -> arming the reversal        "TR" = runner peak-trail -> does NOT arm.
-// The 25% "P1" limit at the TP is unchanged. VWAP is not used (runner peak-trail governs).
+// FIX 2026-07-13: the 25% partial and the stop are now proper OCO legs. "P1" = the 25% partial as an
+// OCO (target OR stop); "RUN" = the 75% remainder on the stop (peak-trail A after the partial). Both
+// legs carry a stop, so a stop-out closes 100% (previously the limit-only 25% leg rode to EOD). The
+// reversal arms only when the primary was stopped BEFORE any partial (state flag part1 == false).
 // Guard >= entryBar so the resting stop is placed on the ENTRY bar (live from the next bar, like
 // the engine); Steps 1-4 (BE/partial/runner) only run AFTER the entry bar (no exit on entry bar).
 vwapMode = runnerExit == "VWAP Cross"
@@ -374,7 +369,7 @@ if active and not na(stop) and bar_index >= entryBar
                 vwapArmed := true
             if vwapArmed and not na(sessVwap) and (tdir == 1 ? close <= sessVwap : close >= sessVwap)
                 strategy.cancel("P1")
-                strategy.cancel("SL")
+                strategy.cancel("RUN")
                 strategy.close(entryId, comment=(inRev ? "REV VWAP" : "VWAP Cross"))
                 if showLabels
                     label.new(bar_index, tdir == 1 ? high : low, (inRev ? "REV " : "") + "VWAP " + str.tostring(close, format.mintick), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
@@ -387,25 +382,35 @@ if active and not na(stop) and bar_index >= entryBar
                 vwapExited := true
     if not vwapExited
         trailLevel = (part1 and not suppressPartial and not vwapMode and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
-        // --- Step 5: place / refresh the resting stops for the CURRENT (remaining) position ---
         beReason = beTrig ? ((tdir == 1 ? stop > entry : stop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
-        strategy.exit("SL", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
-        if not na(trailLevel)
-            strategy.exit("TR", from_entry=entryId, stop=trailLevel, comment=(inRev ? "REV Trail" : "Trail"))
+        // --- Step 5: place / refresh the resting exits. FIX 2026-07-13: the 25% partial leg MUST carry
+        //     its OWN stop (an OCO). Previously "P1" was limit-only, so a full-size stop left the 25%
+        //     unprotected and it rode to EOD. Before the partial: "P1" = 25% OCO(stop+TP), "RUN" = the
+        //     75% remainder on the same stop -> a stop-out closes 100%. After the partial: only "RUN"
+        //     (75%) remains and trails (peak-trail A / handled by VWAP-close for B).
+        if suppressPartial
+            // reversal / trail-to-EOD: whole position on one stop, no partial, no runner
+            strategy.exit("RUN", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
+        else if not part1
+            strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, stop=stop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit="Partial @ TP")
+            strategy.exit("RUN", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
+        else
+            runnerStop = na(trailLevel) ? stop : (tdir == 1 ? math.max(stop, trailLevel) : math.min(stop, trailLevel))
+            isTrail = not na(trailLevel) and (tdir == 1 ? trailLevel >= stop : trailLevel <= stop)
+            strategy.exit("RUN", from_entry=entryId, stop=runnerStop, comment=(inRev ? "REV " : "") + (isTrail ? "Trail" : beReason))
 
 // ==================== STATE DE-SYNC + REVERSAL ARMING ====================
-// A resting stop fills INTRABAR, so we detect the exit on the NEXT bar (position flat while we
-// still think a trade is live). Arm the reversal only if the last leg exited via "SL" (BE/base
-// stop), never via "TR" (runner trail) or EOD. (Same one-bar arming lag as the close-fill version.)
+// The exits fill INTRABAR, so we detect them on the NEXT bar (position flat while we still think a
+// trade is live). Arm the reversal when the primary was STOPPED OUT BEFORE any partial (part1 ==
+// false); a trade that took the 25% partial (part1 == true) exited via the runner / VWAP / BE and
+// does NOT arm, and EOD is handled below (it sets active=false first, so this block never runs for EOD).
 if active and strategy.position_size == 0 and bar_index > entryBar
-    lastExit = strategy.closedtrades > 0 ? strategy.closedtrades.exit_id(strategy.closedtrades - 1) : ""
-    if not inRev and lastExit == "SL"
+    if not inRev and not part1
         primStopped := true
         if showLabels
             label.new(bar_index, tdir == 1 ? low : high, "REV armed: need close " + (tdir == 1 ? "< " + str.tostring(orLow, format.mintick) : "> " + str.tostring(orHigh, format.mintick)), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
     strategy.cancel("P1")
-    strategy.cancel("SL")
-    strategy.cancel("TR")
+    strategy.cancel("RUN")
     active := false
     tdir := 0
     inRev := false
@@ -416,8 +421,7 @@ if active and strategy.position_size == 0 and bar_index > entryBar
 // ==================== EOD FORCED CLOSE (market at this bar's close) ====================
 if active and isFlattenBar and tdir != 0
     strategy.cancel("P1")
-    strategy.cancel("SL")
-    strategy.cancel("TR")
+    strategy.cancel("RUN")
     strategy.close(entryId, comment=(inRev ? "REV EOD" : "EOD"))
     if showLabels
         label.new(bar_index, close, (inRev ? "REV EOD " : "EOD ") + str.tostring(close, format.mintick), style=label.style_label_left, color=color.rgb(255,140,0), textcolor=color.white, size=size.small)
