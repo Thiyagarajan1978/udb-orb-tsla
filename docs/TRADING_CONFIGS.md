@@ -9,11 +9,19 @@ TSLA, **5-minute** ORB, Regular Trading Hours. Two configs (A & B), each as indi
 with a **09:30 / 09:45 Opening-Range start** selector. All numbers are **per 1 unit**; at **100 shares**
 multiply by 100.
 
-## The 4 Pine files
-| File | Config | Runner exit |
+## The 6 Pine files
+| File | Config | Exit style |
 |------|--------|-------------|
-| `pine/UDB_ORB_TSLA_v2_A.pine` / `_A_strategy.pine` | **A** | Peak-Trail (0.75×OR below peak) |
-| `pine/UDB_ORB_TSLA_v2_B.pine` / `_B_strategy.pine` | **B** | VWAP-Cross (ride to close-thru-VWAP) |
+| `pine/UDB_ORB_TSLA_v2_A.pine` / `_A_strategy.pine` | **A** | 25% partial + Peak-Trail runner (0.75×OR below peak) |
+| `pine/UDB_ORB_TSLA_v2_B.pine` / `_B_strategy.pine` | **B** | 25% partial + VWAP-Cross runner (ride to close-thru-VWAP) |
+| `pine/UDB_ORB_TSLA_v2_C.pine` / `_C_strategy.pine` | **C / C-ATR** | **Full exit at ONE target** (no partial/runner); "Category C TP Mode" input: ATR-Adaptive (C-ATR, default) or Fixed $2 (literal C) |
+
+**Pine C reconciliation (NOT yet TradingView-validated):** the C files were ported 2026-07-13 and
+compile-checked by inspection only. Before trusting them, run the C **strategy** on TSLA 5m RTH and
+reconcile the Strategy Tester trade list against Python: ATR mode → `python cli.py --config
+config/tsla_config_C_atr.yaml backtest ...`; Fixed mode → `--config config/tsla_config_C.yaml`
+(divide Strategy Tester Net P&L by the 100 shares/unit). The C engine uses the DAILY 14-bar ATR via
+`request.security` (no lookahead) — TradingView daily H/L/C can differ a few cents from FMP.
 
 Everything else is identical: resting stop (touch), Max-Cap $5, confirmation OFF, vol gate, reversal
 risk-parity, $0.10 slippage. Python parity: A = `config/config.yaml`; B = `config/tsla_best_B.yaml`.
@@ -36,14 +44,15 @@ out-of-sample (walk-forward, mult fit on 2022-24 → OOS 2025-26 **+$40,578** vs
 **+$87,595 (+33% vs flat-$2 C)**, all years positive, worst day −9.4. **Cost:** WR ~50% (flat-C was 57%)
 — it trades win-rate for net. **Honest limit:** no single-target config (fixed *or* ATR) raises BOTH
 win% and profit above flat-C at once; the WR↔net trade-off is intrinsic. ATR just gives a better menu.
-Pine C/C-ATR files: still TODO. Run: `python cli.py --config config/tsla_config_C_atr.yaml backtest`.
+Pine: `pine/UDB_ORB_TSLA_v2_C.pine` (+ `_C_strategy.pine`), "Category C TP Mode = ATR-Adaptive" — needs
+TV reconciliation. Run: `python cli.py --config config/tsla_config_C_atr.yaml backtest`.
 
 **Config C** (`config/tsla_config_C.yaml`) — fixed **$2 take-profit** (full exit, no partial/runner) +
 **$5 BE-stop**, long+short+reversal, resting stop. Trades many small $2 wins; caps upside so it makes
 less total net than A/B, but it's the smoothest and **positive in EVERY year 2022-2026 (100 shares):**
 2022 **+$17,244** (bear market!) · 2023 +$18,962 · 2024 +$7,975 · 2025 +$8,119 · 2026 +$13,692 =
-**+$65,992** over 4.5 yr. PF 1.4-2.4 every year; worst day bounded ~−$8. Pine C files: TODO (fixed-TP
-full-exit exit engine — not yet ported; run in Python via `--config config/tsla_config_C.yaml`).
+**+$65,992** over 4.5 yr. PF 1.4-2.4 every year; worst day bounded ~−$8. Pine: use
+`pine/UDB_ORB_TSLA_v2_C.pine` with "Category C TP Mode = Fixed $2" and Max Stop = 5.
 
 ## Opening-Range start (input "Opening Range start bar")
 - **09:30** (default): the classic first-bar OR. **Principled, robust.**

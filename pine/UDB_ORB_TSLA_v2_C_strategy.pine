@@ -1,0 +1,346 @@
+//@version=6
+strategy("UDB-ORB TSLA C STRATEGY — Full-Exit (Fixed/ATR TP)", shorttitle="UDB-ORB C S", overlay=true,
+     process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
+     calc_on_every_tick      = false,     // act only on closed bars
+     pyramiding              = 0,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     initial_capital         = 1000000,
+     margin_long             = 0,
+     margin_short            = 0,
+     commission_type         = strategy.commission.cash_per_contract,
+     commission_value        = 0,
+     slippage                = 0,         // Python charges $0.10/unit on EXITS; set TV ~10 ticks to match
+     max_labels_count        = 500)
+
+// STATUS 2026-07-13: Category C = high-win-rate FULL-EXIT variant. One target, whole position out, no
+// partial/runner. TWO modes via the "Category C TP Mode" input:
+//   * ATR-Adaptive (DEFAULT = "Config C-ATR"): TP = 0.25 x 14-day daily ATR (floored $1), stop $6.
+//   * Fixed $2 ("literal Config C"): TP = flat $2, stop $5.
+// Reference: docs/TRADING_CONFIGS.md. Run alongside A + B to paper-trade all three.
+//=============================================================================================
+//  STRATEGY version — use the Strategy Tester tab for the trade list / CSV reconciliation.
+//  Mirrors the Python engine configs: config/tsla_config_C_atr.yaml (ATR) and tsla_config_C.yaml (Fixed).
+//  Repo: github.com/Thiyagarajan1978/udb-orb-tsla
+//=============================================================================================
+//
+//  *** EXECUTION MODEL — RESTING STOP (adopted 2026-07-11) ***
+//  Stop-type exits are REAL resting stop orders: strategy.exit(stop=) fills INTRABAR at the level (or
+//  the OPEN on a gap) — the honest broker-OCO model. Category C uses ONE labelled resting stop "SL"
+//  (base/BE stop, ARMS the reversal) plus a full-position LIMIT "TP" at the target. There is NO
+//  25% partial and NO runner — the WHOLE position exits at the target or the stop. See BE_STOP_ANALYSIS.
+//
+//  ORDER SEMANTICS USED
+//    Entry              : market       -> fills at the signal bar's close  (= Python entry price)
+//    Target (full exit) : LIMIT "TP"   -> fills at the target level        (= Python fixed/ATR TP)
+//    BE/Base SL "SL"    : resting STOP -> fills at level / open-on-gap     (= touch), ARMS reversal
+//    Reversal           : 2x risk-parity, NO target, trails to EOD via BE + flatten
+//    EOD                : market       -> fills at the flatten bar's close
+//
+//  WHY C (vs A/B): C banks one fixed/ATR target on the whole position. Higher win rate & smoother
+//  equity than A/B, but caps upside (no runner). Full 2022-2026 validation, 100 shares:
+//    ATR-Adaptive C-ATR (0.25 x ATR / $6): 2022 +19,910 | 2023 +17,823 | 2024 +12,520 | 2025 +15,618
+//                                          | 2026 +21,612 = +87,483 (all yrs +), WR ~50%, worst -9.4/u.
+//    Fixed $2 / $5 C: 2022 +17,244 | 2023 +18,962 | 2024 +7,975 | 2025 +8,119 | 2026 +13,692 = +65,992,
+//                     WR ~57% (highest), worst -8.4/u. ATR = +33% net vs Fixed at ~7pts lower win rate.
+//  The ATR target auto-widens in high-vol regimes and tightens in calm ones (frontier shift, OOS-proven).
+//
+//  SHARES PER UNIT (default 100): the reversal is sized by RISK PARITY and needs FRACTIONAL units
+//  (e.g. 1.59). At 1 share/unit that rounds to 1 and the cap disappears. With 100 shares/unit,
+//  1.59 units = 159 shares. ==> Strategy Tester P&L is ~100x the Python per-unit figures. Divide by 100.
+//
+//  HOW TO RUN / RECONCILE
+//   1. Chart: NASDAQ:TSLA, 5-minute, REGULAR TRADING HOURS (no extended hours).
+//   2. Pick the TP mode. ATR-Adaptive -> compare to `python cli.py --config config/tsla_config_C_atr.yaml
+//      backtest ...`; Fixed $2 -> `--config config/tsla_config_C.yaml`.
+//   3. Verify: Breakout Buffer 10%, BE Trigger 0.55, Shares per unit 100, Max Stop = 6 (ATR) or 5 (Fixed).
+//   4. Turn OFF "Show Labels" for 30/90/365-day runs (TradingView caps labels at 500).
+//   5. Strategy Tester -> List of Trades -> CSV; divide Net P&L by 100 to compare per-unit.
+//   6. NOTE the ATR TP uses the DAILY 14-bar ATR of the SAME symbol via request.security (no lookahead,
+//      value known at the open). TradingView's daily H/L/C can differ a few cents from FMP -> tiny drift.
+//
+//  APPLY TO: TSLA, 5-minute, Regular Trading Hours. Size off 2024/2025, not the flattering 2026.
+//=============================================================================================
+
+// ==================== INPUTS ====================
+grpS = "Session"
+eodHour = input.int(15, "EOD Exit Hour", minval=0, maxval=23, group=grpS)
+eodMin  = input.int(50, "EOD Exit Minute", minval=0, maxval=59, group=grpS)
+
+grpR = "Risk / Regime Gates"
+maxORWidth  = input.float(8.0,  "Max OR Width ($) — skip wider days", step=0.5, group=grpR)
+volLookback = input.int(20,     "Volatility Lookback (days)", minval=2, group=grpR)
+maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, group=grpR)
+
+grpE = "Entry"
+bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE)
+tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE)
+unitScale   = input.int(100,    "Shares per 'unit' (scale so fractional sizes survive rounding)", minval=1, group=grpE,
+     tooltip="TradingView rounds order size to whole shares. The reversal is sized by RISK PARITY and needs fractional units (e.g. 1.59). With 100 shares per unit, 1.59 units = 159 shares. Strategy Tester P&L is this multiple of the Python per-unit figures — divide by this to compare.")
+
+grpX = "Category C Exits (full position)"
+cTPmode   = input.string("ATR-Adaptive", "Category C TP Mode", options=["ATR-Adaptive", "Fixed $2"], group=grpX,
+     tooltip="ATR-Adaptive = Config C-ATR (DEFAULT): target = ATR Mult x 14-day daily ATR (floored). Fixed $2 = literal Config C: flat $2 target. Whole position exits at the target — there is NO partial and NO runner in Category C.")
+fixedTP   = input.float(2.0,  "Fixed TP ($) — used in Fixed mode", step=0.25, group=grpX)
+atrTPMult = input.float(0.25, "ATR TP Multiplier (x 14-day ATR)", step=0.01, group=grpX)
+atrTPMin  = input.float(1.0,  "ATR TP Floor ($)", step=0.25, group=grpX)
+atrPeriod = input.int(14,     "ATR Period (daily bars)", minval=2, group=grpX)
+maxCapSL  = input.float(6.0,  "Max Stop Distance from Entry ($, 0=off)", step=0.5, group=grpX,
+     tooltip="Caps the OR-boundary primary stop. Set 6 for ATR-Adaptive (C-ATR) or 5 for Fixed $2 (literal C).")
+beTrigger = input.float(0.55, "BE Retrace Trigger (% of OR width)", step=0.05, group=grpX)
+beTrailAmt= input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
+
+grpC = "Entry Confirmation"
+confirmBreakout    = input.bool(false, "Require confirmation candle (2-candle break)", group=grpC, tooltip="DEFAULT OFF: under the resting stop, confirmation is net-negative (the stop already caps whipsaws). ON = enter only after the NEXT candle also closes beyond the trigger.")
+requireTrendCandle = input.bool(true,  "Confirmation candle must be with-trend", group=grpC)
+
+grpV = "Reversal"
+revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step=0.5, group=grpV)
+revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, group=grpV)
+
+grpU = "Display"
+showLabels = input.bool(false, "Show Labels", group=grpU, tooltip="Turn OFF for long backtests (TradingView keeps only the last 500 labels).")
+showLevels = input.bool(true, "Show Levels", group=grpU)
+
+// ==================== PRIOR-DAY REALISED VOLATILITY (no repaint) ====================
+f_priorRvol() =>
+    r = ta.change(close) / close[1] * 100.0
+    s = ta.stdev(r, volLookback, false)   // biased=false -> sample stdev (pandas ddof=1)
+    s[1]
+rvol20 = request.security(syminfo.tickerid, "D", f_priorRvol(), lookahead=barmerge.lookahead_on)
+
+// ==================== PRIOR-DAY 14-BAR DAILY ATR (no repaint) — for ATR-Adaptive TP ============
+// Python uses a SIMPLE moving average of daily true range, shifted 1 (known at the open). Match it
+// with ta.sma(ta.tr(true), atrPeriod)[1] on the daily timeframe, lookahead_on + the [1] shift = no repaint.
+f_priorATR() =>
+    a = ta.sma(ta.tr(true), atrPeriod)
+    a[1]
+dailyATR = request.security(syminfo.tickerid, "D", f_priorATR(), lookahead=barmerge.lookahead_on)
+
+// ==================== STATE ====================
+var float orHigh = na
+var float orLow = na
+var float orWidth = na
+var bool skipVol = false
+var bool skipWide = false
+var bool daySkipped = false
+
+var bool firstTaken = false
+var bool active = false
+var int tdir = 0
+var float entry = na
+var float stop = na
+var float tp = na
+var int entryBar = na
+var bool inRev = false
+var string entryId = ""
+
+var bool beTrig = false
+var float beLevel = na
+var float qtyTotal = na
+
+var int primDir = 0
+var bool primStopped = false
+
+// ==================== NEW DAY / OPENING RANGE ====================
+isNewDay = session.isfirstbar_regular
+orStart = input.string("09:30", "Opening Range start bar", options=["09:30", "09:45"], group="Opening Range", tooltip="09:30 = classic first-bar OR. 09:45 = skip the noisy opening 15 min (better 2024/2025 but noisy surface; WORSE 2026).")
+isORbar = orStart == "09:45" ? (hour == 9 and minute == 45) : isNewDay
+isEODbar = (hour * 60 + minute) >= (eodHour * 60 + eodMin)
+isLastBar = session.islastbar_regular
+isFlattenBar = isEODbar or isLastBar
+
+if isNewDay
+    orHigh := na
+    orLow := na
+    orWidth := na
+    daySkipped := false
+    firstTaken := false
+    active := false
+    tdir := 0
+    entry := na
+    stop := na
+    tp := na
+    entryBar := na
+    inRev := false
+    entryId := ""
+    beTrig := false
+    beLevel := na
+    qtyTotal := na
+    primDir := 0
+    primStopped := false
+
+// Capture the opening range at the SELECTED OR bar (09:30 or 09:45). Trades start after it.
+if isORbar
+    orHigh := high
+    orLow := low
+    orWidth := high - low
+    skipVol := not na(rvol20) and rvol20 > maxRvolPct
+    skipWide := orWidth > maxORWidth
+    daySkipped := skipVol or skipWide
+
+longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
+shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
+// Category C target distance: Fixed $2, or 0.25 x daily ATR (floored). Falls back to Fixed if ATR n/a.
+tpDist = cTPmode == "Fixed $2" ? fixedTP : (not na(dailyATR) ? math.max(atrTPMin, atrTPMult * dailyATR) : fixedTP)
+canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar
+
+// ==================== PRIMARY ENTRY (market -> fills at this bar's close) ====================
+longConfirm  = not confirmBreakout or (close[1] > longBrk and (close >= open or not requireTrendCandle))
+shortConfirm = not confirmBreakout or (close[1] < shortBrk and (close <= open or not requireTrendCandle))
+if canTrade and not active and not firstTaken and strategy.position_size == 0
+    if close > longBrk and longConfirm
+        entryId := "L"
+        strategy.entry(entryId, strategy.long, qty=tradeQty * unitScale)
+        // FULL-position target as a LIMIT at the TP (fills AT the level, like the Python full exit).
+        // No qty_percent -> closes 100%. Placed now -> live from the NEXT bar (no exit on entry bar).
+        strategy.exit("TP", from_entry=entryId, limit=close + tpDist, comment="TP")
+        active := true
+        tdir := 1
+        inRev := false
+        entry := close
+        stop := maxCapSL > 0 ? math.max(orLow, close - maxCapSL) : orLow
+        tp := close + tpDist
+        beLevel := orHigh - beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := tradeQty
+        beTrig := false
+        primDir := 1
+        firstTaken := true
+        if showLabels
+            label.new(bar_index, low, "LONG " + str.tostring(close, format.mintick), style=label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.small)
+    else if close < shortBrk and shortConfirm
+        entryId := "S"
+        strategy.entry(entryId, strategy.short, qty=tradeQty * unitScale)
+        strategy.exit("TP", from_entry=entryId, limit=close - tpDist, comment="TP")
+        active := true
+        tdir := -1
+        inRev := false
+        entry := close
+        stop := maxCapSL > 0 ? math.min(orHigh, close + maxCapSL) : orHigh
+        tp := close - tpDist
+        beLevel := orLow + beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := tradeQty
+        beTrig := false
+        primDir := -1
+        firstTaken := true
+        if showLabels
+            label.new(bar_index, high, "SHORT " + str.tostring(close, format.mintick), style=label.style_label_down, color=color.rgb(243,76,76), textcolor=color.white, size=size.small)
+
+// ==================== REVERSAL ENTRY (raw OR break · trail-to-EOD · risk-parity size · NO target) ====
+if canTrade and primStopped and not active and strategy.position_size == 0
+    if primDir == 1 and close < orLow
+        rpu = math.abs(close - orHigh)
+        rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
+        entryId := "RS"
+        strategy.entry(entryId, strategy.short, qty=rq * unitScale)   // no target: trails to EOD
+        active := true
+        tdir := -1
+        inRev := true
+        entry := close
+        stop := orHigh
+        tp := na
+        beLevel := orLow + beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := rq
+        beTrig := false
+        primStopped := false
+        if showLabels
+            label.new(bar_index, high, "REV SHORT " + str.tostring(close, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
+    else if primDir == -1 and close > orHigh
+        rpu = math.abs(close - orLow)
+        rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
+        entryId := "RL"
+        strategy.entry(entryId, strategy.long, qty=rq * unitScale)
+        active := true
+        tdir := 1
+        inRev := true
+        entry := close
+        stop := orLow
+        tp := na
+        beLevel := orHigh - beTrigger * orWidth
+        entryBar := bar_index
+        qtyTotal := rq
+        beTrig := false
+        primStopped := false
+        if showLabels
+            label.new(bar_index, low, "REV LONG " + str.tostring(close, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_up, color=color.purple, textcolor=color.white, size=size.small)
+
+// ==================== EXIT ENGINE — RESTING STOP (touch model, never on the entry bar) ============
+// Category C: full-position TP limit (placed at entry) + ONE resting stop "SL" (base/BE, arms reversal).
+// No partial, no runner. Steps 1-2 (BE) only run AFTER the entry bar; the "SL" stop is (re)placed each
+// bar from the entry bar so it is live from the next bar, matching the engine's "no exit on entry bar".
+if active and not na(stop) and bar_index >= entryBar
+    if bar_index > entryBar
+        // --- Step 1: BE Retrace (WICK trigger) ---
+        if not beTrig and not na(beLevel)
+            if (tdir == 1 ? low <= beLevel : high >= beLevel)
+                stop := tdir == 1 ? math.max(stop, entry) : math.min(stop, entry)
+                beTrig := true
+        // --- Step 2: BE Trail ---
+        if beTrig and beTrailAmt > 0
+            stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
+    // --- Step 3: place / refresh the resting stop for the full position ---
+    beReason = beTrig ? ((tdir == 1 ? stop > entry : stop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
+    strategy.exit("SL", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
+
+// ==================== STATE DE-SYNC + REVERSAL ARMING ====================
+// A resting stop/limit fills INTRABAR, so we detect the exit on the NEXT bar (position flat while we
+// still think a trade is live). Arm the reversal only if the last leg exited via "SL" (base/BE stop),
+// never via "TP" (target win) or EOD.
+if active and strategy.position_size == 0 and bar_index > entryBar
+    lastExit = strategy.closedtrades > 0 ? strategy.closedtrades.exit_id(strategy.closedtrades - 1) : ""
+    if not inRev and lastExit == "SL"
+        primStopped := true
+        if showLabels
+            label.new(bar_index, tdir == 1 ? low : high, "REV armed: need close " + (tdir == 1 ? "< " + str.tostring(orLow, format.mintick) : "> " + str.tostring(orHigh, format.mintick)), style=tdir == 1 ? label.style_label_up : label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
+    strategy.cancel("TP")
+    strategy.cancel("SL")
+    active := false
+    tdir := 0
+    inRev := false
+    tp := na
+    stop := na
+
+// ==================== EOD FORCED CLOSE (market at this bar's close) ====================
+if active and isFlattenBar and tdir != 0
+    strategy.cancel("TP")
+    strategy.cancel("SL")
+    strategy.close(entryId, comment=(inRev ? "REV EOD" : "EOD"))
+    if showLabels
+        label.new(bar_index, close, (inRev ? "REV EOD " : "EOD ") + str.tostring(close, format.mintick), style=label.style_label_left, color=color.rgb(255,140,0), textcolor=color.white, size=size.small)
+    active := false
+    tdir := 0
+    inRev := false
+    tp := na
+    stop := na
+
+// safety: never carry a position overnight (also covers half sessions with no 15:50 bar)
+if strategy.position_size != 0 and isFlattenBar and not active
+    strategy.close_all(comment="EOD flat")
+
+// ==================== VISUALS ====================
+plot(showLevels and not daySkipped and not na(orHigh) ? orHigh : na, "OR High", color=color.new(color.aqua, 0), style=plot.style_linebr)
+plot(showLevels and not daySkipped and not na(orLow) ? orLow : na, "OR Low", color=color.new(color.aqua, 0), style=plot.style_linebr)
+plot(showLevels and not daySkipped and not na(longBrk) ? longBrk : na, "Long Trigger", color=color.new(color.lime, 0), style=plot.style_linebr)
+plot(showLevels and not daySkipped and not na(shortBrk) ? shortBrk : na, "Short Trigger", color=color.new(color.red, 0), style=plot.style_linebr)
+plot(active ? stop : na, "Active Stop", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(active and not na(tp) ? tp : na, "Active TP (full exit)", color=color.lime, linewidth=2, style=plot.style_linebr)
+plot(active and not beTrig and not na(beLevel) ? beLevel : na, "BE Trigger", color=color.new(color.yellow, 0), style=plot.style_circles)
+plot(primStopped and not active ? (primDir == 1 ? orLow : orHigh) : na, "Reversal Trigger", color=color.new(color.purple, 0), linewidth=2, style=plot.style_circles)
+bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol regime / wide OR)")
+
+// ==================== GATE INFO TABLE ====================
+var table t = table.new(position.top_right, 2, 5, border_width=1)
+if barstate.islast
+    table.cell(t, 0, 0, "UDB-ORB C STRATEGY", text_color=color.white, bgcolor=color.rgb(10,40,50), text_size=size.small)
+    table.cell(t, 1, 0, cTPmode == "Fixed $2" ? "Fixed $2" : "ATR x " + str.tostring(atrTPMult, "#.##"), text_color=color.aqua, bgcolor=color.rgb(10,40,50), text_size=size.small)
+    table.cell(t, 0, 1, "Prior RVol (gate ≤ " + str.tostring(maxRvolPct, "#.##") + "%)", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 1, 1, na(rvol20) ? "n/a" : str.tostring(rvol20, "#.##") + "%", text_color=skipVol ? color.red : color.lime, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 0, 2, "OR Width (gate ≤ $" + str.tostring(maxORWidth, "#") + ")", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 1, 2, na(orWidth) ? "n/a" : str.tostring(orWidth, "#.##"), text_color=skipWide ? color.red : color.lime, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 0, 3, "Daily ATR / today's TP", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 1, 3, (na(dailyATR) ? "n/a" : str.tostring(dailyATR, "#.#")) + " / " + (na(tpDist) ? "n/a" : "$" + str.tostring(tpDist, "#.##")), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 0, 4, "Today", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
+    table.cell(t, 1, 4, daySkipped ? "SKIPPED" : "tradable", text_color=daySkipped ? color.red : color.lime, bgcolor=color.rgb(25,25,25), text_size=size.small)
