@@ -18,12 +18,21 @@ multiply by 100.
 Everything else is identical: resting stop (touch), Max-Cap $5, confirmation OFF, vol gate, reversal
 risk-parity, $0.10 slippage. Python parity: A = `config/config.yaml`; B = `config/tsla_best_B.yaml`.
 
-## Config comparison (2.5-yr, per unit)
-| | Config A | Config B |
-|--|--------:|--------:|
-| Net | +$469 | **+$574** |
-| Profit factor | 1.65 | 1.79 |
-| Worst day | −$8.85 | −$8.85 |
+## Config comparison
+| | Config A | Config B | Config C |
+|--|--------:|--------:|--------:|
+| Runner / TP | Peak-trail runner | VWAP runner | **fixed $2 TP, full exit** |
+| 2.5-yr net (24-26, /unit) | +$469 | **+$574** | +$298 |
+| Profit factor | 1.65 | 1.79 | 1.59 |
+| Win rate (2026) | 53.6% | 51.7% | **67.6%** |
+| Style | steadier | higher net | **highest win-rate / consistency** |
+
+**Config C** (`config/tsla_config_C.yaml`) — fixed **$2 take-profit** (full exit, no partial/runner) +
+**$5 BE-stop**, long+short+reversal, resting stop. Trades many small $2 wins; caps upside so it makes
+less total net than A/B, but it's the smoothest and **positive in EVERY year 2022-2026 (100 shares):**
+2022 **+$17,244** (bear market!) · 2023 +$18,962 · 2024 +$7,975 · 2025 +$8,119 · 2026 +$13,692 =
+**+$65,992** over 4.5 yr. PF 1.4-2.4 every year; worst day bounded ~−$8. Pine C files: TODO (fixed-TP
+full-exit exit engine — not yet ported; run in Python via `--config config/tsla_config_C.yaml`).
 
 ## Opening-Range start (input "Opening Range start bar")
 - **09:30** (default): the classic first-bar OR. **Principled, robust.**

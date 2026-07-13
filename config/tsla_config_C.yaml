@@ -1,0 +1,113 @@
+# CONFIG C — fixed $2 take-profit + $5 BE-stop (full exit, no partial/runner).
+# High win-rate / high-consistency profile: exit whole position at +$2, stop $5 with BE ratchet,
+# long+short+reversal, resting stop. Validated 2022-2026: POSITIVE every year incl 2022 bear
+# (+$17,244/100sh), 2023 +$18,962, 2024 +$7,975, 2025 +$8,119, 2026 +$13,692 (total +$65,992).
+# Trades small $2 wins often (WR 50-68%) -> steadier than A/B but caps upside (less total net).
+symbol: TSLA
+timeframe_minutes: 5
+timezone: America/New_York
+execution:
+  stop_fill_mode: touch
+  exit_on_close: true
+  protective_stop: false
+  daily_loss_limit: 0.0
+session:
+  rth_start: 09:30
+  rth_end: '16:00'
+  market_open: 09:30
+  eod_exit: '15:50'
+profile:
+  name: Adaptive TP + Reversal (Best Combined)
+  trade_qty: 1.0
+  slippage_per_unit: 0.1
+  use_breakout_buffer: true
+  buffer_pct_or: 10.0
+  sl_mode: Candle High/Low + Max Cap
+  sl_offset: 0.0
+  fixed_sl: 5.0
+  tp_mode: Fixed
+  adaptive_tp_scale: 1.0
+  adaptive_tp_min: 2.14
+  fixed_tp: 2.0
+  use_be_retrace: true
+  be_retrace_trigger: 0.55
+  be_trail_amount: 0.25
+  be_retrace_use_close: false
+  use_partial_exit: false
+  partial_qty_pct: 25.0
+  partial_activation: 1.0
+  use_reversal: true
+  reversal_qty_mult: 2.0
+  reversal_target: 5.0
+  apply_be_to_reversal: true
+  reversal_risk_cap: 6.0
+  reversal_risk_mode: scale
+  min_or_width_enabled: false
+  min_or_width: 2.5
+  max_or_width_enabled: true
+  max_or_width: 8.0
+  use_vwap_filter: false
+  trade_side_mode: Both
+enhancements:
+  rvol_filter:
+    enabled: false
+    lookback_bars: 20
+    min_rvol: 1.2
+  volatility_regime:
+    enabled: true
+    lookback: 20
+    max_rvol_pct: 4.92
+  or_width_regime:
+    enabled: false
+    skip_below: 0.0
+    skip_above: 0.0
+  time_window:
+    enabled: false
+    start: 09:35
+    end: '14:00'
+  reversal_capture:
+    enabled: true
+    trigger_on_be_stop: true
+    trail_to_eod: true
+    target_or_mult: 0.0
+    reenter_after_whipsaw: false
+  runner_trail:
+    enabled: true
+    or_mult: 0.75
+  resume_reentry:
+    enabled: false
+    trigger: buffered
+    risk_cap: 0.0
+    disarm_other: true
+  confirm_two_closes:
+    enabled: false
+  confirm_breakout:
+    enabled: false
+    require_trend_candle: true
+    hold_bars: 1
+  pdh_pdl_filter:
+    enabled: false
+    proximity_pct: 14.0
+data:
+  provider: fmp
+  cache_dir: data/cache
+  db_path: data/udb_orb.db
+alerts:
+  enabled: true
+  channels:
+  - email
+  - webhook
+  events:
+  - primary_entry
+  - reversal_entry
+  - be_retrace_fired
+  - tp_full
+  - partial_exit
+  - be_trail_exit
+  - be_stop_exit
+  - vwap_cross_exit
+  - base_sl_exit
+  - eod_exit
+live:
+  poll_seconds: 30
+  lookback_days: 3
