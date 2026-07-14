@@ -488,6 +488,50 @@ if barstate.isconfirmed
     if aEOD
         alert("[EXIT-EOD] End-of-day forced close" + base, alert.freq_once_per_bar)
 
+// ==================== NAMED ALERTS — per Profile x Status (pick in TradingView's "Add alert" dialog) ==========
+// The alert() calls above fire the single generic "Any alert() function call". The alertcondition() calls
+// below add NAMED, individually-selectable alerts. Each is gated by the SELECTED profile, so only your active
+// profile's alerts can ever fire (on a B1 chart the A1/C1/C2 rows stay silent). Set frequency "Once Per Bar Close".
+// --- A1 · Adaptive + Peak-Trail ---
+alertcondition(isA1 and aEntryL,  title="A1 Buy",      message="A1 BUY - long breakout, buy at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isA1 and aEntryS,  title="A1 Sell",     message="A1 SELL - short breakout, sell short at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isA1 and aRevL,    title="A1 Rev Buy",  message="A1 REVERSAL BUY - risk-parity long at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isA1 and aRevS,    title="A1 Rev Sell", message="A1 REVERSAL SELL - risk-parity short at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isA1 and aBEFired, title="A1 BE",       message="A1 BREAK-EVEN - move stop to entry | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isA1 and aPart,    title="A1 Partial",  message="A1 PARTIAL - 25% closed at target; runner governs | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isA1 and aWin,     title="A1 TP",       message="A1 TP - close remaining (target/runner win) | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isA1 and aStop,    title="A1 SL",       message="A1 SL - close position (stop hit) | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isA1 and aEOD,     title="A1 EOD",      message="A1 EOD - end-of-day forced close | {{ticker}} {{interval}}m @ {{close}}")
+// --- B1 · Adaptive + VWAP runner ---
+alertcondition(isB1 and aEntryL,  title="B1 Buy",      message="B1 BUY - long breakout, buy at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isB1 and aEntryS,  title="B1 Sell",     message="B1 SELL - short breakout, sell short at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isB1 and aRevL,    title="B1 Rev Buy",  message="B1 REVERSAL BUY - risk-parity long at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isB1 and aRevS,    title="B1 Rev Sell", message="B1 REVERSAL SELL - risk-parity short at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isB1 and aBEFired, title="B1 BE",       message="B1 BREAK-EVEN - move stop to entry | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isB1 and aPart,    title="B1 Partial",  message="B1 PARTIAL - 25% closed at target; runner governs | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isB1 and aWin,     title="B1 TP",       message="B1 TP - close remaining (VWAP-cross / runner win) | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isB1 and aStop,    title="B1 SL",       message="B1 SL - close position (stop hit) | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isB1 and aEOD,     title="B1 EOD",      message="B1 EOD - end-of-day forced close | {{ticker}} {{interval}}m @ {{close}}")
+// --- C1 · ATR 0.25 + 25% Partial + VWAP ---
+alertcondition(isC1 and aEntryL,  title="C1 Buy",      message="C1 BUY - long breakout, buy at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC1 and aEntryS,  title="C1 Sell",     message="C1 SELL - short breakout, sell short at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC1 and aRevL,    title="C1 Rev Buy",  message="C1 REVERSAL BUY - risk-parity long at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC1 and aRevS,    title="C1 Rev Sell", message="C1 REVERSAL SELL - risk-parity short at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC1 and aBEFired, title="C1 BE",       message="C1 BREAK-EVEN - move stop to entry | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC1 and aPart,    title="C1 Partial",  message="C1 PARTIAL - 25% closed at target; runner governs | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC1 and aWin,     title="C1 TP",       message="C1 TP - close remaining (VWAP-cross / runner win) | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC1 and aStop,    title="C1 SL",       message="C1 SL - close position (stop hit) | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC1 and aEOD,     title="C1 EOD",      message="C1 EOD - end-of-day forced close | {{ticker}} {{interval}}m @ {{close}}")
+// --- C2 · Fixed $2 Full-Exit (no partial) ---
+alertcondition(isC2 and aEntryL,  title="C2 Buy",      message="C2 BUY - long breakout, buy at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC2 and aEntryS,  title="C2 Sell",     message="C2 SELL - short breakout, sell short at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC2 and aRevL,    title="C2 Rev Buy",  message="C2 REVERSAL BUY - risk-parity long at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC2 and aRevS,    title="C2 Rev Sell", message="C2 REVERSAL SELL - risk-parity short at market | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC2 and aBEFired, title="C2 BE",       message="C2 BREAK-EVEN - move stop to entry | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC2 and aWin,     title="C2 TP",       message="C2 TP - close position (fixed $2 target win) | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC2 and aStop,    title="C2 SL",       message="C2 SL - close position (stop hit) | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC2 and aEOD,     title="C2 EOD",      message="C2 EOD - end-of-day forced close | {{ticker}} {{interval}}m @ {{close}}")
+
 // ==================== SUMMARY TABLE ====================
 var table tbl = table.new(position.top_right, 2, 15, border_width=1)
 f_row(_r, _k, _v, _col) =>
