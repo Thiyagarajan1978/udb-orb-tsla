@@ -145,6 +145,8 @@ isNewDay = session.isfirstbar_regular
 isORbar = orStart == "09:45" ? (hour == 9 and minute == 45) : isNewDay
 sessVwap = ta.vwap(hlc3, isNewDay)
 isEODbar = (hour * 60 + minute) >= (eodHour * 60 + eodMin)
+isLastBar = session.islastbar_regular          // half-day / early close: flatten on the session's LAST bar even if 15:50 never prints
+isFlattenBar = isEODbar or isLastBar
 
 if isNewDay
     if dayHasTrades
@@ -193,7 +195,7 @@ if isORbar
 longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
 shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
 tpDist = tpModeSel == "Fixed" ? fixedTP : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMin, atrTPMult * dailyATR) : fixedTP) : (not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na)
-canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isEODbar
+canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar
 
 longConfirm  = not confirmBreakout or (close[1] > longBrk and (close >= open or not requireTrendCandle))
 shortConfirm = not confirmBreakout or (close[1] < shortBrk and (close <= open or not requireTrendCandle))
@@ -428,8 +430,8 @@ if active and not na(stop) and bar_index > entryBar
         tp := na
         stop := na
 
-// ==================== EOD FORCED CLOSE ====================
-if active and isEODbar and tdir != 0
+// ==================== EOD FORCED CLOSE (all profiles; half-day = session last bar) ====================
+if active and isFlattenBar and tdir != 0
     exitPx = close
     perUnit = tdir == 1 ? (exitPx - entry - slippage) : (entry - exitPx - slippage)
     pnlTotal = perUnit * effQty + part1Pnl
