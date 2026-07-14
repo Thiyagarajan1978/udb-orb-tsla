@@ -90,6 +90,7 @@ atrPeriod       = input.int(14,     "ATR Period (daily bars, C1)", minval=2, gro
 fixedTP         = input.float(2.0,  "Fixed TP $ (C2)", step=0.25, group=grpX)
 beTrigger       = input.float(0.55, "BE Retrace Trigger (% of OR width)", step=0.05, group=grpX)
 beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
+beRealistic     = input.bool(true,  "Realistic resting stop: a BE-retrace can't protect its own firing bar", group=grpX, tooltip="ON (default) = matches a real broker + Python stop_fill_mode 'resting': the stop moved to break-even only rests from the NEXT bar, so a bar that fires the BE-retrace AND hits the base SL fills at the base SL. OFF = old optimistic look-ahead (over-reports ~40-45%).")
 partialPct      = input.float(25.0, "Partial Exit Quantity % (A1/B1/C1)", step=1.0, group=grpX)
 runnerMult      = input.float(0.75, "Runner Peak-Trail x OR width (A1)", step=0.05, group=grpX)
 vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit $ (B1/C1)", step=0.25, group=grpX)
@@ -323,12 +324,15 @@ if canTrade and primStopped and not active and strategy.position_size == 0
 // ==================== EXIT ENGINE — OCO brackets (never on the entry bar) ====================
 if active and not na(stop) and bar_index >= entryBar
     vwapExited = false
+    stopBarStart = stop        // the stop actually RESTING coming into this bar (pre BE-retrace)
+    beFiredNow = false
     if bar_index > entryBar
         // Step 1: BE Retrace (WICK trigger)
         if not beTrig and not na(beLevel)
             if (tdir == 1 ? low <= beLevel : high >= beLevel)
                 stop := tdir == 1 ? math.max(stop, entry) : math.min(stop, entry)
                 beTrig := true
+                beFiredNow := true
         // Step 2: BE Trail
         if beTrig and beTrailAmt > 0
             stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
@@ -364,21 +368,24 @@ if active and not na(stop) and bar_index >= entryBar
             if not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
                 tpWasHit := true
     if not vwapExited
-        beReason = beTrig ? ((tdir == 1 ? stop > entry : stop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
+        // resting-stop realism: a BE-retrace that fired THIS bar rests only from the NEXT bar, so the
+        // order placed now uses the pre-retrace stop (a same-bar crash fills at the base SL, not entry).
+        restStop = (beRealistic and beFiredNow) ? stopBarStart : stop
+        beReason = beTrig ? ((tdir == 1 ? restStop > entry : restStop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
         if not usePartial
             // C2: ONE OCO bracket for the whole position (stop OR target)
-            strategy.exit("X", from_entry=entryId, stop=stop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit=(inRev ? "REV TP" : "TP"))
+            strategy.exit("X", from_entry=entryId, stop=restStop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit=(inRev ? "REV TP" : "TP"))
         else
             trailLevel = (part1 and not suppressPartial and not runnerVWAP and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
             if suppressPartial
                 lastWasTrail := false
-                strategy.exit("RUN", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
+                strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason)
             else if not part1
                 lastWasTrail := false
-                strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, stop=stop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit="Partial @ TP")
-                strategy.exit("RUN", from_entry=entryId, stop=stop, comment=(inRev ? "REV " : "") + beReason)
+                strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, stop=restStop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit="Partial @ TP")
+                strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason)
             else
-                runnerStop = na(trailLevel) ? stop : (tdir == 1 ? math.max(stop, trailLevel) : math.min(stop, trailLevel))
+                runnerStop = na(trailLevel) ? restStop : (tdir == 1 ? math.max(restStop, trailLevel) : math.min(restStop, trailLevel))
                 isTrail = not na(trailLevel) and (tdir == 1 ? trailLevel >= stop : trailLevel <= stop)
                 lastWasTrail := isTrail
                 strategy.exit("RUN", from_entry=entryId, stop=runnerStop, comment=(inRev ? "REV " : "") + (isTrail ? "Trail" : beReason))

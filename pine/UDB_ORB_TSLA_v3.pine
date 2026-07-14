@@ -57,6 +57,7 @@ partialPct      = input.float(25.0, "Partial Exit Quantity % (A1/B1/C1)", step=1
 runnerMult      = input.float(0.75, "Runner Peak-Trail x OR width (A1)", step=0.05, group=grpX)
 vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit $ (B1/C1)", step=0.25, group=grpX)
 exitOnClose     = input.bool(false, "Stop exits fill at bar CLOSE (OFF = resting stop)", group=grpX)
+beRealistic     = input.bool(true,  "Realistic resting stop: a BE-retrace can't protect its own firing bar", group=grpX, tooltip="ON (default) = matches a real broker + Python stop_fill_mode 'resting': moving the stop to break-even on the bar close only rests from the NEXT bar, so a bar that both fires the BE-retrace AND crashes to the base SL fills at the base SL. OFF = the old optimistic look-ahead (over-reports net ~40-45%).")
 
 grpC = "Entry Confirmation"
 confirmBreakout    = input.bool(false, "Require confirmation candle (2-candle break)", group=grpC)
@@ -295,12 +296,15 @@ if canTrade and primStopped and not active
 
 // ==================== EXIT ENGINE (simulated; stop-first; never on the entry bar) ====================
 if active and not na(stop) and bar_index > entryBar
+    stopBarStart = stop        // the stop that was actually RESTING coming into this bar
+    beFiredNow = false
     // Step 1: BE Retrace
     if not beTrig and not na(beLevel)
         if (tdir == 1 ? low <= beLevel : high >= beLevel)
             stop := tdir == 1 ? math.max(stop, entry) : math.min(stop, entry)
             beTrig := true
             aBEFired := true
+            beFiredNow := true
     // Step 2: BE Trail
     if beTrig and beTrailAmt > 0
         stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
@@ -329,8 +333,11 @@ if active and not na(stop) and bar_index > entryBar
                 runnerHit := true
                 runnerPx := exitOnClose ? close : lvl
     // Step 4: hit checks — STOP FIRST (matches the engine), then target, then partial, then runner
-    slHit = tdir == 1 ? (exitOnClose ? close <= stop : low <= stop) : (exitOnClose ? close >= stop : high >= stop)
-    slFill = exitOnClose ? close : (tdir == 1 ? math.min(stop, open) : math.max(stop, open))
+    // resting-stop realism: a BE-retrace that fired THIS bar cannot protect it — fill against the
+    // pre-retrace stop (the level actually resting coming into the bar).
+    restStop = (beRealistic and beFiredNow) ? stopBarStart : stop
+    slHit = tdir == 1 ? (exitOnClose ? close <= restStop : low <= restStop) : (exitOnClose ? close >= restStop : high >= restStop)
+    slFill = exitOnClose ? close : (tdir == 1 ? math.min(restStop, open) : math.max(restStop, open))
     tpHit = not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
 
     if slHit
