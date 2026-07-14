@@ -72,23 +72,6 @@ showLabels = input.bool(true, "Show Entry/Exit Labels", group=grpU)
 showLevels = input.bool(true, "Show OR / Trigger Levels", group=grpU)
 showTable  = input.bool(true, "Show Summary Table", group=grpU)
 
-// ---- Market Context (DISPLAY / CONVICTION ONLY — does NOT change entries, exits, or size) ----
-grpM  = "Market Context (display only)"
-ctxOn = input.bool(true,  "Show QQQ/SPY confirmation panel + tag entry alerts", group=grpM, tooltip="Study verdict: market confirmation is a CONVICTION cue, not a filter. Using it to gate or size trades worsened risk-adjusted return (6-for-6 with the entry filters). This only DISPLAYS the tape + tags alerts; it never changes a trade.")
-ctxS1 = input.symbol("NASDAQ:QQQ", "Context symbol 1 (Nasdaq-100 proxy)", group=grpM)
-ctxS2 = input.symbol("AMEX:SPY",   "Context symbol 2 (S&P 500)", group=grpM)
-q_c = request.security(ctxS1, timeframe.period, close,          lookahead=barmerge.lookahead_off)
-q_v = request.security(ctxS1, timeframe.period, ta.vwap(hlc3),  lookahead=barmerge.lookahead_off)
-s_c = request.security(ctxS2, timeframe.period, close,          lookahead=barmerge.lookahead_off)
-s_v = request.security(ctxS2, timeframe.period, ta.vwap(hlc3),  lookahead=barmerge.lookahead_off)
-qUp = q_c >= q_v
-sUp = s_c >= s_v
-f_conf(dir) =>                 // conviction of a trade direction (1 long / -1 short) vs the tape
-    qc = dir == 1 ? qUp : not qUp
-    sc = dir == 1 ? sUp : not sUp
-    qc and sc ? "CONFIRMED" : (not qc and not sc ? "OPPOSED" : "MIXED")
-mktTag(dir) => " | Mkt: " + f_conf(dir) + " (QQQ " + (qUp ? "▲" : "▼") + "VWAP · SPY " + (sUp ? "▲" : "▼") + "VWAP)"
-
 maxCapSL = maxCapOverride > 0 ? maxCapOverride : (isC1 ? 6.0 : 5.0)
 
 // ==================== PRIOR-DAY VOL + DAILY ATR (no repaint) ====================
@@ -487,13 +470,13 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped")
 if barstate.isconfirmed
     base = " | " + str.substring(profile, 0, 2) + " | " + syminfo.ticker + " " + timeframe.period + "m | Px $" + str.tostring(close, "#.##") + " | " + str.format_time(time, "yyyy-MM-dd HH:mm", "America/New_York") + " ET"
     if aEntryL
-        alert("[ENTRY] LONG breakout — BUY at market" + base + (ctxOn ? mktTag(1) : ""), alert.freq_once_per_bar)
+        alert("[ENTRY] LONG breakout — BUY at market" + base, alert.freq_once_per_bar)
     if aEntryS
-        alert("[ENTRY] SHORT breakout — SELL SHORT at market" + base + (ctxOn ? mktTag(-1) : ""), alert.freq_once_per_bar)
+        alert("[ENTRY] SHORT breakout — SELL SHORT at market" + base, alert.freq_once_per_bar)
     if aRevL
-        alert("[ENTRY-REV] REVERSAL LONG (risk-parity size) — BUY at market" + base + (ctxOn ? mktTag(1) : ""), alert.freq_once_per_bar)
+        alert("[ENTRY-REV] REVERSAL LONG (risk-parity size) — BUY at market" + base, alert.freq_once_per_bar)
     if aRevS
-        alert("[ENTRY-REV] REVERSAL SHORT (risk-parity size) — SELL SHORT at market" + base + (ctxOn ? mktTag(-1) : ""), alert.freq_once_per_bar)
+        alert("[ENTRY-REV] REVERSAL SHORT (risk-parity size) — SELL SHORT at market" + base, alert.freq_once_per_bar)
     if aBEFired
         alert("[STATE] BE RETRACE FIRED — move stop to ENTRY" + base, alert.freq_once_per_bar)
     if aPart
@@ -577,19 +560,3 @@ if barstate.islast and showTable
     f_row(12, "Wins (TP/runner)", str.tostring(cWin), color.lime)
     f_row(13, "Stops", str.tostring(cStop), color.orange)
     f_row(14, "EOD closes", str.tostring(cEOD), color.silver)
-
-// ==================== MARKET-CONTEXT PANEL (display only; QQQ/SPY vs their own session VWAP) ====================
-var table mtbl = table.new(position.bottom_right, 2, 4, border_width=1)
-if ctxOn and barstate.islast
-    tape    = qUp and sUp ? "RISK-ON" : (not qUp and not sUp ? "RISK-OFF" : "MIXED")
-    tapeCol = qUp and sUp ? color.lime : (not qUp and not sUp ? color.red : color.gray)
-    table.cell(mtbl, 0, 0, "Market tape", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
-    table.cell(mtbl, 1, 0, tape, text_color=tapeCol, bgcolor=color.rgb(30,30,50), text_size=size.small)
-    table.cell(mtbl, 0, 1, "QQQ", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
-    table.cell(mtbl, 1, 1, qUp ? "▲ VWAP" : "▼ VWAP", text_color=qUp ? color.lime : color.red, bgcolor=color.rgb(25,25,25), text_size=size.small)
-    table.cell(mtbl, 0, 2, "SPY", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
-    table.cell(mtbl, 1, 2, sUp ? "▲ VWAP" : "▼ VWAP", text_color=sUp ? color.lime : color.red, bgcolor=color.rgb(25,25,25), text_size=size.small)
-    posTxt = active ? f_conf(tdir) : "flat"
-    posCol = not active ? color.gray : (f_conf(tdir) == "CONFIRMED" ? color.lime : (f_conf(tdir) == "OPPOSED" ? color.red : color.gray))
-    table.cell(mtbl, 0, 3, "Position", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
-    table.cell(mtbl, 1, 3, posTxt, text_color=posCol, bgcolor=color.rgb(25,25,25), text_size=size.small)
