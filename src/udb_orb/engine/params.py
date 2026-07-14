@@ -18,12 +18,18 @@ def _parse_hhmm(s: str) -> time:
 
 
 def _resolve_fill_mode(execution: dict) -> dict:
-    """Map execution config -> (exit_on_close, stop_fill_touch). stop_fill_mode wins if present;
-    otherwise fall back to the legacy exit_on_close bool."""
+    """Map execution config -> (exit_on_close, stop_fill_touch, be_lag). stop_fill_mode wins if
+    present; otherwise fall back to the legacy exit_on_close bool.
+
+    "resting" = the realistic broker model: gap-aware intrabar fill like "touch", PLUS a BE-retrace
+    to break-even cannot protect its OWN firing bar (a stop moved on the bar close only rests from
+    the next bar). "touch"/"stop"/"close" keep the legacy same-bar BE-retrace protection, which is
+    intrabar look-ahead that overstates net (see docs/BE_STOP_ANALYSIS resting-fill note)."""
     mode = execution.get("stop_fill_mode")
     if mode is None:
         mode = "close" if bool(execution.get("exit_on_close", False)) else "stop"
-    return {"exit_on_close": mode == "close", "stop_fill_touch": mode == "touch"}
+    touch = mode in ("touch", "resting")
+    return {"exit_on_close": mode == "close", "stop_fill_touch": touch, "be_lag": mode == "resting"}
 
 
 @dataclass(frozen=True)
@@ -85,8 +91,11 @@ class Params:
     #   "close" : alerts-only — trigger & fill on the bar CLOSE (the default live workflow)
     #   "stop"  : Pine intrabar — trigger on the wick, fill exactly at the stop level
     #   "touch" : broker resting stop — trigger on the wick, gap-aware fill at min(stop, open)
+    #   "resting": like "touch" but a BE-retrace to entry cannot protect its OWN firing bar
+    #              (no intrabar look-ahead). This is the realistic model; "touch" overstates net.
     exit_on_close: bool = False      # derived: True iff stop_fill_mode == "close"
-    stop_fill_touch: bool = False    # derived: True iff stop_fill_mode == "touch"
+    stop_fill_touch: bool = False    # derived: True iff stop_fill_mode in ("touch","resting")
+    be_lag: bool = False             # derived: True iff stop_fill_mode == "resting"
     # ATR-scaled stop cap ("Candle High/Low + ATR Cap" sl_mode): cap = atr_mult * ATR(atr_period),
     # volatility-normalized instead of a fixed dollar cap. Enables cross-symbol / cross-regime scaling.
     atr_mult: float = 0.35

@@ -252,7 +252,11 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
 // bled the reversal edge, ~35% of net.) Arm only on a BASE/BE STOP (reasons Base SL/BE Stop/BE Trail,
 // L933): a peak-trail exit is reason "Trail" (lastWasTrail) and does NOT arm; C2 arms unless a TP win.
 if active and strategy.position_size == 0 and bar_index > entryBar
-    stoppedOut = usePartial ? (not lastWasTrail) : (not tpWasHit)
+    // C2 win detection must be race-proof: TV reflects the intrabar OCO fill in position_size
+    // on the SAME bar, so this block can run BEFORE the exit-engine mirror sets tpWasHit. Also
+    // test the current bar's target touch inline so a TP win never arms a phantom reversal.
+    c2Won = tpWasHit or (not na(tp) and (tdir == 1 ? high >= tp : low <= tp))
+    stoppedOut = usePartial ? (not lastWasTrail) : (not c2Won)
     if not inRev and stoppedOut
         primStopped := true
         if showLabels
