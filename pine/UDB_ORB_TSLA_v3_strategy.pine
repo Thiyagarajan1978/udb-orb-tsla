@@ -100,10 +100,28 @@ grpV = "Reversal"
 revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step=0.5, group=grpV)
 revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, group=grpV)
 
-// ---- WEBHOOK ALERTS: per-order JSON. action = Buy (long entry) / Sell (short entry) / Exit (any close).
-// Quantity is ROUNDED to whole shares. In TradingView set the alert message to {{strategy.order.alert_message}}
-// (NOT {{strategy.order.action}} — that only outputs buy/sell, never "Exit"). {{ticker}}/{{close}} auto-fill.
-f_msg(act, q) => '{"ticker":"{{ticker}}", "action":"' + act + '", "quantity":' + str.tostring(q, "#") + ', "price":"{{close}}"}'
+grpO = "Options via TradersPost (webhook)"
+orderAsset     = input.string("Shares", "Order asset", options=["Shares", "Options"], group=grpO, tooltip="Shares = the stock JSON (Buy/Sell/Exit, rounded shares). Options = TradersPost options JSON: a LONG signal buys a CALL, a SHORT signal buys a PUT, any exit closes. DESIGNED FOR C2 (no partial) — with B1/C1 the 25% partial would send an 'exit' that closes the WHOLE option early. The Strategy Tester still shows the SHARE-signal P&L; real option P&L (delta/theta/IV) is NOT backtestable here.")
+optContracts   = input.int(1,        "Option contracts (quantity)", minval=1, group=grpO)
+optExpiration  = input.string("+0 days", "Option expiration", group=grpO, tooltip="0DTE = '+0 days'. Nearest weekly = '+2 days'/'+3 days' or a date like '2026-07-18'.")
+optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0, group=grpO)
+
+// ---- WEBHOOK ALERTS: per-order JSON via alert_message. In TradingView set the alert message to
+// {{strategy.order.alert_message}} (NOT {{strategy.order.action}} — that only outputs buy/sell, never "Exit").
+//   Shares  : action Buy (long entry) / Sell (short entry) / Exit (any close); quantity = ROUNDED whole shares.
+//   Options : TradersPost — long->buy CALL, short->sell PUT, exit->close; quantity = contracts; 0DTE ATM via inputs.
+f_msg(act, q) =>
+    string out = na
+    if orderAsset == "Options"
+        if act == "Exit"
+            out := '{"ticker":"{{ticker}}", "action":"exit"}'
+        else
+            oa = act == "Buy" ? "buy" : "sell"
+            ot = act == "Buy" ? "call" : "put"
+            out := '{"ticker":"{{ticker}}", "action":"' + oa + '", "quantity":' + str.tostring(optContracts) + ', "expiration":"' + optExpiration + '", "optionType":"' + ot + '", "strikesAway":' + str.tostring(optStrikesAway) + '}'
+    else
+        out := '{"ticker":"{{ticker}}", "action":"' + act + '", "quantity":' + str.tostring(q, "#") + ', "price":"{{close}}"}'
+    out
 
 grpU = "Display"
 showLabels = input.bool(false, "Show Labels", group=grpU, tooltip="Turn OFF for 30/90/365-day runs (TradingView caps labels at 500).")
