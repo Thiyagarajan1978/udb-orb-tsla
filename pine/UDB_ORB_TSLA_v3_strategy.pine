@@ -100,6 +100,11 @@ grpV = "Reversal"
 revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step=0.5, group=grpV)
 revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, group=grpV)
 
+// ---- WEBHOOK ALERTS: per-order JSON. action = Buy (long entry) / Sell (short entry) / Exit (any close).
+// Quantity is ROUNDED to whole shares. In TradingView set the alert message to {{strategy.order.alert_message}}
+// (NOT {{strategy.order.action}} — that only outputs buy/sell, never "Exit"). {{ticker}}/{{close}} auto-fill.
+f_msg(act, q) => '{"ticker":"{{ticker}}", "action":"' + act + '", "quantity":' + str.tostring(q, "#") + ', "price":"{{close}}"}'
+
 grpU = "Display"
 showLabels = input.bool(false, "Show Labels", group=grpU, tooltip="Turn OFF for 30/90/365-day runs (TradingView caps labels at 500).")
 showLevels = input.bool(true, "Show Levels", group=grpU)
@@ -137,6 +142,7 @@ var string entryId = ""
 var bool beTrig = false
 var float beLevel = na
 var float qtyTotal = na
+var float posSh = na          // ROUNDED share count of the current position (whole shares for the webhook)
 var bool part1 = false
 var bool tpWasHit = false
 var float runnerPeak = na
@@ -199,7 +205,8 @@ shortConfirm = not confirmBreakout or (close[1] < shortBrk and (close <= open or
 if canTrade and not active and not firstTaken and strategy.position_size == 0
     if close > longBrk and longConfirm
         entryId := "L"
-        strategy.entry(entryId, strategy.long, qty=tradeQty * unitScale)
+        posSh := math.round(tradeQty * unitScale)
+        strategy.entry(entryId, strategy.long, qty=posSh, alert_message=f_msg("Buy", posSh))
         active := true
         tdir := 1
         inRev := false
@@ -221,7 +228,8 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
             label.new(bar_index, low, "LONG " + str.tostring(close, format.mintick), style=label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.small)
     else if close < shortBrk and shortConfirm
         entryId := "S"
-        strategy.entry(entryId, strategy.short, qty=tradeQty * unitScale)
+        posSh := math.round(tradeQty * unitScale)
+        strategy.entry(entryId, strategy.short, qty=posSh, alert_message=f_msg("Sell", posSh))
         active := true
         tdir := -1
         inRev := false
@@ -275,7 +283,8 @@ if canTrade and primStopped and not active and strategy.position_size == 0
         rpu = math.abs(close - orHigh)
         rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
         entryId := "RS"
-        strategy.entry(entryId, strategy.short, qty=rq * unitScale)
+        posSh := math.round(rq * unitScale)
+        strategy.entry(entryId, strategy.short, qty=posSh, alert_message=f_msg("Sell", posSh))
         active := true
         tdir := -1
         inRev := true
@@ -298,7 +307,8 @@ if canTrade and primStopped and not active and strategy.position_size == 0
         rpu = math.abs(close - orLow)
         rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
         entryId := "RL"
-        strategy.entry(entryId, strategy.long, qty=rq * unitScale)
+        posSh := math.round(rq * unitScale)
+        strategy.entry(entryId, strategy.long, qty=posSh, alert_message=f_msg("Buy", posSh))
         active := true
         tdir := 1
         inRev := true
@@ -350,7 +360,7 @@ if active and not na(stop) and bar_index >= entryBar
                 if vwapArmed and not na(sessVwap) and (tdir == 1 ? close <= sessVwap : close >= sessVwap)
                     strategy.cancel("P1")
                     strategy.cancel("RUN")
-                    strategy.close(entryId, comment=(inRev ? "REV VWAP" : "VWAP Cross"))
+                    strategy.close(entryId, comment=(inRev ? "REV VWAP" : "VWAP Cross"), alert_message=f_msg("Exit", math.round(math.abs(strategy.position_size))))
                     if showLabels
                         label.new(bar_index, tdir == 1 ? high : low, (inRev ? "REV " : "") + "VWAP " + str.tostring(close, format.mintick), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
                     active := false
@@ -369,30 +379,32 @@ if active and not na(stop) and bar_index >= entryBar
         // order placed now uses the pre-retrace stop (a same-bar crash fills at the base SL, not entry).
         restStop = (beRealistic and beFiredNow) ? stopBarStart : stop
         beReason = beTrig ? ((tdir == 1 ? restStop > entry : restStop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
+        partSh = math.round(posSh * partialPct / 100)   // whole-share 25% partial; runner takes the remainder
+        runSh  = posSh - partSh
         if not usePartial
             // C2: ONE OCO bracket for the whole position (stop OR target)
-            strategy.exit("X", from_entry=entryId, stop=restStop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit=(inRev ? "REV TP" : "TP"))
+            strategy.exit("X", from_entry=entryId, stop=restStop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit=(inRev ? "REV TP" : "TP"), alert_message=f_msg("Exit", posSh))
         else
             trailLevel = (part1 and not suppressPartial and not runnerVWAP and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
             if suppressPartial
                 lastWasTrail := false
-                strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason)
+                strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", posSh))
             else if not part1
                 lastWasTrail := false
-                strategy.exit("P1", from_entry=entryId, qty_percent=partialPct, stop=restStop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit="Partial @ TP")
-                strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason)
+                strategy.exit("P1", from_entry=entryId, qty=partSh, stop=restStop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit="Partial @ TP", alert_message=f_msg("Exit", partSh))
+                strategy.exit("RUN", from_entry=entryId, qty=runSh, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", runSh))
             else
                 runnerStop = na(trailLevel) ? restStop : (tdir == 1 ? math.max(restStop, trailLevel) : math.min(restStop, trailLevel))
                 isTrail = not na(trailLevel) and (tdir == 1 ? trailLevel >= stop : trailLevel <= stop)
                 lastWasTrail := isTrail
-                strategy.exit("RUN", from_entry=entryId, stop=runnerStop, comment=(inRev ? "REV " : "") + (isTrail ? "Trail" : beReason))
+                strategy.exit("RUN", from_entry=entryId, qty=runSh, stop=runnerStop, comment=(inRev ? "REV " : "") + (isTrail ? "Trail" : beReason), alert_message=f_msg("Exit", runSh))
 
 // ==================== EOD FORCED CLOSE ====================
 if active and isFlattenBar and tdir != 0
     strategy.cancel("P1")
     strategy.cancel("RUN")
     strategy.cancel("X")
-    strategy.close(entryId, comment=(inRev ? "REV EOD" : "EOD"))
+    strategy.close(entryId, comment=(inRev ? "REV EOD" : "EOD"), alert_message=f_msg("Exit", math.round(math.abs(strategy.position_size))))
     if showLabels
         label.new(bar_index, close, (inRev ? "REV EOD " : "EOD ") + str.tostring(close, format.mintick), style=label.style_label_left, color=color.rgb(255,140,0), textcolor=color.white, size=size.small)
     active := false
@@ -402,7 +414,7 @@ if active and isFlattenBar and tdir != 0
     stop := na
 
 if strategy.position_size != 0 and isFlattenBar and not active
-    strategy.close_all(comment="EOD flat")
+    strategy.close_all(comment="EOD flat", alert_message=f_msg("Exit", math.round(math.abs(strategy.position_size))))
 
 // ==================== VISUALS ====================
 plot(showLevels and not daySkipped and not na(orHigh) ? orHigh : na, "OR High", color=color.new(color.aqua, 0), style=plot.style_linebr)
