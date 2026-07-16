@@ -15,7 +15,7 @@ strategy("UDB-ORB TSLA v3 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-OR
 
 // STATUS 2026-07-14: ONE strategy, FOUR selectable profiles (the "Profile" input). TSLA 5-minute, RTH,
 // OR start 09:30 (selectable). DEFAULT = $10,000 account, 25 shares/unit (~1x unleveraged on TSLA). All
-// share the SAME entry engine, REALISTIC resting stops (beRealistic ON), vol/OR gates, risk-parity
+// share the SAME entry engine, ADOPTED close-triggered stops (Stop trigger 'Close'), vol/OR gates, risk-parity
 // reversal, confirmation OFF. They differ ONLY in the exit:
 //   A1 = Adaptive TP + 25% partial + PEAK-TRAIL runner        (Max Stop $5)
 //   B1 = Adaptive TP + 25% partial + VWAP-CROSS runner        (Max Stop $5)
@@ -34,17 +34,20 @@ strategy("UDB-ORB TSLA v3 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-OR
 //  ==> Strategy Tester P&L = 25x the Python per-unit figures (= the @100-share reports / 4). The 2x
 //  reversal can momentarily hold ~2x notional; margin_long/short are left 0 so it isn't rejected on $10k.
 //
-//  DEFAULT $10,000 / 25-SHARE RESULTS (FULL 2022-2026, REALISTIC resting fills = beRealistic ON):
+//  DEFAULT $10,000 / 25-SHARE RESULTS (FULL 2022-2026, ADOPTED close-triggered stop = Stop trigger 'Close'):
 //    Profile   Net$      %ret   PF    WR    MaxDD$   %DD    WorstDay      (Strategy Tester = per-unit x25)
-//    A1        +2,441    +24%   1.05  46%   -3,718   -37%   -280
-//    B1        +7,716    +77%   1.15  45%   -3,159   -32%   -280         (max net)   <- USER TRADES B1
-//    C1        +7,296    +73%   1.15  47%   -2,761   -28%   -266         (BEST risk-adjusted) <- and C1
-//    C2        +3,118    +31%   1.08  57%   -1,720   -17%   -280         (high WR, smallest DD, lowest net)
+//    A1        +10,817   +108%  1.22  48%   -1,562   -16%   -300
+//    B1        +11,258   +113%  1.23  47%   -1,856   -19%   -300         (max net)   <- USER TRADES B1
+//    C1        +10,371   +104%  1.22  48%   -1,937   -19%   -332         (best PF/DD balance) <- and C1
+//    C2        +4,383    +44%   1.12  57%   -1,673   -17%   -300         (high WR, lowest net; drives OPTIONS)
+//  ADOPTED 2026-07-14 - STOP fires only when the bar CLOSES beyond the level (default 'Close'): +42-46% net
+//    vs the old wick/resting stop, ~40% smaller drawdown, and 2024 FLIPS from a loss to a profit. The TP
+//    still fills on a favorable wick. Walk-forward OOS-confirmed: 2022 & 2023 (never part of discovery)
+//    both +$3.4-5.9k @100. Flip Stop trigger -> 'Wick' for the OLD any-touch resting stop (then beRealistic).
 //  RECONCILE: Strategy Tester net = Python per-unit x 25  (= the @100-share validation reports / 4).
 //  A stop-exit (Base SL / BE Stop / BE Trail) MUST appear in every profile & cap near Max Stop ($5/$6).
-//  WARNING: the OPTIMISTIC touch-fill model (beRealistic OFF) over-reports net ~40-45% - do NOT size off it.
-//  These realistic figures are the truth. Size off 2024 (a losing year), NEVER off the flattering 2026.
-//  READ: C1 = best risk-adjusted (top PF, smallest drawdown, best net/DD, ~=B1 net). B1 = raw-net leader.
+//  Size off 2024 (was a losing year, now marginally green), NEVER off the flattering 2026.
+//  READ: B1 = raw-net leader, C1 = near-equal net with the best PF/DD balance. Both are what the user trades.
 //  A1 = dominated by B1/C1. C2's 57% WR is a mirage (lowest net, WORST drawdown, most losing months -
 //  it caps winners at $2 but still eats full stops). Every profile is positive in all 5 years.
 //=============================================================================================
@@ -87,7 +90,9 @@ atrPeriod       = input.int(14,     "ATR Period (daily bars, C1)", minval=2, gro
 fixedTP         = input.float(2.0,  "Fixed TP $ (C2)", step=0.25, group=grpX)
 beTrigger       = input.float(0.55, "BE Retrace Trigger (% of OR width)", step=0.05, group=grpX)
 beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
-beRealistic     = input.bool(true,  "Realistic resting stop: a BE-retrace can't protect its own firing bar", group=grpX, tooltip="ON (default) = matches a real broker + Python stop_fill_mode 'resting': the stop moved to break-even only rests from the NEXT bar, so a bar that fires the BE-retrace AND hits the base SL fills at the base SL. OFF = old optimistic look-ahead (over-reports ~40-45%).")
+beRealistic     = input.bool(true,  "Realistic resting stop: a BE-retrace can't protect its own firing bar (Wick mode only)", group=grpX, tooltip="Only matters in Wick stop mode. ON = the stop moved to break-even rests from the NEXT bar (a bar firing BE-retrace AND hitting base SL fills at base SL). OFF = old optimistic look-ahead.")
+stopTrigger     = input.string("Close (bar closes beyond)", "Stop trigger", options=["Close (bar closes beyond)", "Wick (any touch)"], group=grpX, tooltip="ADOPTED 2026-07-14 (default Close): the STOP fires only when the bar CLOSES beyond the level and flattens at the close — skips wick fakeouts (+42-46% net / DD -40% over 2022-26, flips 2024 positive; walk-forward OOS-confirmed). The TP stays a resting limit (favorable wick fill). Wick = the old resting stop (any touch fills at the level; beRealistic then applies).")
+stopClose = str.startswith(stopTrigger, "Close")
 partialPct      = input.float(25.0, "Partial Exit Quantity % (A1/B1/C1)", step=1.0, group=grpX)
 runnerMult      = input.float(0.75, "Runner Peak-Trail x OR width (A1)", step=0.05, group=grpX)
 vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit $ (B1/C1)", step=0.25, group=grpX)
@@ -393,29 +398,41 @@ if active and not na(stop) and bar_index >= entryBar
             if not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
                 tpWasHit := true
     if not vwapExited
-        // resting-stop realism: a BE-retrace that fired THIS bar rests only from the NEXT bar, so the
-        // order placed now uses the pre-retrace stop (a same-bar crash fills at the base SL, not entry).
+        // Wick-mode resting-stop realism: a BE-retrace that fired THIS bar rests only from the NEXT bar.
         restStop = (beRealistic and beFiredNow) ? stopBarStart : stop
         beReason = beTrig ? ((tdir == 1 ? restStop > entry : restStop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
         partSh = math.round(posSh * partialPct / 100)   // whole-share 25% partial; runner takes the remainder
         runSh  = posSh - partSh
-        if not usePartial
-            // C2: ONE OCO bracket for the whole position (stop OR target)
-            strategy.exit("X", from_entry=entryId, stop=restStop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit=(inRev ? "REV TP" : "TP"), alert_message=f_msg("Exit", posSh))
+        trailLevel = (usePartial and part1 and not suppressPartial and not runnerVWAP and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
+        isTrail = not na(trailLevel) and (tdir == 1 ? trailLevel >= stop : trailLevel <= stop)
+        if usePartial and part1 and not suppressPartial
+            lastWasTrail := isTrail
+        else if usePartial
+            lastWasTrail := false
+        // stop level governing the remaining position this bar (A1 runner-trail folded in)
+        curStop = not na(trailLevel) ? (tdir == 1 ? math.max(stop, trailLevel) : math.min(stop, trailLevel)) : stop
+        // CLOSE-triggered stop: fire only when the bar CLOSES beyond the level -> flatten at the close.
+        // No manual reset — the de-sync block arms the reversal next bar (a "Trail" exit does not arm).
+        if stopClose and (tdir == 1 ? close <= curStop : close >= curStop)
+            strategy.cancel("P1")
+            strategy.cancel("RUN")
+            strategy.cancel("X")
+            strategy.close(entryId, comment=(inRev ? "REV " : "") + (isTrail ? "Trail" : beReason), alert_message=f_msg("Exit", math.round(math.abs(strategy.position_size))))
         else
-            trailLevel = (part1 and not suppressPartial and not runnerVWAP and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
-            if suppressPartial
-                lastWasTrail := false
-                strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", posSh))
+            // Close mode: rest the TP limits only (stops are close-triggered above). Wick mode: OCO w/ resting stops.
+            if not usePartial
+                strategy.exit("X", from_entry=entryId, stop=(stopClose ? na : restStop), limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit=(inRev ? "REV TP" : "TP"), alert_message=f_msg("Exit", posSh))
+            else if suppressPartial
+                if not stopClose
+                    strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", posSh))
             else if not part1
-                lastWasTrail := false
-                strategy.exit("P1", from_entry=entryId, qty=partSh, stop=restStop, limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit="Partial @ TP", alert_message=f_msg("Exit", partSh))
-                strategy.exit("RUN", from_entry=entryId, qty=runSh, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", runSh))
+                strategy.exit("P1", from_entry=entryId, qty=partSh, stop=(stopClose ? na : restStop), limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit="Partial @ TP", alert_message=f_msg("Exit", partSh))
+                if not stopClose
+                    strategy.exit("RUN", from_entry=entryId, qty=runSh, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", runSh))
             else
-                runnerStop = na(trailLevel) ? restStop : (tdir == 1 ? math.max(restStop, trailLevel) : math.min(restStop, trailLevel))
-                isTrail = not na(trailLevel) and (tdir == 1 ? trailLevel >= stop : trailLevel <= stop)
-                lastWasTrail := isTrail
-                strategy.exit("RUN", from_entry=entryId, qty=runSh, stop=runnerStop, comment=(inRev ? "REV " : "") + (isTrail ? "Trail" : beReason), alert_message=f_msg("Exit", runSh))
+                if not stopClose
+                    runnerStop = na(trailLevel) ? restStop : (tdir == 1 ? math.max(restStop, trailLevel) : math.min(restStop, trailLevel))
+                    strategy.exit("RUN", from_entry=entryId, qty=runSh, stop=runnerStop, comment=(inRev ? "REV " : "") + (isTrail ? "Trail" : beReason), alert_message=f_msg("Exit", runSh))
 
 // ==================== EOD FORCED CLOSE ====================
 if active and isFlattenBar and tdir != 0
