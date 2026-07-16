@@ -1,24 +1,30 @@
-# C2 Options via TradersPost — setup & webhook payloads
+# TSLA Options via TradersPost — setup & webhook payloads
 
 Trade **TSLA options** off the ORB signal by routing the **v3 strategy** through a TradersPost
 webhook. The strategy fires the signals on the **underlying** (TSLA 5m); TradersPost translates each
-alert into an option order. This is wired onto the **adopted close‑triggered stop** — a stop fires
-only when a 5m bar *closes* beyond the level, and that close sends the `exit` JSON.
+alert into an option order, wired onto the **close‑triggered stop**.
 
-## Use profile C2 only
+## Works on ALL profiles — A1/B1/C1 recommended (updated 2026‑07‑16)
 
-Set the strategy to **profile C2** (Fixed $2 target, **FULL exit, no partial/runner**) before switching
-`Order asset` to **Options**. Why C2 and not B1/C1:
+Set `Order asset = Options` on **any** profile. The old "C2‑only" limitation is **fixed**: in Options
+mode the strategy **auto‑suppresses the 25% partial's webhook**, so a single contract **holds through the
+partial and closes only at the runner's final exit** (VWAP / trail / BE / close‑stop / EOD). That's exactly
+what the real 0DTE option backtest priced — and **A1/B1/C1 crush C2 on options**:
 
-- C2 is **one open → one close**. The entry opens a single option; the *first* exit (TP, close‑stop, or
-  EOD) closes it. Clean, and it maps 1:1 to a TradersPost open/close.
-- B1/C1 take a **25% partial**. In options mode that partial sends an `exit`, and TradersPost's `exit`
-  closes the **whole** contract — so you'd be flat after the partial and miss the 75% runner. Do **not**
-  run options on B1/C1.
+| Profile | real 0DTE options, 1 ct, 2025‑26 | why |
+|---|---|---|
+| **A1** | **+$68,150** | peak‑trail rides trend furthest |
+| **B1** | +$62,636 | VWAP runner |
+| **C1** | +$62,462 | ATR target + VWAP runner |
+| C2 | +$22,974 | $2 scalp caps the winners (single open→close, no partial) |
 
-> The Strategy Tester P&L is always the **share‑signal** P&L. Real option P&L (delta / theta / IV) is
-> **not** backtestable here — the underlying's stop/TP fire the entries and exits, nothing more. 0DTE
-> theta is severe; treat the backtest as *signal timing*, not option P&L.
+- **Entry** → open CALL (long) / PUT (short). **Partial** → *no webhook* (contract holds). **Runner/stop/
+  VWAP/EOD full‑flatten** → close. **Reversal** → close the old option, open the opposite.
+- The suppressed partial fires an **empty webhook that TradersPost ignores** (harmless log entry).
+- Keep **`Stop trigger = Close`** (default) so stops flatten cleanly and fire the option close.
+
+> The Strategy Tester P&L is always the **share‑signal** P&L. Real option P&L uses actual OPRA quotes
+> (see the "Real backtest evidence" section) — the Tester can't price options. Trade the **close stop**.
 
 ## Strategy inputs (group "Options via TradersPost")
 
@@ -81,9 +87,10 @@ We priced the signals against **actual TSLA option quotes** (Databento OPRA `cbb
 **Confirmed robust in BOTH bull and bear/chop regimes** — options beat shares 10-16×, nearly every month
 green, max drawdown only ~-$868 (2025-26). Why it works: the strategy's tight BE/base-SL stop **caps each
 option loss small** (early stop-out, avg loss ~-$97) while winners fat-tail on trend/gamma (avg win ~+$364),
-and TSLA's high intraday vol pushes 0DTE ATM ITM often enough. **A1/B1 held to the runner exit (partial
-DISABLED) beat C2** — so for 1-contract options, prefer **A1 or B1 with `use_partial_exit: false`** (a clean
-single open→close that rides the trend), not the C2 $2 scalp. C2 still works, just smaller.
+and TSLA's high intraday vol pushes 0DTE ATM ITM often enough. **A1/B1/C1 (held to the runner exit) beat
+C2** — and the strategy now does this automatically in Options mode (it suppresses the partial's webhook, so
+the contract rides to the runner exit). **Just pick A1, B1, or C1 and set `Order asset = Options`** — no need
+to touch `use_partial_exit`. C2 still works, just smaller.
 
 **Load-bearing caveats:** (1) **regime/VOL-dependent** — TSLA's 3-4%/day vol is essential; a low-vol
 underlying may not clear theta+spread; (2) real fills haircut the `cbbo` figures ~10-30% (slippage beyond
