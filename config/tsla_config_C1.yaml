@@ -6,7 +6,7 @@ symbol: TSLA
 timeframe_minutes: 5
 timezone: America/New_York
 execution:
-  stop_fill_mode: touch
+  stop_fill_mode: close   # ADOPTED 2026-07-14: CLOSE-triggered stop (fires only when the bar CLOSES beyond the level, fills at the close). Beats wick/resting +42% net over 2022-2026, flips 2024 positive, cuts MaxDD ~40% (walk-forward OOS-confirmed on 2022-23). Avoids wick-fakeout stop-outs in chop years; TP stays wick-favorable.
   exit_on_close: true
   protective_stop: false
   daily_loss_limit: 0.0
