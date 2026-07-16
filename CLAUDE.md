@@ -11,8 +11,18 @@ defines the range; a buffered close-break triggers the trade; adaptive TP + 25% 
 never places broker orders.
 
 ## Execution realism (IMPORTANT)
-Signals fire on the 5-minute **bar close**. **ADOPTED 2026-07-11:** `config.yaml` sets
-`execution.stop_fill_mode: touch` — a **real broker resting stop (OCO)**. Stop-type exits
+**ADOPTED 2026-07-14 for the TRADED profiles B1/C1 → `stop_fill_mode: close` (CLOSE-triggered stop).**
+The stop fires ONLY when a 5m bar *closes* beyond the level (fills at the close); the TP still fills on a
+favorable wick. Walk-forward over 2022-2026: **+42-46% net, ~40% smaller drawdown, and 2024 flips from a
+loss to a profit** vs the wick/resting stop — OOS-confirmed on 2022-23 (both never part of the discovery).
+It skips the wick-fakeout stop-outs that dominate choppy years; the trend year barely notices. **TV-validated
+2026-07-15**: the wired v3 Pine strategy (Stop trigger=Close) reconciles to Python close-mode within 1.3%
+(C1) / 2.8% (B1) at zero slippage. NOTE: TV's Strategy Tester models NO slippage → haircut TV numbers ~12%
+for the realistic $0.10/share fills. `config/tsla_best_B.yaml` + `tsla_config_C1.yaml` carry this default;
+the v3 indicator uses `exitOnClose` (default ON), the v3 strategy a `Stop trigger: Close|Wick` input.
+
+Signals fire on the 5-minute **bar close**. **(Prior, 2026-07-11 — now superseded for B1/C1 by close above):**
+`config.yaml` sets `execution.stop_fill_mode: touch` — a **real broker resting stop (OCO)**. Stop-type exits
 (Base SL / BE Stop / BE Trail / runner peak-trail) fill **intrabar at the level**, gap-aware (a bar
 opening beyond the stop fills at the worse open). This lifts 3-year net **+18% (+$295 → +$349/unit)**
 and roughly **halves the worst day (−12.3 → −7.8)**, because BE stops fill at ~entry instead of a bar
