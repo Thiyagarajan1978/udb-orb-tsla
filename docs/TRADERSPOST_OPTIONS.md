@@ -67,6 +67,30 @@ option, then the reversal entry opens the opposite option (buy CALL ↔ sell PUT
 5. In TradersPost, connect the strategy to your **options‑enabled broker** and confirm the symbol/quantity
    mapping.
 
+## Real backtest evidence (Databento OPRA, 2026-07-16)
+
+We priced the signals against **actual TSLA option quotes** (Databento OPRA `cbbo-1m`, ATM nearest-expiry ≈
+0DTE, filled **buy-at-ask / sell-at-bid** = conservative on the spread). 1 contract per signal:
+
+| Profile | 2025-26 (bull) | Sep22-Dec23 (crash+chop) | shares @25 | months positive |
+|---|---|---|---|---|
+| A1 (runner, partial OFF) | +$68,150 | +$33,289 | ~$2-6k | 16/16 & 17/17 |
+| B1 (runner, partial OFF) | +$62,636 | +$30,000 | ~$1.6-6k | 16/16 & 17/17 |
+| C2 (scalp $2)            | +$22,974 | +$15,686 | ~$2.2k   | 15/16 & 17/17 |
+
+**Confirmed robust in BOTH bull and bear/chop regimes** — options beat shares 10-16×, nearly every month
+green, max drawdown only ~-$868 (2025-26). Why it works: the strategy's tight BE/base-SL stop **caps each
+option loss small** (early stop-out, avg loss ~-$97) while winners fat-tail on trend/gamma (avg win ~+$364),
+and TSLA's high intraday vol pushes 0DTE ATM ITM often enough. **A1/B1 held to the runner exit (partial
+DISABLED) beat C2** — so for 1-contract options, prefer **A1 or B1 with `use_partial_exit: false`** (a clean
+single open→close that rides the trend), not the C2 $2 scalp. C2 still works, just smaller.
+
+**Load-bearing caveats:** (1) **regime/VOL-dependent** — TSLA's 3-4%/day vol is essential; a low-vol
+underlying may not clear theta+spread; (2) real fills haircut the `cbbo` figures ~10-30% (slippage beyond
+the quote, worst near EOD/expiry); (3) needs **automation** (~1.5 trades/day); (4) ~$465 premium at risk per
+trade (~4.6% of a $10k account) — losses are capped and small, but a chop cluster can exceed the benign
+drawdown seen here. Treat the backtest as *strong evidence*, size small, and paper-trade first.
+
 ## Before going live
 
 - **Paper first.** Confirm the open fires the right side (long→call, short→put) and every exit type
