@@ -44,3 +44,16 @@ def test_faithful_port_config_preserves_035():
     _assert_common_profile(p)
     assert p.be_retrace_trigger == 0.35             # exact Pine port
     assert p.adaptive_tp_scale == 1.0               # exact Pine port
+
+
+def test_traded_configs_adopt_close_triggered_stop():
+    """B1 + C1 (the TRADED profiles) default to the CLOSE-triggered stop (adopted 2026-07-14):
+    the stop fires only when a bar CLOSES beyond the level. Walk-forward over 2022-2026 this beat
+    the wick/resting stop by +42-46% net with ~40% smaller drawdown and flipped 2024 from a loss to
+    a profit (OOS-confirmed on 2022-23), and the wired Pine strategy reconciles to it within 1-3%.
+    This asserts the default cannot silently revert to the wick/touch stop."""
+    for name in ("tsla_best_B.yaml", "tsla_config_C1.yaml"):
+        p = Params.from_config(load_config(_ROOT / "config" / name))
+        assert p.exit_on_close is True, f"{name}: close-trigger not resolved"
+        assert p.stop_fill_touch is False, f"{name}: must not use the wick/touch resting fill"
+        assert p.be_lag is False, f"{name}: be_lag is a wick-mode concern, off under close"

@@ -159,6 +159,30 @@ def test_exit_on_close_makes_be_stop_a_real_loss():
     assert on_close.trades[0].outcome == "failure"
 
 
+def test_close_trigger_skips_wick_that_closes_back_above_stop():
+    """CLOSE-triggered stop (adopted default for B1/C1): a bar whose WICK pierces the base SL but
+    which CLOSES back above it must NOT stop out — the wick fakeout is skipped. The wick/touch model
+    stops on that same bar. This is the mechanism behind the +42-46% net / 2024-flips-green edge."""
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),      # OR: low 99 -> base SL at 99
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),     # long @101.5 (risk = 101.5-99 = 2.5)
+        (9, 40, 101, 101.2, 98.8, 100.5, 1000),      # WICK to 98.8 (< SL) but CLOSES 100.5 (> SL)
+        (15, 50, 102, 102.1, 101.9, 102.0, 1000),    # EOD close @102
+    ]
+    ovr = {"use_be_retrace": False}   # isolate the base SL (no BE retrace moving the stop)
+    wick = _run({"2024-06-03": rows}, profile_overrides=ovr,
+                execution_overrides={"stop_fill_mode": "touch"})
+    close = _run({"2024-06-03": rows}, profile_overrides=ovr,
+                 execution_overrides={"stop_fill_mode": "close"})
+    # wick/touch: the 98.8 wick hits the resting stop at 99 -> stopped out (-$2.50)
+    assert wick.trades[0].reason == "Base SL"
+    assert abs(wick.trades[0].pnl_total - (99.0 - 101.5)) < 1e-9
+    # close: the bar closes at 100.5 (above 99) -> survives; rides to the EOD close 102 (+$0.50)
+    assert close.trades[0].reason == "EOD"
+    assert abs(close.trades[0].pnl_total - (102.0 - 101.5)) < 1e-9
+    assert close.trades[0].pnl_total > wick.trades[0].pnl_total
+
+
 def test_protective_stop_caps_a_crash_bar():
     """A resting protective stop at the OR boundary caps a crash bar at base-SL risk, not the
     (much lower) close."""
