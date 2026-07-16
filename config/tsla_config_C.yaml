@@ -7,7 +7,7 @@ symbol: TSLA
 timeframe_minutes: 5
 timezone: America/New_York
 execution:
-  stop_fill_mode: touch
+  stop_fill_mode: close   # ADOPTED 2026-07-15: CLOSE-triggered stop (fires only when the bar CLOSES beyond the level, fills at the close; TP stays wick-favorable). C2 (no partial) drives the OPTIONS webhook - a clean single open->close. Same close-stop model adopted across all v3 profiles (walk-forward: +42-46% net, DD -40%, 2024 flips green over 2022-2026).
   exit_on_close: true
   protective_stop: false
   daily_loss_limit: 0.0

@@ -6,7 +6,7 @@ symbol: TSLA
 timeframe_minutes: 5
 timezone: America/New_York
 execution:
-  stop_fill_mode: touch
+  stop_fill_mode: close   # ADOPTED 2026-07-15: CLOSE-triggered stop (fires only when the bar CLOSES beyond the level, fills at the close; TP stays wick-favorable). Same close-stop model adopted for the traded B1/C1 (walk-forward: +42-46% net, DD -40%, 2024 flips green over 2022-2026). A1 is not traded but kept consistent with the v3 indicator (exitOnClose default ON).
   exit_on_close: true
   protective_stop: false
   daily_loss_limit: 0.0
