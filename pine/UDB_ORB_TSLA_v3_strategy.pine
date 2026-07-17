@@ -108,7 +108,7 @@ revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, g
 grpO = "Options via TradersPost (webhook)"
 orderAsset     = input.string("Shares", "Order asset", options=["Shares", "Options"], group=grpO, tooltip="Shares = the stock JSON (Buy/Sell/Exit, rounded shares). Options = TradersPost options JSON: a LONG signal buys a CALL, a SHORT signal buys a PUT, any full exit closes. WORKS ON ALL PROFILES incl A1/B1/C1: in Options mode the 25% partial's webhook is SUPPRESSED, so the single contract HOLDS through the partial and closes only at the runner's final exit (VWAP / trail / BE / close-stop / EOD) — matching the real 0DTE option backtest (A1/B1/C1 >> C2 on options). The Strategy Tester still shows the SHARE-signal P&L; real option P&L (delta/theta/IV) is NOT backtestable here. The suppressed partial fires an empty webhook that TradersPost ignores (harmless).")
 optContracts   = input.int(2,        "Option contracts (quantity)", minval=1, group=grpO, tooltip="DEFAULT 2. The real 0DTE backtest figures are PER CONTRACT, so 2 contracts = 2x P&L AND 2x premium at risk (~$465/ct -> ~$930/trade on TSLA, ~9% of a $10k account). Losses are capped small (~-$97/ct). Raise/lower to your risk tolerance.")
-optExpiration  = input.string("+0 days", "Option expiration", group=grpO, tooltip="0DTE = '+0 days'. Nearest weekly = '+2 days'/'+3 days' or a date like '2026-07-18'.")
+optExpiration  = input.string("+0 days", "Option expiration", options=["+0 days", "+1 days", "+2 days", "+3 days", "+7 days"], group=grpO, tooltip="0DTE / nearest = '+0 days' (default). WEEKLY ~= '+2 days' / '+3 days' (approximates the nearest Friday). BACKTEST: WEEKLY beat 0DTE by ~3-5% net (A1/B1/C1 +$2-3k over 2025-26) because the 2-3h avg holds bleed LESS THETA with an extra day of DTE — but the weekly costs ~22% more premium ($6.37 vs $5.24/ct), so 2 weekly ct risk more $ than 2 0DTE ct. Pick during paper trading. (The selected value is passed straight into the TradersPost 'expiration' field.)")
 optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0, group=grpO)
 
 // ---- WEBHOOK ALERTS: per-order JSON via alert_message. In TradingView set the alert message to
@@ -117,6 +117,8 @@ optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0
 //   Options : TradersPost — long->buy CALL, short->sell PUT, full-exit->close; contracts + 0DTE ATM via inputs.
 //             WORKS ON ALL PROFILES: the 25% partial's webhook is auto-suppressed so 1 contract HOLDS to the
 //             runner exit (A1/B1/C1 >> C2 on real 0DTE options: 2025-7/16 +$70k/+$65k/+$64k vs +$26k @1 ct (18/18 mo+)).
+//             EXPIRY: 0DTE vs WEEKLY tested — WEEKLY (+2/+3 days) beat 0DTE ~3-5% net (less theta on 2-3h holds)
+//             but costs ~22% more premium. Selectable via the 'Option expiration' dropdown; default +0 days.
 f_msg(act, q) =>
     string out = na
     if orderAsset == "Options"
