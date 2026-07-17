@@ -31,27 +31,27 @@ what the real 0DTE option backtest priced — and **A1/B1/C1 crush C2 on options
 | Input | Default | Meaning |
 |---|---|---|
 | `Order asset` | `Shares` → set to **`Options`** | switches the JSON from shares to options |
-| `Option contracts (quantity)` | **`4`** | contracts per order — **default 4** (P&L *and* premium at risk both scale ×4 vs the per‑contract backtest) |
+| `Option contracts (quantity)` | **`2`** | contracts per order — **default 2** (P&L *and* premium at risk both scale ×2 vs the per‑contract backtest) |
 | `Option expiration` | `+0 days` | 0DTE. Weeklies: `+2 days` / `+3 days`, or a date `2026-07-18` |
 | `Strikes away from ATM` | `0` | 0 = ATM; 1 = one strike OTM, etc. |
 
-> **Sizing note:** 4 contracts ≈ **~$1,860 premium at risk per trade** on TSLA (~18% of a $10k account).
-> Losses are capped small (~−$97/contract → ~−$388/trade), but 4× is aggressive — drop to 1–2 contracts if
-> that risk is too high. All the backtest figures below are **per 1 contract**; multiply by 4 for the default.
+> **Sizing note:** 2 contracts ≈ **~$930 premium at risk per trade** on TSLA (~9% of a $10k account).
+> Losses are capped small (~−$97/contract → ~−$194/trade). Raise to 3–4 for more, drop to 1 for less —
+> the scaling is linear. All the backtest figures below are **per 1 contract**; multiply by 2 for the default.
 
 ## Webhook payloads (exactly what the alert sends)
 
 A **long** signal buys a CALL, a **short** signal buys a PUT, and **any** exit closes. With the defaults
-(4 contracts, 0DTE, ATM) the `{{strategy.order.alert_message}}` resolves to:
+(2 contracts, 0DTE, ATM) the `{{strategy.order.alert_message}}` resolves to:
 
 **Long entry (open CALL):**
 ```json
-{"ticker":"TSLA", "action":"buy", "quantity":4, "expiration":"+0 days", "optionType":"call", "strikesAway":0}
+{"ticker":"TSLA", "action":"buy", "quantity":2, "expiration":"+0 days", "optionType":"call", "strikesAway":0}
 ```
 
 **Short entry (open PUT):**
 ```json
-{"ticker":"TSLA", "action":"sell", "quantity":4, "expiration":"+0 days", "optionType":"put", "strikesAway":0}
+{"ticker":"TSLA", "action":"sell", "quantity":2, "expiration":"+0 days", "optionType":"put", "strikesAway":0}
 ```
 
 **Any exit — TP, close‑stop (Base SL / BE Stop / BE Trail), EOD, or a reversal flip (closes the old side):**
@@ -64,7 +64,7 @@ option, then the reversal entry opens the opposite option (buy CALL ↔ sell PUT
 
 ## TradingView alert setup
 
-1. On the chart, select **profile C2** and set **`Order asset = Options`** (adjust contracts / expiration
+1. On the chart, select your profile (**A1/B1/C1** recommended) and set **`Order asset = Options`** (adjust contracts / expiration
    / strikes as desired). Leave **`Stop trigger = Close`** (the adopted default).
 2. Create an alert on the **strategy** → **Condition: the strategy**, **Order fills only**.
 3. Set the alert **Message** to exactly:
@@ -84,8 +84,8 @@ We priced the signals against **actual TSLA option quotes** (Databento OPRA `cbb
 
 | Profile | 2025-26 (bull) | Sep22-Dec23 (crash+chop) | shares @25 | months positive |
 |---|---|---|---|---|
-| A1 (runner, partial OFF) | +$68,150 | +$33,289 | ~$2-6k | 16/16 & 17/17 |
-| B1 (runner, partial OFF) | +$62,636 | +$30,000 | ~$1.6-6k | 16/16 & 17/17 |
+| A1 (runner) | +$68,150 | +$33,289 | ~$2-6k | 16/16 & 17/17 |
+| B1 (runner) | +$62,636 | +$30,000 | ~$1.6-6k | 16/16 & 17/17 |
 | C2 (scalp $2)            | +$22,974 | +$15,686 | ~$2.2k   | 15/16 & 17/17 |
 
 **Confirmed robust in BOTH bull and bear/chop regimes** — options beat shares 10-16×, nearly every month
