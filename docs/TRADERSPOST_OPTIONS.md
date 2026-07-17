@@ -31,23 +31,27 @@ what the real 0DTE option backtest priced — and **A1/B1/C1 crush C2 on options
 | Input | Default | Meaning |
 |---|---|---|
 | `Order asset` | `Shares` → set to **`Options`** | switches the JSON from shares to options |
-| `Option contracts (quantity)` | `1` | contracts per order |
+| `Option contracts (quantity)` | **`4`** | contracts per order — **default 4** (P&L *and* premium at risk both scale ×4 vs the per‑contract backtest) |
 | `Option expiration` | `+0 days` | 0DTE. Weeklies: `+2 days` / `+3 days`, or a date `2026-07-18` |
 | `Strikes away from ATM` | `0` | 0 = ATM; 1 = one strike OTM, etc. |
+
+> **Sizing note:** 4 contracts ≈ **~$1,860 premium at risk per trade** on TSLA (~18% of a $10k account).
+> Losses are capped small (~−$97/contract → ~−$388/trade), but 4× is aggressive — drop to 1–2 contracts if
+> that risk is too high. All the backtest figures below are **per 1 contract**; multiply by 4 for the default.
 
 ## Webhook payloads (exactly what the alert sends)
 
 A **long** signal buys a CALL, a **short** signal buys a PUT, and **any** exit closes. With the defaults
-(1 contract, 0DTE, ATM) the `{{strategy.order.alert_message}}` resolves to:
+(4 contracts, 0DTE, ATM) the `{{strategy.order.alert_message}}` resolves to:
 
 **Long entry (open CALL):**
 ```json
-{"ticker":"TSLA", "action":"buy", "quantity":1, "expiration":"+0 days", "optionType":"call", "strikesAway":0}
+{"ticker":"TSLA", "action":"buy", "quantity":4, "expiration":"+0 days", "optionType":"call", "strikesAway":0}
 ```
 
 **Short entry (open PUT):**
 ```json
-{"ticker":"TSLA", "action":"sell", "quantity":1, "expiration":"+0 days", "optionType":"put", "strikesAway":0}
+{"ticker":"TSLA", "action":"sell", "quantity":4, "expiration":"+0 days", "optionType":"put", "strikesAway":0}
 ```
 
 **Any exit — TP, close‑stop (Base SL / BE Stop / BE Trail), EOD, or a reversal flip (closes the old side):**

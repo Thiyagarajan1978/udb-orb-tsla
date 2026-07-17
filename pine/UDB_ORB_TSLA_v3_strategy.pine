@@ -107,7 +107,7 @@ revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, g
 
 grpO = "Options via TradersPost (webhook)"
 orderAsset     = input.string("Shares", "Order asset", options=["Shares", "Options"], group=grpO, tooltip="Shares = the stock JSON (Buy/Sell/Exit, rounded shares). Options = TradersPost options JSON: a LONG signal buys a CALL, a SHORT signal buys a PUT, any full exit closes. WORKS ON ALL PROFILES incl A1/B1/C1: in Options mode the 25% partial's webhook is SUPPRESSED, so the single contract HOLDS through the partial and closes only at the runner's final exit (VWAP / trail / BE / close-stop / EOD) — matching the real 0DTE option backtest (A1/B1/C1 >> C2 on options). The Strategy Tester still shows the SHARE-signal P&L; real option P&L (delta/theta/IV) is NOT backtestable here. The suppressed partial fires an empty webhook that TradersPost ignores (harmless).")
-optContracts   = input.int(1,        "Option contracts (quantity)", minval=1, group=grpO)
+optContracts   = input.int(4,        "Option contracts (quantity)", minval=1, group=grpO, tooltip="DEFAULT 4. The real 0DTE backtest figures are PER CONTRACT, so 4 contracts = 4x P&L AND 4x premium at risk (~$465/ct -> ~$1,860/trade on TSLA, ~18% of a $10k account). Losses are capped small (~-$97/ct) but size to your risk.")
 optExpiration  = input.string("+0 days", "Option expiration", group=grpO, tooltip="0DTE = '+0 days'. Nearest weekly = '+2 days'/'+3 days' or a date like '2026-07-18'.")
 optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0, group=grpO)
 
