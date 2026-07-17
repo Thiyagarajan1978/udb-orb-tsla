@@ -11,12 +11,12 @@ mode the strategy **auto‑suppresses the 25% partial's webhook**, so a single c
 partial and closes only at the runner's final exit** (VWAP / trail / BE / close‑stop / EOD). That's exactly
 what the real 0DTE option backtest priced — and **A1/B1/C1 crush C2 on options**:
 
-| Profile | real 0DTE options, 1 ct, 2025‑26 | why |
+| Profile | real 0DTE options, 1 ct, 2025→7/16 (18 mo) | why |
 |---|---|---|
-| **A1** | **+$67,206** | peak‑trail rides trend furthest |
-| **B1** | +$61,692 | VWAP runner |
-| **C1** | +$60,725 | ATR target + VWAP runner |
-| C2 | +$23,752 | $2 scalp caps the winners (single open→close, no partial) |
+| **A1** | **+$70,460** | peak‑trail rides trend furthest |
+| **B1** | +$65,372 | VWAP runner |
+| **C1** | +$64,360 | ATR target + VWAP runner |
+| C2 | +$25,508 | $2 scalp caps the winners (single open→close, no partial) |
 
 - **Entry** → open CALL (long) / PUT (short). **Partial** → *no webhook* (contract holds). **Runner/stop/
   VWAP/EOD full‑flatten** → close. **Reversal** → close the old option, open the opposite.
@@ -84,10 +84,10 @@ We priced the signals against **actual TSLA option quotes** (Databento OPRA `cbb
 
 | Profile | 2025-26 (bull) | Sep22-Dec23 (crash+chop) | shares @25 | months positive |
 |---|---|---|---|---|
-| A1 (runner) | +$67,206 | +$37,130 | ~$2-6k | 16/16 & 17/17 |
-| B1 (runner) | +$61,692 | +$33,841 | ~$1.6-6k | 16/16 & 17/17 |
-| C1 (runner) | +$60,725 | +$34,537 | ~$2-6k | 16/16 & 17/17 |
-| C2 (scalp $2)            | +$23,752 | +$19,291 | ~$2.2k   | 15/16 & 17/17 |
+| A1 (runner) | +$70,460 | +$37,130 | ~$2-6k | 16/16 & 17/17 |
+| B1 (runner) | +$65,372 | +$33,841 | ~$1.6-6k | 16/16 & 17/17 |
+| C1 (runner) | +$64,360 | +$34,537 | ~$2-6k | 16/16 & 17/17 |
+| C2 (scalp $2)            | +$25,508 | +$19,291 | ~$2.2k   | 15/16 & 17/17 |
 
 > Corrected 2026-07-17: an earlier version mapped reversal-longs to PUTs instead of CALLs in the pricing
 > script (analysis only — the live Pine strategy always mapped call/put from the actual order side, so it

@@ -116,7 +116,7 @@ optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0
 //   Shares  : action Buy (long entry) / Sell (short entry) / Exit (any close); quantity = ROUNDED whole shares.
 //   Options : TradersPost — long->buy CALL, short->sell PUT, full-exit->close; contracts + 0DTE ATM via inputs.
 //             WORKS ON ALL PROFILES: the 25% partial's webhook is auto-suppressed so 1 contract HOLDS to the
-//             runner exit (A1/B1/C1 >> C2 on real 0DTE options: 2025-26 +$67k/+$62k/+$61k vs +$24k @1 ct).
+//             runner exit (A1/B1/C1 >> C2 on real 0DTE options: 2025-7/16 +$70k/+$65k/+$64k vs +$26k @1 ct (18/18 mo+)).
 f_msg(act, q) =>
     string out = na
     if orderAsset == "Options"

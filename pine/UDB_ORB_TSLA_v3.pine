@@ -18,7 +18,7 @@ indicator("UDB-ORB TSLA v3 - A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3", ove
 //  OPTIONS (TradersPost 0DTE) live in the v3 STRATEGY, not here (this indicator has no orders/positions):
 //    set Order asset=Options there. Works on ALL profiles (the 25% partial's webhook is auto-suppressed so
 //    1 contract rides to the runner exit); default 2 contracts. Real 0DTE backtest @1ct 2025-26:
-//    A1 +$67,206 / B1 +$61,692 / C1 +$60,725 >> C2 +$23,752 — so A1/B1/C1, NOT C2, are the options picks.
+//    A1 +$70,460 / B1 +$65,372 / C1 +$64,360 >> C2 +$25,508 (18/18 mo+) — so A1/B1/C1, NOT C2, are the options picks.
 //    This indicator's alerts stay human-readable text + per-profile alertcondition()s (no webhook JSON).
 //=============================================================================================
 
