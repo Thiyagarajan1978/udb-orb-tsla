@@ -8,12 +8,18 @@ indicator("UDB-ORB TSLA v3 - A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3", ove
 //   A1 = Adaptive TP + 25% partial + PEAK-TRAIL runner   (Max Stop $5)
 //   B1 = Adaptive TP + 25% partial + VWAP-CROSS runner   (Max Stop $5)
 //   C1 = ATR-target (0.25x14d ATR) + 25% partial + VWAP  (Max Stop $6)   <- best PF
-//   C2 = Fixed $2 target, FULL exit (no partial/runner)  (Max Stop $5)   <- highest win rate; drives OPTIONS
+//   C2 = Fixed $2 target, FULL exit (no partial/runner)  (Max Stop $5)   <- highest win rate, lowest net
 //  ADOPTED RESULTS (close-triggered stop = exitOnClose ON; net per 1 UNIT; x25 = strategy on $10k, x100 = @100sh):
 //  FULL 2022-2026 -> A1 +432.7/u (+108% on $10k), B1 +450.3/u (+113%), C1 +414.8/u (+104%), C2 +175.3/u (+44%).
 //  PF: A1 1.22 / B1 1.23 / C1 1.22 / C2 1.12.   MaxDD on $10k: A1 -16% / B1 -19% / C1 -19% / C2 -17%.
 //  USER TRADES B1 (max net) + C1 (best PF/DD balance). CLOSE-triggered stop = +42-46% net vs the old wick
 //  stop, DD -40%, and 2024 FLIPS to a profit (OOS-confirmed on 2022-23). Set exitOnClose OFF for the old wick.
+//  5m OR is CONFIRMED optimal (15m OR tested 2026-07-16 = worse in every profile/period: enters after the thrust).
+//  OPTIONS (TradersPost 0DTE) live in the v3 STRATEGY, not here (this indicator has no orders/positions):
+//    set Order asset=Options there. Works on ALL profiles (the 25% partial's webhook is auto-suppressed so
+//    1 contract rides to the runner exit); default 2 contracts. Real 0DTE backtest @1ct 2025-26:
+//    A1 +$68,150 / B1 +$62,636 / C1 +$62,462 >> C2 +$22,974 — so A1/B1/C1, NOT C2, are the options picks.
+//    This indicator's alerts stay human-readable text + per-profile alertcondition()s (no webhook JSON).
 //=============================================================================================
 
 // ==================== PROFILE ====================
