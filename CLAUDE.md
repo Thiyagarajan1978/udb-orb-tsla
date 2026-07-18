@@ -116,6 +116,17 @@ cli.py                 # backtest | live | tune | init-db | fetch
 ui/app.py              # Streamlit B Square dashboard (:8080)
 ```
 
+## Options forward test (out-of-sample, Databento shadow — no broker, no money)
+`forward_test.py` prices the FROZEN strategy's new-session signals against REAL TSLA option quotes
+(Databento OPRA `cbbo-1m`, buy-ask/sell-bid), for all 4 profiles at BOTH expiries (0DTE nearest + weekly
+Friday), and APPENDS to `exports/forward_options_ledger.csv` (gitignored — it's data). Idempotent; OPRA
+releases T+1 so it prices up to the last fully-available session. Needs `DATABENTO_API_KEY` (env or .env).
+- Run:      `python forward_test.py`                 (prices new sessions since the ledger)
+- Backfill: `python forward_test.py --start 2026-07-10 --end 2026-07-16`
+- Schedule: `run_forward_test.bat` via Task Scheduler ~9:00 AM ET (T+1 after close). ~$0.05/day.
+This validates the SIGNAL edge going forward; it still assumes fills at the quote — TradersPost paper
+trading is the complementary test for real fill quality.
+
 ## Run
 - Backtest:  `python cli.py backtest --start 2024-01-02 --end 2024-12-31`
 - Live:      `python cli.py live`  (alerts-only loop)

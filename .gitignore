@@ -25,3 +25,6 @@ data/results/
 Thumbs.db
 .vscode/
 .idea/
+
+# local trade CSVs + forward-test ledger (data, not code)
+exports/
