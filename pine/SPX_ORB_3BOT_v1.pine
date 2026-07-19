@@ -1,0 +1,133 @@
+//@version=6
+indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// STATUS 2026-07-18: SEPARATE indicator for the SPX 0DTE system — deliberately NOT part of the
+// UDB-ORB TSLA suite (different symbol, different concept, different risk). ALERTS-ONLY.
+// Chart: SPX (or SPXW-settling index), 5-minute, RTH. Options: SPXW 0DTE, strikes are 5-wide.
+//
+// THE SYSTEM (validated on real OPRA cbbo-1m quotes, 2024-01 -> 2026-07, 628 days; see
+// docs/SPX_ANALYSIS.md + scripts/spx/price_hersystem_ts30.py):
+//   BOT1  15m OR break -> BUY ATM 0DTE (CALL on up / PUT on dn). TP +50% of premium,
+//         SL -50%, TIME STOP 30 min (flatten at market if no bracket hit — ADOPTED:
+//         +9% net vs no time stop, kills the 6h theta-bleed tail; median hold 31 min).
+//   BOT2  30m OR break -> SELL 5-wide credit spread AGAINST the break-through level
+//         (up-break = PUT spread, dn-break = CALL spread), short leg ~0.30% OTM.
+//         Close at 50% of credit. Stop if buy-back >= 2x credit. NO time stop (tested: hurts).
+//   BOT3  60m OR break -> same as BOT2 but 10-wide.
+// RESULTS @1ct (x10 = 10 contracts): 2024 +$139,875 / 2025 +$202,866 / 2026(H1) +$124,170,
+// combined +$466,911, WR 70%, 0 losing months in 31, worst day -$6,740.
+// CAVEATS: no bear-market coverage in the test; worst days are fast <30min moves on expensive
+// premium — consider skipping BOT1 when ATM premium > ~$35/share. Forward-test before capital.
+
+// ==================== INPUTS ====================
+bufPct    = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
+enB1      = input.bool(true,  "Bot1: 15m OR — long ATM 0DTE",        group="Bots")
+enB2      = input.bool(true,  "Bot2: 30m OR — 5-wide credit spread", group="Bots")
+enB3      = input.bool(true,  "Bot3: 60m OR — 10-wide credit spread",group="Bots")
+tsMin     = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bots")
+otmPct    = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots") * 0.01
+strikeStep= input.float(5.0, "Strike spacing", group="Bots")
+showOR    = input.bool(true, "Show OR boxes", group="Display")
+showTbl   = input.bool(true, "Show status table", group="Display")
+
+isRTH   = not na(time(timeframe.period, "0930-1600", "America/New_York"))
+newDay  = ta.change(time("D")) != 0
+is5m    = timeframe.isintraday and timeframe.multiplier == 5
+if barstate.isfirst and not is5m
+    runtime.error("SPX-ORB 3BOT requires a 5-minute chart.")
+
+// RTH bar index for today (0 = 09:30 bar)
+var int rthIx = na
+rthIx := isRTH ? (na(rthIx[1]) or newDay ? 0 : nz(rthIx[1]) + 1) : na
+
+// ==================== OR TRACKING (15 / 30 / 60 min = 3 / 6 / 12 bars) ====================
+var float hi15 = na, var float lo15 = na
+var float hi30 = na, var float lo30 = na
+var float hi60 = na, var float lo60 = na
+if isRTH and rthIx == 0
+    hi15 := high, lo15 := low
+    hi30 := high, lo30 := low
+    hi60 := high, lo60 := low
+if isRTH and rthIx > 0
+    if rthIx <= 2
+        hi15 := math.max(hi15, high), lo15 := math.min(lo15, low)
+    if rthIx <= 5
+        hi30 := math.max(hi30, high), lo30 := math.min(lo30, low)
+    if rthIx <= 11
+        hi60 := math.max(hi60, high), lo60 := math.min(lo60, low)
+
+// ==================== SIGNALS (first break per bot per day) ====================
+var int b1Dir = 0, var int b2Dir = 0, var int b3Dir = 0     // 0 none, +1 up, -1 dn
+var int b1Bar = na
+if newDay
+    b1Dir := 0, b2Dir := 0, b3Dir := 0, b1Bar := na
+
+b1Up = enB1 and isRTH and rthIx > 2  and b1Dir == 0 and close > hi15 * (1 + bufPct)
+b1Dn = enB1 and isRTH and rthIx > 2  and b1Dir == 0 and close < lo15 * (1 - bufPct)
+b2Up = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close > hi30 * (1 + bufPct)
+b2Dn = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close < lo30 * (1 - bufPct)
+b3Up = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close > hi60 * (1 + bufPct)
+b3Dn = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close < lo60 * (1 - bufPct)
+
+if b1Up or b1Dn
+    b1Dir := b1Up ? 1 : -1
+    b1Bar := bar_index
+if b2Up or b2Dn
+    b2Dir := b2Up ? 1 : -1
+if b3Up or b3Dn
+    b3Dir := b3Up ? 1 : -1
+
+// Bot1 time stop: tsMin minutes = tsMin/5 bars after the signal bar
+tsBars  = math.max(1, math.round(tsMin / 5.0))
+b1Stop  = enB1 and not na(b1Bar) and bar_index == b1Bar + tsBars
+
+// ==================== SUGGESTED CONTRACTS ====================
+atmK  = math.round(close / strikeStep) * strikeStep
+psS   = math.floor(close * (1 - otmPct) / strikeStep) * strikeStep   // put-spread short (up-break)
+csS   = math.ceil(close * (1 + otmPct) / strikeStep) * strikeStep    // call-spread short (dn-break)
+f0(x) => str.tostring(x, "#")
+
+if b1Up or b1Dn
+    label.new(bar_index, b1Up ? low : high,
+      "BOT1 " + (b1Up ? "▲ BUY ATM CALL " : "▼ BUY ATM PUT ") + f0(atmK) + " 0DTE\nTP +50% · SL -50% · time stop " + str.tostring(tsMin) + "m",
+      style=b1Up ? label.style_label_up : label.style_label_down, color=b1Up ? color.new(color.teal, 10) : color.new(color.maroon, 10), textcolor=color.white, size=size.small)
+if b2Up or b2Dn
+    label.new(bar_index, b2Up ? low : high,
+      "BOT2 SELL 5-wide " + (b2Up ? "PUT spread " + f0(psS) + "/" + f0(psS - 5) : "CALL spread " + f0(csS) + "/" + f0(csS + 5)) + " 0DTE\nclose @50% credit · stop @2x",
+      style=b2Up ? label.style_label_up : label.style_label_down, color=color.new(color.blue, 20), textcolor=color.white, size=size.small)
+if b3Up or b3Dn
+    label.new(bar_index, b3Up ? low : high,
+      "BOT3 SELL 10-wide " + (b3Up ? "PUT spread " + f0(psS) + "/" + f0(psS - 10) : "CALL spread " + f0(csS) + "/" + f0(csS + 10)) + " 0DTE\nclose @50% credit · stop @2x",
+      style=b3Up ? label.style_label_up : label.style_label_down, color=color.new(color.purple, 20), textcolor=color.white, size=size.small)
+if b1Stop
+    label.new(bar_index, high, "BOT1 TIME STOP — flatten if still open", style=label.style_label_down, color=color.new(color.orange, 10), textcolor=color.black, size=size.small)
+
+// ==================== OR VISUALS ====================
+plot(showOR and isRTH and rthIx > 2  ? hi15 : na, "OR15 High", color.new(color.teal, 40),  2, plot.style_linebr)
+plot(showOR and isRTH and rthIx > 2  ? lo15 : na, "OR15 Low",  color.new(color.teal, 40),  2, plot.style_linebr)
+plot(showOR and isRTH and rthIx > 5  ? hi30 : na, "OR30 High", color.new(color.blue, 55),  1, plot.style_linebr)
+plot(showOR and isRTH and rthIx > 5  ? lo30 : na, "OR30 Low",  color.new(color.blue, 55),  1, plot.style_linebr)
+plot(showOR and isRTH and rthIx > 11 ? hi60 : na, "OR60 High", color.new(color.purple, 55),1, plot.style_linebr)
+plot(showOR and isRTH and rthIx > 11 ? lo60 : na, "OR60 Low",  color.new(color.purple, 55),1, plot.style_linebr)
+
+// ==================== STATUS TABLE ====================
+var table tbl = table.new(position.top_right, 2, 4, bgcolor=color.new(color.black, 20), border_width=1)
+stat(d) => d == 0 ? "armed" : d == 1 ? "▲ UP" : "▼ DN"
+if showTbl and barstate.islast
+    table.cell(tbl, 0, 0, "SPX-ORB 3BOT", text_color=color.white, text_size=size.small)
+    table.cell(tbl, 1, 0, "0DTE managed-early", text_color=color.gray, text_size=size.tiny)
+    table.cell(tbl, 0, 1, "Bot1 15m long",  text_color=color.teal,   text_size=size.tiny)
+    table.cell(tbl, 1, 1, stat(b1Dir), text_color=color.white, text_size=size.tiny)
+    table.cell(tbl, 0, 2, "Bot2 30m 5-wide", text_color=color.blue,  text_size=size.tiny)
+    table.cell(tbl, 1, 2, stat(b2Dir), text_color=color.white, text_size=size.tiny)
+    table.cell(tbl, 0, 3, "Bot3 60m 10-wide", text_color=color.purple, text_size=size.tiny)
+    table.cell(tbl, 1, 3, stat(b3Dir), text_color=color.white, text_size=size.tiny)
+
+// ==================== ALERTS ====================
+alertcondition(b1Up, "BOT1 UP — buy ATM CALL",  "SPX BOT1: 15m OR broke UP. BUY ATM 0DTE CALL. TP +50%, SL -50%, time stop 30m.")
+alertcondition(b1Dn, "BOT1 DN — buy ATM PUT",   "SPX BOT1: 15m OR broke DOWN. BUY ATM 0DTE PUT. TP +50%, SL -50%, time stop 30m.")
+alertcondition(b2Up, "BOT2 UP — sell PUT spread","SPX BOT2: 30m OR broke UP. SELL 5-wide PUT credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
+alertcondition(b2Dn, "BOT2 DN — sell CALL spread","SPX BOT2: 30m OR broke DOWN. SELL 5-wide CALL credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
+alertcondition(b3Up, "BOT3 UP — sell PUT spread","SPX BOT3: 60m OR broke UP. SELL 10-wide PUT credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
+alertcondition(b3Dn, "BOT3 DN — sell CALL spread","SPX BOT3: 60m OR broke DOWN. SELL 10-wide CALL credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
+alertcondition(b1Stop, "BOT1 TIME STOP", "SPX BOT1: 30 minutes elapsed — flatten the long option if still open.")

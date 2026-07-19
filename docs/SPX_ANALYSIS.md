@@ -67,3 +67,26 @@ carries the P&L — which is why the null control (same structure, no timing) lo
 **Recommendation**: signal survives every falsification test run so far; treat like
 TSLA — forward-test it (shadow ledger) before committing capital. TSLA remains the
 primary validated system.
+
+## Phase 3 — refinement + ports (2026-07-18, this repo)
+**30-min time stop on Bot 1 (ADOPTED for the SPX spec)**: brackets active 30 min, then
+flatten. +$17,525 net (+9% on Bot 1), combined +$466,911, WR 66→70%, every year improves,
+median hold 31 min, 2025 worst day −23%. 60/90-min stops worse; time-stopping the spreads
+kills the gain (leave them credit-managed). `scripts/spx/price_hersystem_ts30.py`,
+results `exports/spx/ts30.log`.
+
+**TradingView indicator**: `pine/SPX_ORB_3BOT_v1.pine` — standalone, alerts-only,
+deliberately separate from the UDB-ORB TSLA suite. 15/30/60m OR, per-bot alerts,
+strike suggestions, 30-min time-stop alert.
+
+**Same concept on TSLA** (`scripts/spx/price_3bot_tsla.py`, real OPRA quotes, nearest
+weekly expiry DTE 0-4; 2022-09→2023-12 incl. the bear + 2025-01→2026-07; 2024 uncached):
+- **Bot 1 works**: +$36,103 @1ct over 609 days, 65% WR, EVERY year green incl. late-2022
+  bear (+$3,983), worst day only −$345, 2 losing months in 43. Concept is real on TSLA
+  and far better tail-per-dollar than SPX (avg/worst 0.17 vs 0.05).
+- **Bots 2/3 (credit spreads) do NOT translate**: rarely set up ($2.50 strikes, weekly
+  expiry, thin credits vs width) and net NEGATIVE at both 0.3% and 1.0% OTM. Skip them.
+- **BUT the existing UDB TSLA options system is ~4× better** (~+$65-70k/yr @1ct 2025-26
+  vs Bot 1's ~+$16k/yr): the tuned 5m-OR engine with partials/trails beats the simple
+  ±50% bracket on the same symbol. So: no change to the TSLA system; the 3-bot concept
+  is an SPX-specific play.
