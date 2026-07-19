@@ -1,0 +1,110 @@
+//@version=6
+strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle="SPX-ORB 3BOT S", overlay=true,
+     initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1,
+     calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
+
+// STATUS 2026-07-19: STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) — SEPARATE
+// from the UDB-ORB TSLA suite. Chart: SPX, 5-minute, RTH.
+// WHAT THIS AUTOMATES (via TradersPost webhook, Order asset = Options):
+//   BOT1 15m OR break -> BUY ATM 0DTE (CALL up / PUT dn), and CLOSE at the 30-min TIME STOP
+//   (or EOD failsafe). The +50%/-50% PREMIUM brackets are NOT chart-executable (the chart
+//   cannot see option prices) — place them as a broker-side OCO after the fill, or manage
+//   manually. The time stop + EOD exits ARE automated here.
+//   BOT2/BOT3 credit spreads = ALERTS ONLY (multi-leg orders are not webhook-able here);
+//   use the alertcondition()s and place the spread at the broker.
+// Strategy Tester shows INDEX-POINT P&L of the Bot1 timing only (a proxy) — real option P&L
+// (premium, theta, IV) is NOT backtestable in TV. The REAL numbers are the OPRA backtest:
+// FULL 2022-2026 @1ct: BOT1 +$457,265 (PF 2.73, worst day -$6,590), COMBO +$1,088,751.
+// See docs/SPX_ANALYSIS.md. Forward ledger: forward_test_spx.py (daily, T+1).
+
+// ==================== INPUTS ====================
+bufPct     = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
+tsMin      = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bot1")
+optContracts = input.int(1, "Option contracts (quantity)", minval=1, group="Bot1 · TradersPost", tooltip="Real backtest figures are PER CONTRACT. Median SPX premium ~$1,220/ct (p90 ~$5,400); risk/ct = half premium. Start with 1 while forward-testing.")
+otmPct     = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots 2/3 (alerts only)") * 0.01
+strikeStep = input.float(5.0, "Strike spacing", group="Bots 2/3 (alerts only)")
+enB2       = input.bool(true, "Bot2 30m spread alerts", group="Bots 2/3 (alerts only)")
+enB3       = input.bool(true, "Bot3 60m spread alerts", group="Bots 2/3 (alerts only)")
+
+isRTH  = not na(time(timeframe.period, "0930-1600", "America/New_York"))
+newDay = ta.change(time("D")) != 0
+if barstate.isfirst and not (timeframe.isintraday and timeframe.multiplier == 5)
+    runtime.error("SPX-ORB 3BOT requires a 5-minute chart.")
+var int rthIx = na
+rthIx := isRTH ? (na(rthIx[1]) or newDay ? 0 : nz(rthIx[1]) + 1) : na
+
+// ==================== OR TRACKING ====================
+var float hi15 = na, var float lo15 = na
+var float hi30 = na, var float lo30 = na
+var float hi60 = na, var float lo60 = na
+if isRTH and rthIx == 0
+    hi15 := high, lo15 := low
+    hi30 := high, lo30 := low
+    hi60 := high, lo60 := low
+if isRTH and rthIx > 0
+    if rthIx <= 2
+        hi15 := math.max(hi15, high), lo15 := math.min(lo15, low)
+    if rthIx <= 5
+        hi30 := math.max(hi30, high), lo30 := math.min(lo30, low)
+    if rthIx <= 11
+        hi60 := math.max(hi60, high), lo60 := math.min(lo60, low)
+
+// ==================== SIGNALS ====================
+var int b1Dir = 0, var int b2Dir = 0, var int b3Dir = 0
+var int b1Bar = na
+if newDay
+    b1Dir := 0, b2Dir := 0, b3Dir := 0, b1Bar := na
+b1Up = isRTH and rthIx > 2  and b1Dir == 0 and close > hi15 * (1 + bufPct)
+b1Dn = isRTH and rthIx > 2  and b1Dir == 0 and close < lo15 * (1 - bufPct)
+b2Up = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close > hi30 * (1 + bufPct)
+b2Dn = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close < lo30 * (1 - bufPct)
+b3Up = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close > hi60 * (1 + bufPct)
+b3Dn = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close < lo60 * (1 - bufPct)
+
+// ==================== BOT1 ORDERS (TradersPost options webhook) ====================
+// TradingView alert message must be {{strategy.order.alert_message}} (same as the TSLA v3 setup).
+f_optMsg(action, cp) =>
+    '{"ticker":"SPX", "action":"' + action + '", "quantity":' + str.tostring(optContracts) + ', "expiration":"+0 days", "optionType":"' + cp + '", "strikesAway":0}'
+if b1Up or b1Dn
+    b1Dir := b1Up ? 1 : -1
+    b1Bar := bar_index
+    if b1Up
+        strategy.entry("B1", strategy.long, alert_message=f_optMsg("buy", "call"))
+    else
+        strategy.entry("B1", strategy.short, alert_message=f_optMsg("buy", "put"))
+tsBars = math.max(1, math.round(tsMin / 5.0))
+b1TimeStop = strategy.position_size != 0 and not na(b1Bar) and bar_index >= b1Bar + tsBars
+b1EOD      = strategy.position_size != 0 and isRTH and rthIx >= 76      // 15:55 failsafe
+if b1TimeStop or b1EOD
+    strategy.close("B1", comment=b1TimeStop ? "Time stop " + str.tostring(tsMin) + "m" : "EOD",
+         alert_message='{"ticker":"SPX", "action":"exit", "quantity":' + str.tostring(optContracts) + '}')
+
+if b2Up or b2Dn
+    b2Dir := b2Up ? 1 : -1
+if b3Up or b3Dn
+    b3Dir := b3Up ? 1 : -1
+
+// ==================== SPREAD SUGGESTIONS + VISUALS ====================
+psS = math.floor(close * (1 - otmPct) / strikeStep) * strikeStep
+csS = math.ceil(close * (1 + otmPct) / strikeStep) * strikeStep
+f0(x) => str.tostring(x, "#")
+if b2Up or b2Dn
+    label.new(bar_index, b2Up ? low : high,
+      "BOT2 SELL 5-wide " + (b2Up ? "PUT spread " + f0(psS) + "/" + f0(psS - 5) : "CALL spread " + f0(csS) + "/" + f0(csS + 5)) + " 0DTE\nclose @50% credit · stop @2x",
+      style=b2Up ? label.style_label_up : label.style_label_down, color=color.new(color.blue, 20), textcolor=color.white, size=size.small)
+if b3Up or b3Dn
+    label.new(bar_index, b3Up ? low : high,
+      "BOT3 SELL 10-wide " + (b3Up ? "PUT spread " + f0(psS) + "/" + f0(psS - 10) : "CALL spread " + f0(csS) + "/" + f0(csS + 10)) + " 0DTE\nclose @50% credit · stop @2x",
+      style=b3Up ? label.style_label_up : label.style_label_down, color=color.new(color.purple, 20), textcolor=color.white, size=size.small)
+plot(isRTH and rthIx > 2  ? hi15 : na, "OR15 High", color.new(color.teal, 40),  2, plot.style_linebr)
+plot(isRTH and rthIx > 2  ? lo15 : na, "OR15 Low",  color.new(color.teal, 40),  2, plot.style_linebr)
+plot(isRTH and rthIx > 5  ? hi30 : na, "OR30 High", color.new(color.blue, 55),  1, plot.style_linebr)
+plot(isRTH and rthIx > 5  ? lo30 : na, "OR30 Low",  color.new(color.blue, 55),  1, plot.style_linebr)
+plot(isRTH and rthIx > 11 ? hi60 : na, "OR60 High", color.new(color.purple, 55),1, plot.style_linebr)
+plot(isRTH and rthIx > 11 ? lo60 : na, "OR60 Low",  color.new(color.purple, 55),1, plot.style_linebr)
+
+// ==================== SPREAD ALERTS ====================
+alertcondition(b2Up, "BOT2 UP — sell PUT spread",  "SPX BOT2: 30m OR broke UP. SELL 5-wide PUT credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
+alertcondition(b2Dn, "BOT2 DN — sell CALL spread", "SPX BOT2: 30m OR broke DOWN. SELL 5-wide CALL credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
+alertcondition(b3Up, "BOT3 UP — sell PUT spread",  "SPX BOT3: 60m OR broke UP. SELL 10-wide PUT credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
+alertcondition(b3Dn, "BOT3 DN — sell CALL spread", "SPX BOT3: 60m OR broke DOWN. SELL 10-wide CALL credit spread ~0.30% OTM. Close @50% credit, stop @2x.")

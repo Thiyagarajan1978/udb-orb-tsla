@@ -5,8 +5,8 @@ indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", ov
 // UDB-ORB TSLA suite (different symbol, different concept, different risk). ALERTS-ONLY.
 // Chart: SPX (or SPXW-settling index), 5-minute, RTH. Options: SPXW 0DTE, strikes are 5-wide.
 //
-// THE SYSTEM (validated on real OPRA cbbo-1m quotes, 2024-01 -> 2026-07, 628 days; see
-// docs/SPX_ANALYSIS.md + scripts/spx/price_hersystem_ts30.py):
+// THE SYSTEM (validated on real OPRA cbbo-1m quotes, FULL 2022-01 -> 2026-07, 1105 days,
+// INCLUDING the 2022 bear; see docs/SPX_ANALYSIS.md + scripts/spx/price_hersystem_ts30.py):
 //   BOT1  15m OR break -> BUY ATM 0DTE (CALL on up / PUT on dn). TP +50% of premium,
 //         SL -50%, TIME STOP 30 min (flatten at market if no bracket hit — ADOPTED:
 //         +9% net vs no time stop, kills the 6h theta-bleed tail; median hold 31 min).
@@ -14,10 +14,12 @@ indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", ov
 //         (up-break = PUT spread, dn-break = CALL spread), short leg ~0.30% OTM.
 //         Close at 50% of credit. Stop if buy-back >= 2x credit. NO time stop (tested: hurts).
 //   BOT3  60m OR break -> same as BOT2 but 10-wide.
-// RESULTS @1ct (x10 = 10 contracts): 2024 +$139,875 / 2025 +$202,866 / 2026(H1) +$124,170,
-// combined +$466,911, WR 70%, 0 losing months in 31, worst day -$6,740.
-// CAVEATS: no bear-market coverage in the test; worst days are fast <30min moves on expensive
-// premium — consider skipping BOT1 when ATM premium > ~$35/share. Forward-test before capital.
+// RESULTS @1ct FULL 2022-2026: BOT1 +$457,265 (PF 2.73, 63% WR, worst day -$6,590, 2/55
+// losing months — 2022 BEAR was its BEST dollar year +$128,645); 3-bot COMBO +$1,088,751.
+// PF by year never below 2.4 on either symbol tested. Edge concentrates in CHEAP premium
+// (cheap tercile PF 7.7 vs rich 2.2) -> prefer fixed-DOLLAR sizing; worst days are fast
+// <30min moves on expensive premium. REMAINING CAVEAT: quote-level fills — forward-test
+// before capital (forward_test_spx.py builds the daily shadow ledger).
 
 // ==================== INPUTS ====================
 bufPct    = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
