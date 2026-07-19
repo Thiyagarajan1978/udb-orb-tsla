@@ -1,6 +1,14 @@
 //@version=6
 indicator("UDB-ORB TSLA v3 - A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3", overlay=true, max_labels_count=500)
 
+// STATUS 2026-07-19 (no logic change — validation update): a SIMPLER rival concept (15m-OR long ATM
+// ±50% bracket + 30-min time stop, from the SPX "3-bot" system) was fully tested on TSLA with REAL OPRA
+// quotes over 2022-2026 (the 2024 quote gap is now pulled; coverage data/cache/opra/ = 2022-09..2026-07).
+// It IS profitable every year (+$45,916 @1ct, PF 3.02, worst day -$345) but ~4x BELOW this UDB system's
+// options results — UDB stays the TSLA system, unchanged. Credit spreads DON'T work on TSLA (thin credits,
+// $2.50 strikes, weekly expiry) — don't sell them here. Day-of-week: EVERY weekday is net-positive; FRIDAY
+// is TSLA's best options day (74% WR — the true 0DTE gamma day): never skip it; a Mon/Wed/Fri-only filter
+// costs ~40% of net. The SPX system lives in SEPARATE files: SPX_ORB_3BOT_v1(.pine/_strategy.pine).
 // STATUS 2026-07-13: ONE indicator, FOUR selectable profiles (fires ALERTS; identical logic to the v3
 // STRATEGY). TSLA 5-minute, RTH, OR start 09:30 (selectable). Fires ALERTS + a PER-UNIT summary table;
 // the STRATEGY carries the sizing ($10,000 account / 25 shares default). Same entry engine, ADOPTED

@@ -13,6 +13,14 @@ strategy("UDB-ORB TSLA v3 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-OR
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// STATUS 2026-07-19 (no logic change — validation update): rival "3-bot" concept (15m-OR long ATM ±50%
+// + 30-min time stop) tested on TSLA with real OPRA quotes 2022-2026 (2024 gap now pulled): profitable
+// every year (+$45,916 @1ct, PF 3.02) but ~4x BELOW this system's options results — UDB stays, unchanged.
+// TSLA credit spreads tested and rejected (thin credits vs $2.50 strikes, weekly expiry). Every weekday is
+// net-positive; FRIDAY is the best options day (74% WR, true 0DTE) — never skip it. Options paper trading:
+// per-contract risk ~= HALF the premium (median ~$435/ct); prefer fixed-DOLLAR sizing over fixed contracts
+// (cheap-premium entries carry PF ~6 vs ~2.5 on rich ones). SPX system = SEPARATE SPX_ORB_3BOT_v1 files;
+// both forward ledgers (TSLA forward_test.py + SPX forward_test_spx.py) run daily via the 9AM task.
 // STATUS 2026-07-14: ONE strategy, FOUR selectable profiles (the "Profile" input). TSLA 5-minute, RTH,
 // OR start 09:30 (selectable). DEFAULT = $10,000 account, 25 shares/unit (~1x unleveraged on TSLA). All
 // share the SAME entry engine, ADOPTED close-triggered stops (Stop trigger 'Close'), vol/OR gates, risk-parity
