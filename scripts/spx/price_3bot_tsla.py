@@ -28,13 +28,15 @@ from udb_orb.data.fmp_client import fetch_5min, rth_only
 from dotenv import load_dotenv; load_dotenv()
 b2=fetch_5min("TSLA", dt.date(2025,1,2), dt.date(2026,7,16))
 frames.append(b2[["open","high","low","close"]])
+b3=pd.read_parquet("data/cache/TSLA_5min_2024-01-02_2024-12-31.parquet")
+frames.append(b3[["open","high","low","close"]])
 bars=pd.concat(frames).sort_index()
 bars=bars[~bars.index.duplicated(keep="last")]
 bars=bars[(bars.index.hour*60+bars.index.minute>=570)&(bars.index.hour*60+bars.index.minute<960)]
 bars["day"]=bars.index.strftime("%Y-%m-%d"); bars["mod"]=bars.index.hour*60+bars.index.minute
 # ---- option quotes ----
 qs=[]
-for f in ["quotes_2223","quotes_weekly","quotes_july"]:
+for f in ["quotes_2223","quotes_weekly","quotes_july","quotes_2024_1","quotes_2024_2","quotes_2024_3"]:
     p=CACHE/f"{f}.parquet"
     if p.exists(): qs.append(pd.read_parquet(p)[["ts_event","symbol","bid_px_00","ask_px_00"]])
 q=pd.concat(qs,ignore_index=True).drop_duplicates(["ts_event","symbol"])

@@ -12,7 +12,7 @@ W30, W60 = 5, 10
 TS_MAIN=30                       # the requested time stop (minutes)
 TS_ALTS=[60,90]                  # context variants
 # ---- SPX 5m ----
-spx=pd.concat([pd.read_parquet(CACHE+r"/spx_5m_2024_2025.parquet"),pd.read_parquet(CACHE+r"/spx_5m.parquet")]).sort_index()
+spx=pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(CACHE+r"/spx_5m*.parquet"))]).sort_index()
 spx=spx[~spx.index.duplicated(keep="last")]
 spx.index=spx.index.tz_localize(None) if spx.index.tz is None else spx.index
 spx["day"]=spx.index.strftime("%Y-%m-%d"); spx["mod"]=spx.index.hour*60+spx.index.minute

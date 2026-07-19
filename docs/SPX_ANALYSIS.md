@@ -90,3 +90,29 @@ weekly expiry DTE 0-4; 2022-09→2023-12 incl. the bear + 2025-01→2026-07; 202
   vs Bot 1's ~+$16k/yr): the tuned 5m-OR engine with partials/trails beats the simple
   ±50% bracket on the same symbol. So: no change to the TSLA system; the 3-bot concept
   is an SPX-specific play.
+
+## Phase 4 — FULL history 2022-2026 (2026-07-19, after Databento top-up)
+Gaps closed: SPX 2022-23 (`pull_3bot_spx2223.py` → `data/cache/spx/chunk2223_*.parquet`,
+^GSPC 5m via FMP) and TSLA 2024 (`pull_3bot_tsla2024.py` → `data/cache/opra/quotes_2024_*`).
+Targeted pulls: only the strikes each day's 3-bot trades can touch.
+
+**Bot 1 ts30, per 1 contract — the bear-market caveat is now CLOSED:**
+| yr | SPX days | WR | net | PF | worst d | TSLA days | WR | net | PF | worst d |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2022 | 247 | 63% | +$128,645 | 2.49 | −$6,590 | 80 | 61% | +$3,983 | 3.74 | −$155 |
+| 2023 | 247 | 65% | +$122,870 | 2.56 | −$5,540 | 217 | 66% | +$9,797 | 3.41 | −$175 |
+| 2024 | 246 | 62% | +$58,650 | 2.77 | −$4,440 | 241 | 61% | +$9,813 | 2.51 | −$255 |
+| 2025 | 239 | 62% | +$91,010 | 3.17 | −$2,990 | 190 | 67% | +$15,883 | 3.42 | −$310 |
+| 2026 | 126 | 67% | +$56,090 | 3.40 | −$6,480 | 122 | 64% | +$6,440 | 2.54 | −$345 |
+| ALL | 1105 | 63% | **+$457,265** | **2.73** | −$6,590 | 850 | 64% | **+$45,916** | **3.02** | −$345 |
+
+SPX 2022 (bear, −19% index year) was Bot 1's BEST dollar year — high IV premiums cut PF
+but grow dollars; the timing edge held in every regime. Losing months: SPX 2/55,
+TSLA 2/47. SPX 3-bot COMBO full history: **+$1,088,751 @1ct** (ts30 on Bot 1).
+2022 spreads printed heavily (high credits); 2024 TSLA spreads (fresh full-coverage
+data) confirm the TSLA-spread verdict: B2 negative, B3 ~flat — still skip on TSLA.
+
+**Sizing on full history** ($10k, risk/ct = half premium): 2% fixed → SPX $37.6k /
+TSLA $35.2k, maxDD 1.8% both; 10% fixed $1k → SPX $855k (maxDD 8.2%) / TSLA $239k
+(3.2%); 10% compound cap-10ct → SPX $4.42M (maxDD 24.2%) / TSLA $462k (4.7%).
+Same fill-optimism caveats as ever; forward-test before capital.
