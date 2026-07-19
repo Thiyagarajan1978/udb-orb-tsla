@@ -15,6 +15,7 @@ venv/
 
 # Data / results (regenerated)
 data/cache/*.parquet
+data/cache/spx/
 data/*.db
 data/*.sqlite
 data/results/
