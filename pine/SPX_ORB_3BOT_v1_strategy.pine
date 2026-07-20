@@ -66,6 +66,8 @@ b3Dn = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close < lo60 * (1 - bufP
 // TradersPost: entries are always action=buy with optionType carrying direction (buy CALL up / buy PUT dn).
 // Leave the opt-in "Invert puts" strategy setting UNCHECKED — with an explicit put contract in the signal,
 // invert-ON would flip action=buy into SELL-TO-OPEN a short put.
+// "+0 days" is safe to hardcode HERE because SPX lists an expiry EVERY trading day (true 0DTE daily);
+// TSLA does NOT (~Mon/Wed/Fri only) — that's why the TSLA v3 strategy needs its expiration dropdown.
 f_optMsg(action, cp) =>
     '{"ticker":"SPX", "action":"' + action + '", "quantity":' + str.tostring(optContracts) + ', "expiration":"+0 days", "optionType":"' + cp + '", "strikesAway":0}'
 if b1Up or b1Dn

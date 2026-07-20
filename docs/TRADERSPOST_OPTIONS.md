@@ -32,14 +32,22 @@ what the real 0DTE option backtest priced — and **A1/B1/C1 crush C2 on options
 |---|---|---|
 | `Order asset` | `Shares` → set to **`Options`** | switches the JSON from shares to options |
 | `Option contracts (quantity)` | **`2`** | contracts per order — **default 2** (P&L *and* premium at risk both scale ×2 vs the per‑contract backtest) |
-| `Option expiration` | `+0 days` | **dropdown**: `+0 days` (0DTE/nearest), `+1/+2/+3/+7 days`. `+2`/`+3` ≈ the nearest weekly (Friday) |
+| `Option expiration` | `+0 days` | **dropdown**: `+0 days` (nearest listed), **`Friday (weekly)`** (dynamic days‑to‑Friday — the correct weekly setting), `+1/+2/+3/+7 days` (fixed offsets, manual experiments only) |
 | `Strikes away from ATM` | `0` | 0 = ATM; 1 = one strike OTM, etc. |
 
 > **0DTE vs weekly (tested 2026-07-17):** the trades hold **2‑3 hours on average**, so an extra day of DTE
-> bleeds less theta. **Weekly (+2/+3 days) beat 0DTE by ~3‑5% net** on every profile (A1/B1/C1 +$2‑3k over
+> bleeds less theta. **Weekly (nearest Friday) beat 0DTE by ~3‑5% net** on every profile (A1/B1/C1 +$2‑3k over
 > 2025‑26, same win rate — the gain is keeping more of each win). Catch: weekly premium is ~22% higher
 > ($6.37 vs $5.24/ct), so for *equal dollar risk* you'd size slightly fewer contracts. Both are selectable in
 > the `Option expiration` dropdown — default `+0 days`; try both in paper trading.
+
+> **Expiry calendars differ per underlying (verified 2026-07-20 against broker chains):** **TSLA lists only
+> ~Mon/Wed/Fri weekly expiries — there are NO Tue/Thu dailies** (SPX, by contrast, lists **every trading day**,
+> which is why the SPX 3‑bot strategy can hardcode `+0 days` as true 0DTE). TradersPost resolves `+N days` to the
+> *nearest listed expiry on/after* today+N, so on TSLA: `+0 days` on Tue/Thu actually fills the next Wed/Fri
+> (1DTE — fine, just not literal 0DTE), and a **fixed `+2`/`+3 days` only lands on Friday early in the week — from
+> Wed/Thu/Fri it rolls into NEXT week's Monday**. Use **`Friday (weekly)`**, which computes the day offset
+> dynamically (Mon +4 … Fri +0) and matches what `forward_test.py` prices as the weekly leg.
 
 > **Sizing note:** 2 contracts ≈ **~$930 premium at risk per trade** on TSLA (~9% of a $10k account).
 > Losses are capped small (~−$97/contract → ~−$194/trade). Raise to 3–4 for more, drop to 1 for less —
