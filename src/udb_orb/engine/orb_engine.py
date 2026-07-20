@@ -137,6 +137,7 @@ class _DayState:
         self.part1_pnl = 0.0
         self.suppress_partial = False   # reversal trail_to_eod: no partial, ride full move
         self.runner_peak: Optional[float] = None   # peak favorable price after the partial
+        self.vwap_cross_bars = 0        # consecutive closes beyond VWAP (vwap_exit.confirm_bars)
 
         # reversal state machine
         self.prim_dir = 0
@@ -279,8 +280,33 @@ class OrbEngine:
         return bool(self.enh.get("runner_trail", {}).get("enabled", False))
 
     def _runner_trail_dist(self, st: _DayState) -> float:
-        mult = float(self.enh.get("runner_trail", {}).get("or_mult", 0.75))
+        cfg = self.enh.get("runner_trail", {})
+        # mode "atr": chandelier — trail atr_mult x daily ATR(14) below the peak (adapts to
+        # regime instead of the day's OR). Falls back to OR sizing on ATR-warmup days.
+        if str(cfg.get("mode", "or")).lower().startswith("atr"):
+            a = getattr(self, "_cur_atr", None)
+            if a is not None and a == a:
+                return float(cfg.get("atr_mult", 0.25)) * a
+        mult = float(cfg.get("or_mult", 0.75))
         return mult * (st.or_width or 0.0)
+
+    @property
+    def _runner_hybrid_vwap(self) -> bool:
+        """runner_trail.hybrid_vwap: with the trail ON, ALSO keep the VWAP-cross exit armed —
+        the runner leaves on whichever fires first (default OFF = trail replaces VWAP)."""
+        return bool(self.enh.get("runner_trail", {}).get("hybrid_vwap", False))
+
+    # ---- VWAP-cross exit confirmation (defaults = current behavior) -----
+    @property
+    def _vwap_confirm_bars(self) -> int:
+        """Consecutive closes beyond VWAP required to exit (1 = classic single-close cross)."""
+        return int(self.enh.get("vwap_exit", {}).get("confirm_bars", 1))
+
+    @property
+    def _vwap_min_cross_frac(self) -> float:
+        """If > 0: a single close beyond VWAP by >= frac x OR width exits immediately,
+        overriding confirm_bars (a decisive cross needs no confirmation)."""
+        return float(self.enh.get("vwap_exit", {}).get("min_cross_frac", 0.0))
 
     def _effective_triggers(self, st: _DayState, long_brk, short_brk, pdh, pdl):
         """When PDH/PDL sits within proximity_pct of the OR width of the break level, raise the
@@ -672,6 +698,7 @@ class OrbEngine:
         st.trail_active = False
         st.part1_pnl = 0.0
         st.runner_peak = None
+        st.vwap_cross_bars = 0
         # reversal 'trail_to_eod' rides the full move: no partial scale-out
         st.suppress_partial = bool(reversal and self._rev_on and self._rev_cfg.get("trail_to_eod", False))
         if st.entry_ts_day is None:
@@ -750,8 +777,8 @@ class OrbEngine:
         if apply_be and st.be_triggered and p.be_trail_amount > 0:
             st.stop = max(st.stop, h - p.be_trail_amount)
 
-        # Step 3: runner exit for the post-partial remainder — either a peak-trail (when
-        # runner_trail is on) or the default VWAP cross.
+        # Step 3: runner exit for the post-partial remainder — a peak-trail (when runner_trail
+        # is on), the VWAP cross (default), or BOTH armed at once (runner_trail.hybrid_vwap).
         long_vwap_cross = False
         long_runner_trail = False
         runner_trail_px = None
@@ -763,11 +790,21 @@ class OrbEngine:
                 if (c <= trail_level) if p.exit_on_close else (l <= trail_level):
                     long_runner_trail = True
                     runner_trail_px = c if p.exit_on_close else trail_level
-            else:
+            if (not self._runner_trail_on) or self._runner_hybrid_vwap:
                 if (c - st.entry_price) >= p.partial_activation:
                     st.trail_active = True
-                if st.trail_active and vw is not None and c <= vw:
-                    long_vwap_cross = True
+                if st.trail_active and vw is not None:
+                    if c <= vw:
+                        # confirm_bars consecutive closes beyond VWAP, unless the cross is
+                        # decisive (>= min_cross_frac x OR width) — defaults reproduce the
+                        # classic single-close cross exactly.
+                        st.vwap_cross_bars += 1
+                        decisive = (self._vwap_min_cross_frac > 0 and st.or_width
+                                    and (vw - c) >= self._vwap_min_cross_frac * st.or_width)
+                        if st.vwap_cross_bars >= self._vwap_confirm_bars or decisive:
+                            long_vwap_cross = True
+                    else:
+                        st.vwap_cross_bars = 0
 
         # alerts-only fill model: stop exits trigger on the bar CLOSE and fill at the close.
         # Hybrid: a resting protective stop at the OR boundary (init_stop) fills intrabar first,
@@ -838,11 +875,18 @@ class OrbEngine:
                 if (c >= trail_level) if p.exit_on_close else (h >= trail_level):
                     short_runner_trail = True
                     runner_trail_px = c if p.exit_on_close else trail_level
-            else:
+            if (not self._runner_trail_on) or self._runner_hybrid_vwap:
                 if (st.entry_price - c) >= p.partial_activation:
                     st.trail_active = True
-                if st.trail_active and vw is not None and c >= vw:
-                    short_vwap_cross = True
+                if st.trail_active and vw is not None:
+                    if c >= vw:
+                        st.vwap_cross_bars += 1
+                        decisive = (self._vwap_min_cross_frac > 0 and st.or_width
+                                    and (c - vw) >= self._vwap_min_cross_frac * st.or_width)
+                        if st.vwap_cross_bars >= self._vwap_confirm_bars or decisive:
+                            short_vwap_cross = True
+                    else:
+                        st.vwap_cross_bars = 0
 
         # hybrid: resting protective stop at the OR boundary fills intrabar first (caps crashes)
         if p.exit_on_close and p.protective_stop and st.init_stop is not None and h >= st.init_stop:
