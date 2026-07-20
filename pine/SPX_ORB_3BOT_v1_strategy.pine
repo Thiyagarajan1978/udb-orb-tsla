@@ -63,6 +63,9 @@ b3Dn = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close < lo60 * (1 - bufP
 
 // ==================== BOT1 ORDERS (TradersPost options webhook) ====================
 // TradingView alert message must be {{strategy.order.alert_message}} (same as the TSLA v3 setup).
+// TradersPost: entries are always action=buy with optionType carrying direction (buy CALL up / buy PUT dn).
+// Leave the opt-in "Invert puts" strategy setting UNCHECKED — with an explicit put contract in the signal,
+// invert-ON would flip action=buy into SELL-TO-OPEN a short put.
 f_optMsg(action, cp) =>
     '{"ticker":"SPX", "action":"' + action + '", "quantity":' + str.tostring(optContracts) + ', "expiration":"+0 days", "optionType":"' + cp + '", "strikesAway":0}'
 if b1Up or b1Dn

@@ -122,7 +122,8 @@ optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0
 // ---- WEBHOOK ALERTS: per-order JSON via alert_message. In TradingView set the alert message to
 // {{strategy.order.alert_message}} (NOT {{strategy.order.action}} — that only outputs buy/sell, never "Exit").
 //   Shares  : action Buy (long entry) / Sell (short entry) / Exit (any close); quantity = ROUNDED whole shares.
-//   Options : TradersPost — long->buy CALL, short->sell PUT, full-exit->close; contracts + 0DTE ATM via inputs.
+//   Options : TradersPost — long->BUY CALL, short->BUY PUT (always action=buy; optionType carries direction),
+//             full-exit->"exit"; contracts + 0DTE ATM via inputs. Leave "Invert puts" UNCHECKED in TradersPost.
 //             WORKS ON ALL PROFILES: the 25% partial's webhook is auto-suppressed so 1 contract HOLDS to the
 //             runner exit (A1/B1/C1 >> C2 on real 0DTE options: 2025-7/16 +$70k/+$65k/+$64k vs +$26k @1 ct (18/18 mo+)).
 //             EXPIRY: 0DTE vs WEEKLY tested — WEEKLY (+2/+3 days) beat 0DTE ~3-5% net (less theta on 2-3h holds)
@@ -133,9 +134,11 @@ f_msg(act, q) =>
         if act == "Exit"
             out := '{"ticker":"{{ticker}}", "action":"exit"}'
         else
-            oa = act == "Buy" ? "buy" : "sell"
+            // Always BUY-to-open: direction is carried by optionType (call/put). TradersPost treats an
+            // explicit put contract with action=sell as SELL-TO-OPEN a short put (unless the opt-in
+            // "Invert puts" strategy setting is enabled) — leave "Invert puts" UNCHECKED with these signals.
             ot = act == "Buy" ? "call" : "put"
-            out := '{"ticker":"{{ticker}}", "action":"' + oa + '", "quantity":' + str.tostring(optContracts) + ', "expiration":"' + optExpiration + '", "optionType":"' + ot + '", "strikesAway":' + str.tostring(optStrikesAway) + '}'
+            out := '{"ticker":"{{ticker}}", "action":"buy", "quantity":' + str.tostring(optContracts) + ', "expiration":"' + optExpiration + '", "optionType":"' + ot + '", "strikesAway":' + str.tostring(optStrikesAway) + '}'
     else
         out := '{"ticker":"{{ticker}}", "action":"' + act + '", "quantity":' + str.tostring(q, "#") + ', "price":"{{close}}"}'
     out
