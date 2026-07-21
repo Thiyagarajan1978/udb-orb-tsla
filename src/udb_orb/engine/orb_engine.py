@@ -153,6 +153,10 @@ class _DayState:
         self.resume_armed = False
         self.resume_taken = False
 
+        # HTF-trend gate (strict mode): a primary blocked once stays blocked that day/direction
+        self.htf_blocked_long = False
+        self.htf_blocked_short = False
+
         # no-trade reason tracking
         self.has_or = False
         self.post_raw_break = False
@@ -273,6 +277,26 @@ class OrbEngine:
     @property
     def _pdhpdl_on(self) -> bool:
         return bool(self._pdhpdl_cfg.get("enabled", False))
+
+    # ---- HTF trend-direction gate (default OFF; concept D) --------------
+    # enhancements["htf_trend_filter"] = {"enabled": True, "series": <pd.Series>, "mode": "strict"}
+    # series: +1/-1 per 5m bar index = the direction of the last COMPLETED higher-TF bar at
+    # that 5m bar's close (built by the caller — e.g. 15m Supertrend-Fakeout). Entries must
+    # AGREE with it. "strict" (default): a primary blocked at its break bar stays blocked for
+    # that day+direction ("skip it"); "wait": the entry may fire on a later aligned bar.
+    @property
+    def _htf_cfg(self) -> dict[str, Any]:
+        return self.enh.get("htf_trend_filter", {})
+
+    def _htf_ok(self, ts, direction: int) -> bool:
+        cfg = self._htf_cfg
+        if not cfg.get("enabled", False):
+            return True
+        ser = cfg.get("series")
+        if ser is None:
+            return True
+        v = ser.get(ts)
+        return v is not None and v == direction
 
     # ---- runner peak-trail (default OFF) -------------------------------
     @property
@@ -559,6 +583,21 @@ class OrbEngine:
                 and min_ok and max_ok and vwap_short_ok and self._rvol_ok(rv)
             )
 
+            # HTF trend gate on the primary. strict: a mismatch at the break bar kills that
+            # direction's primary for the day ("skip it"); wait: it may enter later once aligned.
+            if self._htf_cfg.get("enabled", False):
+                strict = str(self._htf_cfg.get("mode", "strict")) == "strict"
+                if can_long and not self._htf_ok(ts, 1):
+                    if strict:
+                        st.htf_blocked_long = True
+                    can_long = False
+                if can_short and not self._htf_ok(ts, -1):
+                    if strict:
+                        st.htf_blocked_short = True
+                    can_short = False
+                can_long = can_long and not st.htf_blocked_long
+                can_short = can_short and not st.htf_blocked_short
+
             # ---- PRIMARY ENTRY ----
             if entry_ok_common and not st.active and not st.first_taken:
                 if can_long:
@@ -574,7 +613,7 @@ class OrbEngine:
             rev_long_level = st.or_high if self._rev_trigger_raw() else long_brk
             rev_short_level = st.or_low if self._rev_trigger_raw() else short_brk
             if (p.use_reversal and st.prim_stopped and not st.active and entry_ok_common):
-                if st.prim_dir == 1 and rev_short_level is not None and c < rev_short_level and max_ok and vwap_short_ok and self._rvol_ok(rv):
+                if st.prim_dir == 1 and rev_short_level is not None and c < rev_short_level and max_ok and vwap_short_ok and self._rvol_ok(rv) and self._htf_ok(ts, -1):
                     rqty = self._reversal_qty(st, c, -1)
                     if rqty is not None:
                         self._enter(st, ts, bar_i, direction=-1, c=c, reversal=True, qty=rqty)
@@ -582,7 +621,7 @@ class OrbEngine:
                         if self._resume_disarms:
                             st.resume_armed = False   # reversal wins; disarm the resume leg
                         self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "S (Rev)", c, st.qty_total, None, "reversal entry"))
-                elif st.prim_dir == -1 and rev_long_level is not None and c > rev_long_level and max_ok and vwap_long_ok and self._rvol_ok(rv):
+                elif st.prim_dir == -1 and rev_long_level is not None and c > rev_long_level and max_ok and vwap_long_ok and self._rvol_ok(rv) and self._htf_ok(ts, 1):
                     rqty = self._reversal_qty(st, c, 1)
                     if rqty is not None:
                         self._enter(st, ts, bar_i, direction=1, c=c, reversal=True, qty=rqty)
