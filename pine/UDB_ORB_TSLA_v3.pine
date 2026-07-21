@@ -26,7 +26,9 @@ indicator("UDB-ORB TSLA v3 - A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3", ove
 //  OPTIONS (TradersPost 0DTE) live in the v3 STRATEGY, not here (this indicator has no orders/positions):
 //    set Order asset=Options there. Works on ALL profiles (the 25% partial's webhook is auto-suppressed so
 //    1 contract rides to the runner exit); default 2 contracts. Real 0DTE backtest @1ct 2025-26:
-//    A1 +$70,460 / B1 +$65,372 / C1 +$64,360 >> C2 +$25,508 (18/18 mo+) — so A1/B1/C1, NOT C2, are the options picks.
+//    (BARCLOSE-CORRECTED 2026-07-20 — the old figures had a 5-min entry lookahead, ~83% of the edge:)
+//    A1 +$12,895 / B1 +$11,241 / C1 +$10,059 >> C2 -$967 (NEGATIVE) @1ct 2025-01..2026-07, realistic
+//    bar-close fills — so A1/B1/C1 (~$28-33/trade), NOT C2, are the options picks. Size to these numbers.
 //    Expiry (strategy input): 0DTE vs WEEKLY tested — WEEKLY (nearest Friday) ~3-5% MORE net (less theta on 2-3h
 //    holds), +22% premium. NOTE: TSLA lists only ~Mon/Wed/Fri expiries (no dailies, unlike SPX) — use the strategy's
 //    'Friday (weekly)' expiration choice (dynamic days-to-Friday); a fixed +2/+3 days rolls into next week from Wed on.

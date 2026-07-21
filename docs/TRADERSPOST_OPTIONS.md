@@ -9,14 +9,20 @@ alert into an option order, wired onto the **close‑triggered stop**.
 Set `Order asset = Options` on **any** profile. The old "C2‑only" limitation is **fixed**: in Options
 mode the strategy **auto‑suppresses the 25% partial's webhook**, so a single contract **holds through the
 partial and closes only at the runner's final exit** (VWAP / trail / BE / close‑stop / EOD). That's exactly
-what the real 0DTE option backtest priced — and **A1/B1/C1 crush C2 on options**:
+what the real 0DTE option backtest priced — and **A1/B1/C1 beat C2 decisively on options**:
 
-| Profile | real 0DTE options, 1 ct, 2025→7/16 (18 mo) | why |
-|---|---|---|
-| **A1** | **+$70,460** | peak‑trail rides trend furthest |
-| **B1** | +$65,372 | VWAP runner |
-| **C1** | +$64,360 | ATR target + VWAP runner |
-| C2 | +$25,508 | $2 scalp caps the winners (single open→close, no partial) |
+> **⚠ LOOKAHEAD CORRECTION (2026‑07‑20).** The originally published figures priced entries at the signal
+> bar's **START** quote — 5 minutes before the alert can fire at the bar **close**, i.e. before the breakout
+> bar's premium move. Repricing every trade at the **bar‑close quote (realistic alert fill)** removed ~83% of
+> the apparent edge. The corrected numbers below are the ones to size against. (Same finding killed the
+> apparent SPY options edge entirely — SPY ORB is negative on shares AND options; TSLA's edge is real but small.)
+
+| Profile | 0DTE 1 ct, 2025‑01→2026‑07‑17 — **realistic bar‑close fills** | (old bar‑start figure) | why |
+|---|---|---|---|
+| **A1** | **+$12,895** (~$33/trade) | ~~+$72,896~~ | peak‑trail rides trend furthest |
+| **B1** | **+$11,241** (~$28/trade) | ~~+$67,748~~ | VWAP runner |
+| **C1** | +$10,059 | ~~+$66,343~~ | ATR target + VWAP runner |
+| C2 | **−$967 (negative — do NOT trade C2 options)** | ~~+$25,722~~ | $2 scalp caps the winners |
 
 - **Entry** → open CALL (long) / PUT (short). **Partial** → *no webhook* (contract holds). **Runner/stop/
   VWAP/EOD full‑flatten** → close. **Reversal** → close the old option, open the opposite.
@@ -35,11 +41,11 @@ what the real 0DTE option backtest priced — and **A1/B1/C1 crush C2 on options
 | `Option expiration` | `+0 days` | **dropdown**: `+0 days` (nearest listed), **`Friday (weekly)`** (dynamic days‑to‑Friday — the correct weekly setting), `+1/+2/+3/+7 days` (fixed offsets, manual experiments only) |
 | `Strikes away from ATM` | `0` | 0 = ATM; 1 = one strike OTM, etc. |
 
-> **0DTE vs weekly (tested 2026-07-17):** the trades hold **2‑3 hours on average**, so an extra day of DTE
-> bleeds less theta. **Weekly (nearest Friday) beat 0DTE by ~3‑5% net** on every profile (A1/B1/C1 +$2‑3k over
-> 2025‑26, same win rate — the gain is keeping more of each win). Catch: weekly premium is ~22% higher
-> ($6.37 vs $5.24/ct), so for *equal dollar risk* you'd size slightly fewer contracts. Both are selectable in
-> the `Option expiration` dropdown — default `+0 days`; try both in paper trading.
+> **0DTE vs weekly — REVISED 2026‑07‑20:** the earlier claim that "weekly beat 0DTE by ~3‑5%" was itself a
+> **lookahead artifact** (it only held under bar‑start fills). Under realistic bar‑close fills the two are
+> within noise of each other — 0DTE marginally ahead (A1 +$12,895 vs +$12,477; B1 +$11,241 vs +$11,013 over
+> 2025‑01→2026‑07). Weekly premium is still ~22% higher, so 0DTE gives slightly better return on premium at
+> risk. Pick by premium‑at‑risk preference; the expiry choice is no longer a performance lever.
 
 > **Expiry calendars differ per underlying (verified 2026-07-20 against broker chains):** **TSLA lists only
 > ~Mon/Wed/Fri weekly expiries — there are NO Tue/Thu dailies** (SPX, by contrast, lists **every trading day**,
@@ -91,29 +97,32 @@ option, then the reversal entry opens the opposite option (buy CALL ↔ sell PUT
 5. In TradersPost, connect the strategy to your **options‑enabled broker** and confirm the symbol/quantity
    mapping.
 
-## Real backtest evidence (Databento OPRA, 2026-07-16)
+## Real backtest evidence (Databento OPRA; barclose-corrected 2026-07-20)
 
 We priced the signals against **actual TSLA option quotes** (Databento OPRA `cbbo-1m`, ATM nearest-expiry ≈
-0DTE, filled **buy-at-ask / sell-at-bid** = conservative on the spread). 1 contract per signal:
+0DTE, filled **buy-at-ask / sell-at-bid** = conservative on the spread). 1 contract per signal.
+**All figures below are the realistic bar-close fills (2026-07-20 lookahead correction)** unless struck out:
 
-| Profile | 2025-26 (bull) | Sep22-Dec23 (crash+chop) | shares @25 | months positive |
-|---|---|---|---|---|
-| A1 (runner) | +$70,460 | +$37,130 | ~$2-6k | 16/16 & 17/17 |
-| B1 (runner) | +$65,372 | +$33,841 | ~$1.6-6k | 16/16 & 17/17 |
-| C1 (runner) | +$64,360 | +$34,537 | ~$2-6k | 16/16 & 17/17 |
-| C2 (scalp $2)            | +$25,508 | +$19,291 | ~$2.2k   | 15/16 & 17/17 |
+| Profile | 2025-01→2026-07-17 realistic | (old bar-start figure) |
+|---|---|---|
+| A1 (runner) | **+$12,895** | ~~+$72,896~~ |
+| B1 (runner) | **+$11,241** | ~~+$67,748~~ |
+| C1 (runner) | +$10,059 | ~~+$66,343~~ |
+| C2 (scalp $2) | **−$967** | ~~+$25,722~~ |
 
 > Corrected 2026-07-17: an earlier version mapped reversal-longs to PUTs instead of CALLs in the pricing
 > script (analysis only — the live Pine strategy always mapped call/put from the actual order side, so it
 > was never wrong). Net effect ~1-6% per window; 2025-26 dipped slightly, 2022-23 rose. Conclusion unchanged.
+> NOTE: the Sep22-Dec23 window (+$33-37k/profile) and the per-month/day-of-week/premium stats quoted around
+> this doc were computed under bar-start fills and are NOT yet re-validated — treat them as upper bounds.
 
-**Confirmed robust in BOTH bull and bear/chop regimes** — options beat shares 10-16×, nearly every month
-green, max drawdown only ~-$868 (2025-26). Why it works: the strategy's tight BE/base-SL stop **caps each
-option loss small** (early stop-out, avg loss ~-$97) while winners fat-tail on trend/gamma (avg win ~+$364),
-and TSLA's high intraday vol pushes 0DTE ATM ITM often enough. **A1/B1/C1 (held to the runner exit) beat
-C2** — and the strategy now does this automatically in Options mode (it suppresses the partial's webhook, so
-the contract rides to the runner exit). **Just pick A1, B1, or C1 and set `Order asset = Options`** — no need
-to touch `use_partial_exit`. C2 still works, just smaller.
+**The corrected picture:** the options edge is real but modest — ~$28-33/trade for A1/B1, roughly on par
+with (not 10-16× above) the share P&L at 25 sh. The mechanism still holds directionally: the tight BE stop
+caps option losses while winners ride trend/gamma — but most of the previously-claimed fat tail was the
+entry lookahead. **A1/B1/C1 (held to the runner exit) beat C2, and C2 options are net NEGATIVE — don't
+trade C2 options.** The strategy handles the runner-hold automatically in Options mode (it suppresses the
+partial's webhook). Cross-symbol check (2026-07-20): the same pipeline on SPY 2026 is negative on shares
+AND options — the edge is TSLA-specific; do not port to index underlyings.
 
 **Load-bearing caveats:** (1) **regime/VOL-dependent** — TSLA's 3-4%/day vol is essential; a low-vol
 underlying may not clear theta+spread; (2) real fills haircut the `cbbo` figures ~10-30% (slippage beyond

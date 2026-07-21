@@ -3,7 +3,14 @@
 Each run prices the FROZEN strategy's new-session signals against REAL TSLA option
 quotes (Databento OPRA cbbo-1m, buy-ask / sell-bid = conservative) and APPENDS to a
 running ledger. Prices BOTH expiries per trade: 0DTE (nearest) and WEEKLY (nearest
-Friday). Idempotent — never re-prices a day already in the ledger. OPRA releases T+1,
+Friday), under BOTH fill conventions (2026-07-20 lookahead fix):
+  *_opt_1ct    — quote at the signal bar's START ts (legacy/optimistic: the alert only
+                 exists at the bar close; kept for continuity with old ledger rows)
+  *_opt_1ct_bc — quote at ts+5min = the bar CLOSE, when the alert actually fires.
+                 THE REALISTIC NUMBER — judge the forward test on this one.
+(The 2026-07-20 barclose re-validation: ~83% of the published options edge was the
+lookahead; A1/B1/C1 stay positive ~$28/trade, C2 flips negative. See memory/docs.)
+Idempotent — never re-prices a day already in the ledger. OPRA releases T+1,
 so it prices sessions up to the last fully-available day.
 
 Usage:
@@ -74,6 +81,9 @@ def main():
     ap.add_argument("--start")
     ap.add_argument("--end")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="reprice days already in the ledger (their old rows are REPLACED) — "
+                         "requires --start; used 2026-07-20 to backfill the *_bc columns")
     args = ap.parse_args()
 
     import databento as dbnt
@@ -99,7 +109,7 @@ def main():
         days = [d for d in all_days if d > last_logged]          # only sessions after the ledger
     else:
         days = all_days[-1:]                                     # first run, no ledger: seed the latest day only
-    days = [d for d in days if priceable(d) and d not in done]
+    days = [d for d in days if priceable(d) and (d not in done or (args.force and args.start))]
     if not days:
         print("No new priceable days. Ledger current through the last released OPRA session.")
         return
@@ -175,32 +185,43 @@ def main():
                        entry_px=round(t.entry_price, 2), exit_ts=t.exit_ts.strftime("%H:%M"),
                        exit_px=round(t.exit_price, 2), reason=t.reason, dur_min=t.duration_bars * 5,
                        cp=cp, share_pnl_u=round(t.pnl_total, 3), share_pnl_25=round(t.pnl_total * 25, 2))
+            bc = pd.Timedelta(minutes=5)   # bar CLOSE = index ts + 5m (realistic alert fill)
             for tag, w in (("dte0", False), ("wk", True)):
                 s, d = pick(t.day, t.entry_price, cp, w)
-                a = qv(s, t.entry_ts, "ask") if s else None
-                b = qv(s, t.exit_ts, "bid") if s else None
                 rec[f"{tag}_sym"] = s
                 rec[f"{tag}_dte"] = d
-                rec[f"{tag}_opt_1ct"] = round((b - a) * 100, 2) if (a is not None and b is not None) else None
+                for suf, off in (("", pd.Timedelta(0)), ("_bc", bc)):
+                    a = qv(s, t.entry_ts + off, "ask") if s else None
+                    b = qv(s, t.exit_ts + off, "bid") if s else None
+                    rec[f"{tag}_opt_1ct{suf}"] = round((b - a) * 100, 2) if (a is not None and b is not None) else None
             rows.append(rec)
             key = (t.day, name)
-            daysum.setdefault(key, [0.0, 0.0, 0.0])
+            daysum.setdefault(key, [0.0, 0.0, 0.0, 0.0])
             daysum[key][0] += rec["share_pnl_25"]
             daysum[key][1] += rec["dte0_opt_1ct"] or 0
-            daysum[key][2] += rec["wk_opt_1ct"] or 0
+            daysum[key][2] += rec["dte0_opt_1ct_bc"] or 0
+            daysum[key][3] += rec["wk_opt_1ct_bc"] or 0
 
     new = pd.DataFrame(rows)
-    print("\n=== NEW forward-test rows (per day x profile: shares@25 | 0DTE@1ct | weekly@1ct) ===")
+    print("\n=== NEW forward-test rows (per day x profile; bc = realistic bar-close fills) ===")
     for (day, name) in sorted(daysum):
-        sh, o0, ow = daysum[(day, name)]
-        print(f"  {day}  {name:<3}  shares ${sh:>+7.0f}   0DTE ${o0:>+7.0f}   weekly ${ow:>+7.0f}")
+        sh, o0, o0bc, owbc = daysum[(day, name)]
+        print(f"  {day}  {name:<3}  shares ${sh:>+7.0f}   0DTE ${o0:>+7.0f}   0DTE_bc ${o0bc:>+7.0f}   wk_bc ${owbc:>+7.0f}")
 
     if args.dry_run:
         print("\n(dry-run — ledger not written)")
         return
     os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
-    header = not os.path.exists(LEDGER)
-    new.to_csv(LEDGER, mode="a", header=header, index=False)
+    # full-file rewrite (not append): the 2026-07-20 _bc columns must stay aligned for
+    # old rows too (they get NaN there) — a raw CSV append would misalign the columns.
+    # --force: repriced days REPLACE their old ledger rows instead of duplicating them.
+    if os.path.exists(LEDGER):
+        prev = pd.read_csv(LEDGER)
+        if args.force:
+            prev = prev[~prev["trade_day"].astype(str).isin(set(days))]
+        new = pd.concat([prev, new], ignore_index=True).sort_values(
+            ["trade_day", "profile"], kind="stable")
+    new.to_csv(LEDGER, index=False)
     total = pd.read_csv(LEDGER)
     print(f"\nAppended {len(new)} rows -> {LEDGER}  (ledger now {len(total)} rows, "
           f"{total['trade_day'].nunique()} sessions {total['trade_day'].min()}..{total['trade_day'].max()})")

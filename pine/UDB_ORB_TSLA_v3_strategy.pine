@@ -125,7 +125,8 @@ optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0
 //   Options : TradersPost — long->BUY CALL, short->BUY PUT (always action=buy; optionType carries direction),
 //             full-exit->"exit"; contracts + 0DTE ATM via inputs. Leave "Invert puts" UNCHECKED in TradersPost.
 //             WORKS ON ALL PROFILES: the 25% partial's webhook is auto-suppressed so 1 contract HOLDS to the
-//             runner exit (A1/B1/C1 >> C2 on real 0DTE options: 2025-7/16 +$70k/+$65k/+$64k vs +$26k @1 ct (18/18 mo+)).
+//             runner exit. BARCLOSE-CORRECTED 2026-07-20 (old figures carried a 5-min entry lookahead):
+//             A1/B1/C1 >> C2 on real 0DTE options: +$12.9k/+$11.2k/+$10.1k vs -$1k @1ct 2025-01..2026-07.
 //             EXPIRY: 0DTE vs WEEKLY tested — WEEKLY (nearest Friday) beat 0DTE ~3-5% net (less theta on
 //             2-3h holds) but costs ~22% more premium. TSLA lists only ~Mon/Wed/Fri expiries (SPX is daily),
 //             and TradersPost '+N days' = nearest listed on/after today+N, so a FIXED offset cannot target
