@@ -95,8 +95,11 @@ Enable one at a time and compare to the baseline before trusting it.
   - 5-minute intraday: `/stable/historical-chart/5min` (signal + fill resolution).
 - FMP intraday timestamps are naive wall-clock ET → **localize, don't convert**. Paged in
   ~5-day chunks (≈450-row cap); error payloads arrive as a dict; 5m cached to `data/cache/`.
-- No 1-minute on this plan, so 5m bars also drive the intrabar fill model. Fill priority is
-  **stop-first** on any bar (matches Pine's SL-over-TP tie-break).
+- The 5m bars drive the intrabar fill model. Fill priority is **stop-first** on any bar
+  (matches Pine's SL-over-TP tie-break). NOTE 2026-07-20: the plan NOW serves **1-minute**
+  bars (probe returned a full session) and **extended hours** (`extended=true`, 04:00–19:55)
+  — the old "no 1-minute" limitation is gone; a 1m-resolution fill model is now possible.
+  Extended-hours 5m 2025-26 cached at `data/cache/TSLA_5min_ext_2025_2026.parquet`.
 
 ## Layout
 ```
