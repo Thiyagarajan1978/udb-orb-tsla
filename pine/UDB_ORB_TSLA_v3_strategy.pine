@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3 S", overlay=true,
+strategy("UDB-ORB TSLA v3.1 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3.1 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -13,6 +13,11 @@ strategy("UDB-ORB TSLA v3 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-OR
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// v3.1 2026-07-21 — OPTIONS ALERT FIX (no trade-logic change): in Options mode the 25% partial's
+// suppressed webhook used alert_message=na, so TradingView fired the fill alert with the LITERAL text
+// "{{strategy.order.alert_message}}" (an unset alert_message leaves the placeholder unresolved — seen
+// live on the B1 Options alert 2026-07-21 10:45, the Partial@TP fill). It now sends an explicit
+// human-readable "no action" text that TradersPost ignores; every order now carries an alert_message.
 // STATUS 2026-07-19 (no logic change — validation update): rival "3-bot" concept (15m-OR long ATM ±50%
 // + 30-min time stop) tested on TSLA with real OPRA quotes 2022-2026 (2024 gap now pulled): profitable
 // every year (+$45,916 @1ct, PF 3.02) but ~4x BELOW this system's options results — UDB stays, unchanged.
@@ -114,7 +119,7 @@ revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step
 revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, group=grpV)
 
 grpO = "Options via TradersPost (webhook)"
-orderAsset     = input.string("Shares", "Order asset", options=["Shares", "Options"], group=grpO, tooltip="Shares = the stock JSON (Buy/Sell/Exit, rounded shares). Options = TradersPost options JSON: a LONG signal buys a CALL, a SHORT signal buys a PUT, any full exit closes. WORKS ON ALL PROFILES incl A1/B1/C1: in Options mode the 25% partial's webhook is SUPPRESSED, so the single contract HOLDS through the partial and closes only at the runner's final exit (VWAP / trail / BE / close-stop / EOD) — matching the real 0DTE option backtest (A1/B1/C1 >> C2 on options). The Strategy Tester still shows the SHARE-signal P&L; real option P&L (delta/theta/IV) is NOT backtestable here. The suppressed partial fires an empty webhook that TradersPost ignores (harmless).")
+orderAsset     = input.string("Shares", "Order asset", options=["Shares", "Options"], group=grpO, tooltip="Shares = the stock JSON (Buy/Sell/Exit, rounded shares). Options = TradersPost options JSON: a LONG signal buys a CALL, a SHORT signal buys a PUT, any full exit closes. WORKS ON ALL PROFILES incl A1/B1/C1: in Options mode the 25% partial's webhook is SUPPRESSED, so the single contract HOLDS through the partial and closes only at the runner's final exit (VWAP / trail / BE / close-stop / EOD) — matching the real 0DTE option backtest (A1/B1/C1 >> C2 on options). The Strategy Tester still shows the SHARE-signal P&L; real option P&L (delta/theta/IV) is NOT backtestable here. The suppressed partial fires an informational text alert ('NO OPTIONS ACTION ... contract holds') that TradersPost ignores (harmless).")
 optContracts   = input.int(2,        "Option contracts (quantity)", minval=1, group=grpO, tooltip="DEFAULT 2. The real 0DTE backtest figures are PER CONTRACT, so 2 contracts = 2x P&L AND 2x premium at risk (~$465/ct -> ~$930/trade on TSLA, ~9% of a $10k account). Losses are capped small (~-$97/ct). Raise/lower to your risk tolerance.")
 optExpiration  = input.string("+0 days", "Option expiration", options=["+0 days", "Friday (weekly)", "+1 days", "+2 days", "+3 days", "+7 days"], group=grpO, tooltip="TradersPost resolves '+N days' to the NEAREST LISTED expiry ON/AFTER today+N — and TSLA lists only ~Mon/Wed/Fri weeklies (NO daily expiries, unlike SPX). So '+0 days' (default) = nearest listed: true 0DTE only on listed days; on Tue/Thu it grabs the next Wed/Fri (1DTE). 'Friday (weekly)' computes days-to-Friday DYNAMICALLY each day (Mon +4 .. Fri +0) — the only setting that matches the forward test's weekly leg. The fixed '+2'/'+3 days' values hit Friday only early in the week and roll into NEXT week from Wed/Thu/Fri — kept for manual experiments only. BACKTEST: WEEKLY (nearest-Friday) beat 0DTE by ~3-5% net (A1/B1/C1 +$2-3k over 2025-26, less theta on 2-3h holds) but costs ~22% more premium ($6.37 vs $5.24/ct), so 2 weekly ct risk more $ than 2 0DTE ct.")
 optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0, group=grpO)
@@ -451,11 +456,14 @@ if active and not na(stop) and bar_index >= entryBar
                 if not stopClose
                     strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", posSh))
             else if not part1
-                // OPTIONS: suppress the 25% partial's webhook (na) so the single contract HOLDS through the
+                // OPTIONS: suppress the 25% partial's webhook so the single contract HOLDS through the
                 // partial and closes only at the runner's final exit (matches the A1/B1/C1 option backtest).
+                // NEVER pass na here — an unset alert_message makes TV emit the LITERAL placeholder text
+                // "{{strategy.order.alert_message}}" (v3.1 fix, seen live 2026-07-21). Send readable
+                // non-JSON text instead: TradersPost ignores it, the TV notification stays meaningful.
                 // SHARES: the partial sends its normal 25% exit. The runner/stop/VWAP/EOD full-flatten still
                 // fires the option close, so nothing is missed.
-                partAlert = orderAsset == "Options" ? na : f_msg("Exit", partSh)
+                partAlert = orderAsset == "Options" ? "UDB-ORB INFO: 25% share-partial filled at target - NO OPTIONS ACTION, contract holds to the runner exit (TradersPost: ignore)" : f_msg("Exit", partSh)
                 strategy.exit("P1", from_entry=entryId, qty=partSh, stop=(stopClose ? na : restStop), limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit="Partial @ TP", alert_message=partAlert)
                 if not stopClose
                     strategy.exit("RUN", from_entry=entryId, qty=runSh, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", runSh))
@@ -495,7 +503,7 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol reg
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.1", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
