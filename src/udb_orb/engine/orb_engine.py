@@ -204,6 +204,19 @@ class OrbEngine:
         self._regime_tp_thresh = float(_rt.get("or_atr_thresh", 0.16))
         self._regime_tp_trend = float(_rt.get("trend_mult", 0.40))
         self._regime_tp_range = float(_rt.get("range_mult", 0.15))
+        # ATR-trail runner exit ("TRADE TASTIC" chandelier, default OFF): replaces the runner's
+        # VWAP-cross / peak-trail exit for the post-partial remainder. The trail line lives on the
+        # 5m series itself (indicators.trade_tastic_trail); the runner exits when a bar CLOSES
+        # beyond it (fill at the close — the indicator's color flip is close-based by definition).
+        # hybrid_vwap: keep the VWAP-cross armed too; the runner leaves on whichever fires first.
+        _tt = self.enh.get("atr_trail_exit", {})
+        self._tt_on = bool(_tt.get("enabled", False))
+        self._tt_atr_period = int(_tt.get("atr_period", 5))
+        self._tt_hhv_period = int(_tt.get("hhv_period", 10))
+        self._tt_mult = float(_tt.get("mult", 2.5))
+        self._tt_hybrid_vwap = bool(_tt.get("hybrid_vwap", False))
+        self._tt_long_arr = None
+        self._tt_short_arr = None
 
     def _atr_or(self, on: bool, mult: float, fixed: float) -> float:
         """mult*ATR when atr_normalize+this param are on and ATR is available, else the fixed value."""
@@ -401,6 +414,11 @@ class OrbEngine:
         df = df.sort_index()
         vwap = indicators.session_vwap(df)
         rvol = indicators.relative_volume(df, int(self.enh.get("rvol_filter", {}).get("lookback_bars", 20)))
+        if self._tt_on:
+            _ttl, _tts = indicators.trade_tastic_trail(
+                df, atr_period=self._tt_atr_period, hhv_period=self._tt_hhv_period, mult=self._tt_mult)
+            self._tt_long_arr = _ttl.to_numpy()
+            self._tt_short_arr = _tts.to_numpy()
 
         # Last bar of each session. Half sessions (e.g. Christmas Eve, 13:00 close) never produce
         # a bar at/after eod_exit, so without this a position would be silently dropped at the
@@ -822,14 +840,20 @@ class OrbEngine:
         long_runner_trail = False
         runner_trail_px = None
         if p.use_partial_exit and st.part1_closed:
-            if self._runner_trail_on:
+            if self._tt_on:
+                # TRADE TASTIC trail: exit when the bar CLOSES at/below the line (color flip)
+                if c <= self._tt_long_arr[bar_i]:
+                    long_runner_trail = True
+                    runner_trail_px = c
+            elif self._runner_trail_on:
                 st.runner_peak = h if st.runner_peak is None else max(st.runner_peak, h)
                 trail_level = st.runner_peak - self._runner_trail_dist(st)
                 # alerts-only: trigger on close beyond the trail and fill at the close
                 if (c <= trail_level) if p.exit_on_close else (l <= trail_level):
                     long_runner_trail = True
                     runner_trail_px = c if p.exit_on_close else trail_level
-            if (not self._runner_trail_on) or self._runner_hybrid_vwap:
+            if (self._tt_on and self._tt_hybrid_vwap) or \
+               (not self._tt_on and ((not self._runner_trail_on) or self._runner_hybrid_vwap)):
                 if (c - st.entry_price) >= p.partial_activation:
                     st.trail_active = True
                 if st.trail_active and vw is not None:
@@ -908,13 +932,19 @@ class OrbEngine:
         short_runner_trail = False
         runner_trail_px = None
         if p.use_partial_exit and st.part1_closed:
-            if self._runner_trail_on:
+            if self._tt_on:
+                # TRADE TASTIC trail (short mirror): exit when the bar CLOSES at/above the line
+                if c >= self._tt_short_arr[bar_i]:
+                    short_runner_trail = True
+                    runner_trail_px = c
+            elif self._runner_trail_on:
                 st.runner_peak = l if st.runner_peak is None else min(st.runner_peak, l)
                 trail_level = st.runner_peak + self._runner_trail_dist(st)
                 if (c >= trail_level) if p.exit_on_close else (h >= trail_level):
                     short_runner_trail = True
                     runner_trail_px = c if p.exit_on_close else trail_level
-            if (not self._runner_trail_on) or self._runner_hybrid_vwap:
+            if (self._tt_on and self._tt_hybrid_vwap) or \
+               (not self._tt_on and ((not self._runner_trail_on) or self._runner_hybrid_vwap)):
                 if (st.entry_price - c) >= p.partial_activation:
                     st.trail_active = True
                 if st.trail_active and vw is not None:

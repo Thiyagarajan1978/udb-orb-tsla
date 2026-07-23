@@ -237,6 +237,22 @@ enhancements:
     # WR; later entries just miss the trend body. Keep at 1.
     hold_bars: 1
 
+  # 4c) "TRADE TASTIC" ATR chandelier trail as the RUNNER exit — BUILT, TESTED, REJECTED
+  #     (default OFF, opt-in only; tested 2026-07-23 on B1/C1). Port of the TV indicator
+  #     (ceyhun): line = HHV(high - mult*ATR(atr_period), hhv_period), moves only on a bar
+  #     that closes above it AND extends; runner exits when a bar CLOSES beyond the line
+  #     (replaces the VWAP-cross / peak-trail; hybrid_vwap keeps VWAP armed too).
+  #     REGIME-DEPENDENT: beats VWAP in trending 2026 (B1 +153 vs +138, C1 +154 vs +133/unit)
+  #     but LOSES 2025 (B1 +81 vs +103) and flips C1 2024 NEGATIVE (-12 vs +15). 3-yr total
+  #     below baseline on both profiles; mult sweep 1.5-3.5 found no robust winner. Same
+  #     trail-in-trend / VWAP-in-chop pattern as the runner_trail-vs-VWAP comparison.
+  # atr_trail_exit:
+  #   enabled: false
+  #   atr_period: 5
+  #   hhv_period: 10
+  #   mult: 2.5
+  #   hybrid_vwap: false   # true: VWAP-cross stays armed too; runner leaves on whichever fires first
+
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
   #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the
   #    breakout level (within proximity_pct of the OR width), require the bar to CLOSE BEYOND
