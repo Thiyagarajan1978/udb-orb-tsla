@@ -1,0 +1,120 @@
+# TSLA D1 (EXPERIMENTAL — NOT adopted): B1's engine with the "TRADE TASTIC" ATR CHANDELIER
+# TRAIL as the runner exit instead of the VWAP cross (enhancement atr_trail_exit; the line =
+# HHV(high - mult*ATR(5), 10), moves only on a closing, extending bar; the post-partial runner
+# flattens when a bar CLOSES across it). Pine: v3.3 profile 'D1'.
+# TESTED 2026-07-23 (per unit, vs B1): 2024 +11.3 vs +20.2 | 2025 +80.7 vs +102.8 |
+# 2026YTD +153.4 vs +138.0. Wins trending tapes, loses chop — kept for easy comparison only.
+symbol: TSLA
+timeframe_minutes: 5
+timezone: America/New_York
+execution:
+  stop_fill_mode: close   # ADOPTED 2026-07-14: CLOSE-triggered stop (fires only when the bar CLOSES beyond the level, fills at the close). Beats wick/resting +46% net over 2022-2026, flips 2024 positive, cuts MaxDD ~40% (walk-forward OOS-confirmed on 2022-23). Avoids wick-fakeout stop-outs in chop years; TP stays wick-favorable.
+  exit_on_close: true
+  protective_stop: false
+  daily_loss_limit: 0.0
+session:
+  rth_start: 09:30
+  rth_end: '16:00'
+  market_open: 09:30
+  eod_exit: '15:50'
+profile:
+  name: Adaptive TP + Reversal (D1 ATR-Trail Runner)
+  trade_qty: 1.0
+  slippage_per_unit: 0.1
+  use_breakout_buffer: true
+  buffer_pct_or: 10.0
+  sl_mode: Candle High/Low + Max Cap
+  sl_offset: 0.0
+  fixed_sl: 5.0
+  tp_mode: Adaptive
+  adaptive_tp_scale: 1.0
+  adaptive_tp_min: 2.14
+  fixed_tp: 2.14
+  use_be_retrace: true
+  be_retrace_trigger: 0.55
+  be_trail_amount: 0.25
+  be_retrace_use_close: false
+  use_partial_exit: true
+  partial_qty_pct: 25.0
+  partial_activation: 1.0
+  use_reversal: true
+  reversal_qty_mult: 2.0
+  reversal_target: 5.0
+  apply_be_to_reversal: true
+  reversal_risk_cap: 6.0
+  reversal_risk_mode: scale
+  min_or_width_enabled: false
+  min_or_width: 2.5
+  max_or_width_enabled: true
+  max_or_width: 8.0
+  use_vwap_filter: false
+  trade_side_mode: Both
+enhancements:
+  atr_trail_exit:            # <- the one difference vs tsla_best_B.yaml
+    enabled: true
+    atr_period: 5
+    hhv_period: 10
+    mult: 2.5
+    hybrid_vwap: false
+  rvol_filter:
+    enabled: false
+    lookback_bars: 20
+    min_rvol: 1.2
+  volatility_regime:
+    enabled: true
+    lookback: 20
+    max_rvol_pct: 4.92
+  or_width_regime:
+    enabled: false
+    skip_below: 0.0
+    skip_above: 0.0
+  time_window:
+    enabled: false
+    start: 09:35
+    end: '14:00'
+  reversal_capture:
+    enabled: true
+    trigger_on_be_stop: true
+    trail_to_eod: true
+    target_or_mult: 0.0
+    reenter_after_whipsaw: false
+  runner_trail:
+    enabled: false
+    or_mult: 0.75
+  resume_reentry:
+    enabled: false
+    trigger: buffered
+    risk_cap: 0.0
+    disarm_other: true
+  confirm_two_closes:
+    enabled: false
+  confirm_breakout:
+    enabled: false
+    require_trend_candle: true
+    hold_bars: 1
+  pdh_pdl_filter:
+    enabled: false
+    proximity_pct: 14.0
+data:
+  provider: fmp
+  cache_dir: data/cache
+  db_path: data/udb_orb.db
+alerts:
+  enabled: true
+  channels:
+  - email
+  - webhook
+  events:
+  - primary_entry
+  - reversal_entry
+  - be_retrace_fired
+  - tp_full
+  - partial_exit
+  - be_trail_exit
+  - be_stop_exit
+  - vwap_cross_exit
+  - base_sl_exit
+  - eod_exit
+live:
+  poll_seconds: 30
+  lookback_days: 3

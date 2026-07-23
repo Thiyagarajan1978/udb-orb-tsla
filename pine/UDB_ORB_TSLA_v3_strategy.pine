@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.2 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3.2 S", overlay=true,
+strategy("UDB-ORB TSLA v3.3 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.3 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -12,6 +12,14 @@ strategy("UDB-ORB TSLA v3.2 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-
      commission_value        = 0,
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
+
+// v3.3 2026-07-23 — NEW PROFILE D1 (experimental, for side-by-side comparison — NOT adopted):
+// D1 = B1's engine (Adaptive TP + 25% partial) with the "TRADE TASTIC" ATR CHANDELIER TRAIL as the
+// runner exit instead of the VWAP cross: line = HHV(high - mult*ATR(5), 10) (short side mirrored),
+// moves only on a closing, extending bar; the runner flattens when a bar CLOSES across it. Python
+// twin: config/tsla_config_D1.yaml (enhancement atr_trail_exit). TESTED 2026-07-23 (per unit):
+// D1 vs B1 -> 2024 +11.3 vs +20.2 | 2025 +80.7 vs +102.8 | 2026YTD +153.4 vs +138.0. The trail wins
+// the trending 2026 tape, loses 2024/25 chop — VWAP stays adopted; D1 makes the comparison easy.
 
 // v3.2 2026-07-23 — PARTIAL-AS-ORDER OPTION (no trade-logic change): new Shares-mode input "Partial exit
 // as opposite-side order". Some execution platforms treat action=exit as FLATTEN-ALL and ignore the
@@ -75,15 +83,16 @@ strategy("UDB-ORB TSLA v3.2 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-
 
 // ==================== PROFILE ====================
 profile = input.string("C1 · ATR 0.25 + 25% Partial + VWAP", "Profile",
-     options=["A1 · Adaptive + Peak-Trail", "B1 · Adaptive + VWAP", "C1 · ATR 0.25 + 25% Partial + VWAP", "C2 · Fixed $2 Full-Exit (max WR)"],
-     group="Profile", tooltip="A1/B1 = adaptive OR-scaled target + 25% partial + runner (peak-trail vs VWAP). C1 = ATR-sized target + 25% partial + VWAP (best PF). C2 = flat $2 full exit, no partial/runner (highest win rate).")
+     options=["A1 · Adaptive + Peak-Trail", "B1 · Adaptive + VWAP", "C1 · ATR 0.25 + 25% Partial + VWAP", "C2 · Fixed $2 Full-Exit (max WR)", "D1 · Adaptive + ATR-Trail (exp)"],
+     group="Profile", tooltip="A1/B1 = adaptive OR-scaled target + 25% partial + runner (peak-trail vs VWAP). C1 = ATR-sized target + 25% partial + VWAP (best PF). C2 = flat $2 full exit, no partial/runner (highest win rate). D1 (EXPERIMENTAL, not adopted) = B1 with the TRADE TASTIC ATR chandelier trail as the runner exit — wins trending tapes (2026), loses chop (2024/25).")
 isA1 = str.startswith(profile, "A1")
 isB1 = str.startswith(profile, "B1")
 isC1 = str.startswith(profile, "C1")
 isC2 = str.startswith(profile, "C2")
+isD1 = str.startswith(profile, "D1")
 tpModeSel  = isC2 ? "Fixed" : isC1 ? "ATR" : "Adaptive"
-usePartial = not isC2                 // C2 is a full exit; A1/B1/C1 scale out 25%
-runnerVWAP = isB1 or isC1             // true = VWAP-cross runner ; false = peak-trail (A1)
+usePartial = not isC2                 // C2 is a full exit; A1/B1/C1/D1 scale out 25%
+runnerVWAP = isB1 or isC1             // true = VWAP-cross runner ; false = peak-trail (A1) or ATR trail (D1)
 
 // ==================== INPUTS ====================
 grpS = "Session"
@@ -117,6 +126,9 @@ stopClose = str.startswith(stopTrigger, "Close")
 partialPct      = input.float(25.0, "Partial Exit Quantity % (A1/B1/C1)", step=1.0, group=grpX)
 runnerMult      = input.float(0.75, "Runner Peak-Trail x OR width (A1)", step=0.05, group=grpX)
 vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit $ (B1/C1)", step=0.25, group=grpX)
+ttAtrPeriod     = input.int(5,      "ATR Trail — ATR Period (D1)", minval=1, group=grpX)
+ttHhvPeriod     = input.int(10,     "ATR Trail — HHV/LLV Period (D1)", minval=1, group=grpX)
+ttMult          = input.float(2.5,  "ATR Trail — ATR Multiplier (D1)", step=0.1, group=grpX, tooltip="D1 runner exit = the 'TRADE TASTIC' chandelier: line = HHV(high - mult*ATR(period), hhv) for longs (mirrored for shorts); moves only on a bar that CLOSES beyond it AND extends (close > prev close); the runner flattens when a bar CLOSES across the line. Mult sweep 1.5-3.5 tested 2026-07-23: no setting wins 2024+2025+2026 together.")
 
 grpC = "Entry Confirmation"
 confirmBreakout    = input.bool(false, "Require confirmation candle (2-candle break)", group=grpC, tooltip="DEFAULT OFF: net-negative under the resting stop.")
@@ -172,6 +184,22 @@ showLabels = input.bool(false, "Show Labels", group=grpU, tooltip="Turn OFF for 
 showLevels = input.bool(true, "Show Levels", group=grpU)
 
 maxCapSL = maxCapOverride > 0 ? maxCapOverride : (isC1 ? 6.0 : 5.0)
+
+// ==================== "TRADE TASTIC" ATR CHANDELIER TRAIL (D1 runner exit) ====================
+// Long line = HHV(high - mult*ATR, hhv); it MOVES only on a bar that closes above it AND extends
+// (close > prev close) — otherwise it holds. Short side mirrored. First 16 bars pin to the close
+// (the original indicator's warm-up). Runner exit = a bar CLOSING across the line (color flip).
+ttATR = ta.rma(ta.tr(true), ttAtrPeriod)
+ttHHV = ta.highest(high - ttMult * ttATR, ttHhvPeriod)
+ttLLV = ta.lowest(low + ttMult * ttATR, ttHhvPeriod)
+var float ttLong = na
+var float ttShort = na
+if bar_index < 16
+    ttLong := close
+    ttShort := close
+else
+    ttLong := close > ttHHV and close > close[1] ? ttHHV : ttLong
+    ttShort := close < ttLLV and close < close[1] ? ttLLV : ttShort
 
 // ==================== PRIOR-DAY VOL + DAILY ATR (no repaint) ====================
 f_priorRvol() =>
@@ -412,8 +440,8 @@ if active and not na(stop) and bar_index >= entryBar
                 tp := na
                 if showLabels
                     label.new(bar_index, tdir == 1 ? high : low, "PARTIAL " + str.tostring(partialPct, "#") + "%", style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.tiny)
-            // Step 4a: runner peak-trail level (A1)
-            if part1 and not suppressPartial and not runnerVWAP and runnerMult > 0
+            // Step 4a: runner peak-trail level (A1; D1 uses the ATR trail in Step 4c instead)
+            if part1 and not suppressPartial and not runnerVWAP and not isD1 and runnerMult > 0
                 runnerPeak := na(runnerPeak) ? (tdir == 1 ? high : low) : (tdir == 1 ? math.max(runnerPeak, high) : math.min(runnerPeak, low))
             // Step 4b: runner VWAP-cross exit (B1/C1)
             if part1 and not suppressPartial and runnerVWAP
@@ -432,6 +460,19 @@ if active and not na(stop) and bar_index >= entryBar
                     stop := na
                     vwapArmed := false
                     vwapExited := true
+            // Step 4c: runner ATR-trail exit (D1) — a bar CLOSES across the TRADE TASTIC line
+            if part1 and not suppressPartial and isD1 and (tdir == 1 ? close <= ttLong : close >= ttShort)
+                strategy.cancel("P1")
+                strategy.cancel("RUN")
+                strategy.close(entryId, comment=(inRev ? "REV ATR Trail" : "ATR Trail"), alert_message=f_msg("Exit", math.round(math.abs(strategy.position_size))))
+                if showLabels
+                    label.new(bar_index, tdir == 1 ? high : low, (inRev ? "REV " : "") + "ATR TRAIL " + str.tostring(close, format.mintick), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.yellow, 0), textcolor=color.black, size=size.small)
+                active := false
+                tdir := 0
+                inRev := false
+                tp := na
+                stop := na
+                vwapExited := true   // reuse the exited-this-bar flag: skip the bracket refresh below
         else
             // C2 full exit: mirror the target touch so a TP win does not arm the reversal
             if not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
@@ -442,7 +483,7 @@ if active and not na(stop) and bar_index >= entryBar
         beReason = beTrig ? ((tdir == 1 ? restStop > entry : restStop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
         partSh = math.round(posSh * partialPct / 100)   // whole-share 25% partial; runner takes the remainder
         runSh  = posSh - partSh
-        trailLevel = (usePartial and part1 and not suppressPartial and not runnerVWAP and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
+        trailLevel = (usePartial and part1 and not suppressPartial and not runnerVWAP and not isD1 and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
         isTrail = not na(trailLevel) and (tdir == 1 ? trailLevel >= stop : trailLevel <= stop)
         if usePartial and part1 and not suppressPartial
             lastWasTrail := isTrail
@@ -512,7 +553,7 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol reg
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.2", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.3", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
