@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.1 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3.1 S", overlay=true,
+strategy("UDB-ORB TSLA v3.2 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-ORB v3.2 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -13,6 +13,14 @@ strategy("UDB-ORB TSLA v3.1 STRATEGY — A1/B1/C1/C2 Profiles", shorttitle="UDB-
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// v3.2 2026-07-23 — PARTIAL-AS-ORDER OPTION (no trade-logic change): new Shares-mode input "Partial exit
+// as opposite-side order". Some execution platforms treat action=exit as FLATTEN-ALL and ignore the
+// quantity, so the 25% partial's '{"action":"Exit","quantity":N}' closed the whole position. ON sends the
+// partial as a plain opposite-side order instead — long -> '{"action":"Sell","quantity":N}', short ->
+// '{"action":"Buy","quantity":N}' — so a netting platform reduces the position by N. The runner / stop /
+// VWAP / EOD exits still send full "Exit". REQUIRES a platform that NETS an opposite-side order against
+// the open position (reduces); if yours REVERSES (closes all + opens the other way), leave this OFF.
+// Verify one partial fill in paper before trusting it live. Default OFF (TradersPost exit honors quantity).
 // v3.1 2026-07-21 — OPTIONS ALERT FIX (no trade-logic change): in Options mode the 25% partial's
 // suppressed webhook used alert_message=na, so TradingView fired the fill alert with the LITERAL text
 // "{{strategy.order.alert_message}}" (an unset alert_message leaves the placeholder unresolved — seen
@@ -123,6 +131,7 @@ orderAsset     = input.string("Shares", "Order asset", options=["Shares", "Optio
 optContracts   = input.int(2,        "Option contracts (quantity)", minval=1, group=grpO, tooltip="DEFAULT 2. The real 0DTE backtest figures are PER CONTRACT, so 2 contracts = 2x P&L AND 2x premium at risk (~$465/ct -> ~$930/trade on TSLA, ~9% of a $10k account). Losses are capped small (~-$97/ct). Raise/lower to your risk tolerance.")
 optExpiration  = input.string("+0 days", "Option expiration", options=["+0 days", "Friday (weekly)", "+1 days", "+2 days", "+3 days", "+7 days"], group=grpO, tooltip="TradersPost resolves '+N days' to the NEAREST LISTED expiry ON/AFTER today+N — and TSLA lists only ~Mon/Wed/Fri weeklies (NO daily expiries, unlike SPX). So '+0 days' (default) = nearest listed: true 0DTE only on listed days; on Tue/Thu it grabs the next Wed/Fri (1DTE). 'Friday (weekly)' computes days-to-Friday DYNAMICALLY each day (Mon +4 .. Fri +0) — the only setting that matches the forward test's weekly leg. The fixed '+2'/'+3 days' values hit Friday only early in the week and roll into NEXT week from Wed/Thu/Fri — kept for manual experiments only. BACKTEST: WEEKLY (nearest-Friday) beat 0DTE by ~3-5% net (A1/B1/C1 +$2-3k over 2025-26, less theta on 2-3h holds) but costs ~22% more premium ($6.37 vs $5.24/ct), so 2 weekly ct risk more $ than 2 0DTE ct.")
 optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0, group=grpO)
+partialAsOrder = input.bool(false,   "Partial exit as opposite-side order (Shares mode)", group=grpO, tooltip="For platforms where action=exit ALWAYS flattens the whole position and ignores the quantity (cannot split). ON: the 25% partial fires as a plain opposite-side order — long -> action=Sell qty N, short -> action=Buy qty N — so a NETTING platform reduces the position by N and the 75% runner keeps riding. The runner/stop/VWAP/EOD exits still send the normal full 'Exit'. WARNING: only works if your platform NETS an opposite-side order against the open position; if it REVERSES (flatten + open opposite), leave OFF. Designed for the default Close stop mode; in Wick mode a stop-out day sends Sell-partial + Exit back-to-back (still ends flat). Test one partial fill in paper first. OFF = the original Exit-with-quantity JSON (TradersPost honors it).")
 
 // ---- WEBHOOK ALERTS: per-order JSON via alert_message. In TradingView set the alert message to
 // {{strategy.order.alert_message}} (NOT {{strategy.order.action}} — that only outputs buy/sell, never "Exit").
@@ -463,7 +472,7 @@ if active and not na(stop) and bar_index >= entryBar
                 // non-JSON text instead: TradersPost ignores it, the TV notification stays meaningful.
                 // SHARES: the partial sends its normal 25% exit. The runner/stop/VWAP/EOD full-flatten still
                 // fires the option close, so nothing is missed.
-                partAlert = orderAsset == "Options" ? "UDB-ORB INFO: 25% share-partial filled at target - NO OPTIONS ACTION, contract holds to the runner exit (TradersPost: ignore)" : f_msg("Exit", partSh)
+                partAlert = orderAsset == "Options" ? "UDB-ORB INFO: 25% share-partial filled at target - NO OPTIONS ACTION, contract holds to the runner exit (TradersPost: ignore)" : f_msg(partialAsOrder ? (tdir == 1 ? "Sell" : "Buy") : "Exit", partSh)
                 strategy.exit("P1", from_entry=entryId, qty=partSh, stop=(stopClose ? na : restStop), limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit="Partial @ TP", alert_message=partAlert)
                 if not stopClose
                     strategy.exit("RUN", from_entry=entryId, qty=runSh, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", runSh))
@@ -503,7 +512,7 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol reg
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.1", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.2", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
