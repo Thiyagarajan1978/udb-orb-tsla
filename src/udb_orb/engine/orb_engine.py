@@ -210,6 +210,16 @@ class OrbEngine:
         # a LONG when the bar CLOSES <= the line, a SHORT when it CLOSES > the line (fill at
         # the close — the flip is close-based by definition).
         # hybrid_vwap: keep the VWAP-cross armed too; the runner leaves on whichever fires first.
+        # VWAP distance gate (default OFF): the plain VWAP-side condition is a structural no-op here
+        # (the buffered close-break implies it — 652/652 entries 2024-26 already satisfied it), so any
+        # binding VWAP entry filter must be a DISTANCE: require the entry close to be at least
+        # min_frac x OR width beyond the session VWAP (skips breaks that barely cleared a flat open)
+        # and/or at most max_frac x OR width beyond it (skips over-extended breaks). 0 = that side off.
+        # Gates primary + reversal + resume + re-entry, like use_vwap_filter.
+        _vg = self.enh.get("vwap_distance_gate", {})
+        self._vg_on = bool(_vg.get("enabled", False))
+        self._vg_min = float(_vg.get("min_frac", 0.0) or 0.0)
+        self._vg_max = float(_vg.get("max_frac", 0.0) or 0.0)
         _tt = self.enh.get("atr_trail_exit", {})
         self._tt_on = bool(_tt.get("enabled", False))
         self._tt_atr_period = int(_tt.get("atr_period", 5))
@@ -553,6 +563,14 @@ class OrbEngine:
             max_ok = (not p.max_or_width_enabled) or (st.or_width is not None and st.or_width <= self._atr_or(self._atr_gate_on, self._atr_gate_mult, p.max_or_width))
             vwap_long_ok = (not p.use_vwap_filter) or (vw is not None and c > vw)
             vwap_short_ok = (not p.use_vwap_filter) or (vw is not None and c < vw)
+            if self._vg_on and vw is not None and st.or_width:
+                dl, ds = c - vw, vw - c   # signed distance beyond VWAP per direction
+                if self._vg_min > 0:
+                    vwap_long_ok = vwap_long_ok and dl >= self._vg_min * st.or_width
+                    vwap_short_ok = vwap_short_ok and ds >= self._vg_min * st.or_width
+                if self._vg_max > 0:
+                    vwap_long_ok = vwap_long_ok and dl <= self._vg_max * st.or_width
+                    vwap_short_ok = vwap_short_ok and ds <= self._vg_max * st.or_width
 
             # 2-close acceptance: require the PREVIOUS bar to also have closed beyond the trigger
             # (a confirmation filter borrowed from the v1.23 PDH/PDL acceptance concept).

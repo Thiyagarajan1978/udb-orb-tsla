@@ -255,6 +255,20 @@ enhancements:
   #   mult: 2.5
   #   hybrid_vwap: false   # true: VWAP-cross stays armed too; runner leaves on whichever fires first
 
+  # 4d) VWAP DISTANCE entry gate — BUILT, TESTED, REJECTED (default OFF; tested 2026-07-24 on B1).
+  #     The plain VWAP-side condition (long above / short below VWAP) is a structural NO-OP: the
+  #     buffered OR close-break implies it (652/652 entries 2024-26 already satisfied it, min
+  #     margin $0.49). A binding filter must be a DISTANCE in OR-width fractions: min_frac =
+  #     entry close must be >= frac x OR beyond VWAP (skip weak breaks), max_frac = <= frac x OR
+  #     (skip over-extended breaks); 0 = that side off. Gates primary + reversal + resume + re-entry.
+  #     VERDICT: hurts. Every min threshold cuts 3-yr net (base +268 -> +224/+199/+157 at
+  #     0.4/0.6/0.8); min 0.6 looks great in 2026 ONLY (PF 1.73, WR 54%) but flips 2024 negative —
+  #     the usual regime trap. max_frac barely binds (<=1% of entries) and degrades when it does.
+  # vwap_distance_gate:
+  #   enabled: false
+  #   min_frac: 0.0
+  #   max_frac: 0.0
+
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
   #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the
   #    breakout level (within proximity_pct of the OR width), require the bar to CLOSE BEYOND
