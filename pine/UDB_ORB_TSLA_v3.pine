@@ -1,6 +1,13 @@
 //@version=6
-indicator("UDB-ORB TSLA v3.6 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.6", overlay=true, max_labels_count=500)
+indicator("UDB-ORB TSLA v3.7 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.7", overlay=true, max_labels_count=500)
 
+// v3.7 2026-07-24 — CONFIGURABLE SHARE QUANTITY (user request, mirrors the Option-contracts input):
+//   new "Share quantity (shares per 1.0 unit)" input (default 25 = the old hardcoded scale).
+//   INDICATOR: entry / reversal / partial alerts now state the exact share count to place
+//   (reversal = risk-parity scaled, partial = partialPct of the position); summary table adds a
+//   "Net @ N sh" dollar row. STRATEGY: the old "Shares per 'unit'" input is RENAMED "Share quantity"
+//   — order qty and webhook JSON quantity = Units Per Trade x this (reversal: risk-parity x this).
+//   Keep the indicator and strategy inputs EQUAL. No trade-logic change anywhere.
 // v3.6 2026-07-23 — D1 EXIT MODE OPTION (user request, like the C2 formula input): new "D1 Exit
 //   mode" input — "Partial TP + ATR Trail" (default, the original D1) vs "FULL EXIT AT ATR TRAIL":
 //   nothing is taken at the adaptive TP (its touch only ARMS the trail), 100% exits on the TRADE
@@ -108,6 +115,7 @@ maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, g
 grpE = "Entry"
 bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE)
 tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE)
+shareQty    = input.int(25,     "Share quantity (shares per 1.0 unit)", minval=1, group=grpE, tooltip="v3.7: your FIXED share size, configured here like the strategy's Option-contracts input. Primary trade = Units Per Trade x this (default 1.0 x 25 = 25 sh); the risk-parity reversal scales off it. Entry/reversal/partial ALERTS now carry the exact share quantity to place, and the summary table adds a dollar P&L row at this size. Matches the STRATEGY's 'Share quantity' input — keep the two equal.")
 slippage    = input.float(0.10, "Slippage Per Unit (charged on each exit)", step=0.01, group=grpE)
 
 grpX = "Exit tuning (which apply depends on the Profile)"
@@ -567,18 +575,21 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped")
 // ==================== ALERTS ====================
 if barstate.isconfirmed
     base = " | " + str.substring(profile, 0, 2) + " | " + syminfo.ticker + " " + timeframe.period + "m | Px $" + str.tostring(close, "#.##") + " | " + str.format_time(time, "yyyy-MM-dd HH:mm", "America/New_York") + " ET"
+    entryShares = math.round(tradeQty * shareQty)
+    revShares   = math.round(nz(qtyTotal, tradeQty) * shareQty)        // qtyTotal = risk-parity size on reversal bars
+    partShares  = math.round(nz(qtyTotal, tradeQty) * shareQty * partialPct / 100)
     if aEntryL
-        alert("[ENTRY] LONG breakout — BUY at market" + base, alert.freq_once_per_bar)
+        alert("[ENTRY] LONG breakout — BUY " + str.tostring(entryShares) + " sh at market" + base, alert.freq_once_per_bar)
     if aEntryS
-        alert("[ENTRY] SHORT breakout — SELL SHORT at market" + base, alert.freq_once_per_bar)
+        alert("[ENTRY] SHORT breakout — SELL SHORT " + str.tostring(entryShares) + " sh at market" + base, alert.freq_once_per_bar)
     if aRevL
-        alert("[ENTRY-REV] REVERSAL LONG (risk-parity size) — BUY at market" + base, alert.freq_once_per_bar)
+        alert("[ENTRY-REV] REVERSAL LONG (risk-parity size) — BUY " + str.tostring(revShares) + " sh at market" + base, alert.freq_once_per_bar)
     if aRevS
-        alert("[ENTRY-REV] REVERSAL SHORT (risk-parity size) — SELL SHORT at market" + base, alert.freq_once_per_bar)
+        alert("[ENTRY-REV] REVERSAL SHORT (risk-parity size) — SELL SHORT " + str.tostring(revShares) + " sh at market" + base, alert.freq_once_per_bar)
     if aBEFired
         alert("[STATE] BE RETRACE FIRED — move stop to ENTRY" + base, alert.freq_once_per_bar)
     if aPart
-        alert("[EXIT-PARTIAL] 25% closed at target; runner now governs" + base, alert.freq_once_per_bar)
+        alert("[EXIT-PARTIAL] " + str.tostring(partialPct, "#") + "% closed at target (" + str.tostring(partShares) + " sh); runner now governs" + base, alert.freq_once_per_bar)
     if aWin
         alert("[EXIT-WIN] target / runner exit — close remaining position" + base, alert.freq_once_per_bar)
     if aStop
@@ -641,7 +652,7 @@ alertcondition(isC2 and aStop,    title="C2 SL",       message="C2 SL - close po
 alertcondition(isC2 and aEOD,     title="C2 EOD",      message="C2 EOD - end-of-day forced close | {{ticker}} {{interval}}m @ {{close}}")
 
 // ==================== SUMMARY TABLE ====================
-var table tbl = table.new(position.top_right, 2, 15, border_width=1)
+var table tbl = table.new(position.top_right, 2, 16, border_width=1)
 f_row(_r, _k, _v, _col) =>
     table.cell(tbl, 0, _r, _k, text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(tbl, 1, _r, _v, text_color=_col, bgcolor=color.rgb(25,25,25), text_size=size.small)
@@ -652,7 +663,7 @@ if barstate.islast and showTable
     wr = nTrades > 0 ? nSucc * 100.0 / nTrades : 0.0
     pf = grossL > 0 ? grossP / grossL : na
     exp = nTrades > 0 ? netPnl / nTrades : 0.0
-    table.cell(tbl, 0, 0, "UDB-ORB v3.6", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(tbl, 0, 0, "UDB-ORB v3.7", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(tbl, 1, 0, str.substring(profile, 0, 2) + " · " + tpModeSel, text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     f_row(1, "Trades", str.tostring(nTrades), color.yellow)
     f_row(2, "Win Rate", str.tostring(wr, "#.#") + "%", color.orange)
@@ -668,3 +679,4 @@ if barstate.islast and showTable
     f_row(12, "Wins (TP/runner)", str.tostring(cWin), color.lime)
     f_row(13, "Stops", str.tostring(cStop), color.orange)
     f_row(14, "EOD closes", str.tostring(cEOD), color.silver)
+    f_row(15, "Net @ " + str.tostring(shareQty) + " sh", (netPnl >= 0 ? "+$" : "-$") + str.tostring(math.abs(netPnl * shareQty), "#,###"), netPnl >= 0 ? color.lime : color.red)

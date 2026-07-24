@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.6 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.6 S", overlay=true,
+strategy("UDB-ORB TSLA v3.7 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.7 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -13,6 +13,13 @@ strategy("UDB-ORB TSLA v3.6 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="U
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// v3.7 2026-07-24 — CONFIGURABLE SHARE QUANTITY (user request, mirrors the Option-contracts input):
+// the "Shares per 'unit'" input is RENAMED "Share quantity (Shares mode, per 1.0-unit trade)" —
+// set your fixed share size there once; every order and webhook JSON quantity = Units Per Trade x
+// this (default 1.0 x 25 = 25 sh; the risk-parity reversal scales off it and may exceed it up to
+// the $-risk cap). Same-named input added to the v3.7 INDICATOR (its entry/reversal/partial alerts
+// now carry the exact share count; table adds a "Net @ N sh" dollar row) — keep the two inputs
+// EQUAL. No trade-logic change; sizing default (25) unchanged.
 // v3.6 2026-07-23 — D1 EXIT MODE OPTION (user request, like the C2 formula input): new "D1 Exit
 // mode" input — "Partial TP + ATR Trail" (default, the original D1) vs "FULL EXIT AT ATR TRAIL":
 // nothing is taken at the adaptive TP (its touch only ARMS the trail; no TP order is placed),
@@ -129,7 +136,7 @@ maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, g
 grpE = "Entry"
 bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE)
 tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE)
-unitScale   = input.int(25,     "Shares per 'unit' (25 = ~$10k on TSLA)", minval=1, group=grpE, tooltip="DEFAULT 25 = ~$10,000 unleveraged on TSLA (~$400/sh). Scales the fractional risk-parity reversal so it survives whole-share rounding. Strategy Tester P&L = this x the Python per-unit figures (so = the @100-share reports / 4). The 2x reversal can briefly hold ~2x notional; margin_long/short are 0 so it isn't rejected on a $10k account.")
+shareQty    = input.int(25,     "Share quantity (Shares mode, per 1.0-unit trade)", minval=1, group=grpE, tooltip="v3.7 (was 'Shares per unit'): your FIXED share size, configured here like the Option-contracts input. Every order and webhook JSON quantity = Units Per Trade x this (default 1.0 x 25 = 25 sh, ~$10k unleveraged on TSLA); the risk-parity REVERSAL scales off it (can exceed it up to ~2x before the $-risk cap; margin_long/short are 0 so it isn't rejected). Strategy Tester P&L = this x the Python per-unit figures. Keep EQUAL to the indicator's 'Share quantity' input.")
 
 grpX = "Exit tuning (which apply depends on the Profile)"
 maxCapOverride  = input.float(0.0,  "Max Stop override ($, 0 = use profile: C1=6 else 5)", step=0.5, group=grpX)
@@ -315,7 +322,7 @@ shortConfirm = not confirmBreakout or (close[1] < shortBrk and (close <= open or
 if canTrade and not active and not firstTaken and strategy.position_size == 0
     if close > longBrk and longConfirm
         entryId := "L"
-        posSh := math.round(tradeQty * unitScale)
+        posSh := math.round(tradeQty * shareQty)
         strategy.entry(entryId, strategy.long, qty=posSh, alert_message=f_msg("Buy", posSh))
         active := true
         tdir := 1
@@ -338,7 +345,7 @@ if canTrade and not active and not firstTaken and strategy.position_size == 0
             label.new(bar_index, low, "LONG " + str.tostring(close, format.mintick), style=label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.small)
     else if close < shortBrk and shortConfirm
         entryId := "S"
-        posSh := math.round(tradeQty * unitScale)
+        posSh := math.round(tradeQty * shareQty)
         strategy.entry(entryId, strategy.short, qty=posSh, alert_message=f_msg("Sell", posSh))
         active := true
         tdir := -1
@@ -393,7 +400,7 @@ if canTrade and primStopped and not active and strategy.position_size == 0
         rpu = math.abs(close - orHigh)
         rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
         entryId := "RS"
-        posSh := math.round(rq * unitScale)
+        posSh := math.round(rq * shareQty)
         strategy.entry(entryId, strategy.short, qty=posSh, alert_message=f_msg("Sell", posSh))
         active := true
         tdir := -1
@@ -417,7 +424,7 @@ if canTrade and primStopped and not active and strategy.position_size == 0
         rpu = math.abs(close - orLow)
         rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
         entryId := "RL"
-        posSh := math.round(rq * unitScale)
+        posSh := math.round(rq * shareQty)
         strategy.entry(entryId, strategy.long, qty=posSh, alert_message=f_msg("Buy", posSh))
         active := true
         tdir := 1
@@ -579,7 +586,7 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol reg
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.6", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.7", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
