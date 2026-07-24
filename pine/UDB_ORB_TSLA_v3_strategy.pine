@@ -52,9 +52,9 @@ strategy("UDB-ORB TSLA v3.6 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="U
 // "{{strategy.order.alert_message}}" (an unset alert_message leaves the placeholder unresolved — seen
 // live on the B1 Options alert 2026-07-21 10:45, the Partial@TP fill). It now sends an explicit
 // human-readable "no action" text that TradersPost ignores; every order now carries an alert_message.
-// STATUS 2026-07-19 (no logic change — validation update): rival "3-bot" concept (15m-OR long ATM ±50%
-// + 30-min time stop) tested on TSLA with real OPRA quotes 2022-2026 (2024 gap now pulled): profitable
-// every year (+$45,916 @1ct, PF 3.02) but ~4x BELOW this system's options results — UDB stays, unchanged.
+// STATUS 2026-07-19 — CORRECTED 2026-07-24: the rival "3-bot" concept's TSLA result (+$45,916 @1ct)
+// was ENTIRELY the bar-START pricing lookahead; barclose-corrected it is NEGATIVE on TSLA (BOT1
+// -$2,295 @1ct 2022-26, all spread bots negative) — UDB stays the TSLA system, now unambiguously.
 // TSLA credit spreads tested and rejected (thin credits vs $2.50 strikes, weekly expiry). Every weekday is
 // net-positive; FRIDAY is the best options day (74% WR, true 0DTE) — never skip it. Options paper trading:
 // per-contract risk ~= HALF the premium (median ~$435/ct); prefer fixed-DOLLAR sizing over fixed contracts

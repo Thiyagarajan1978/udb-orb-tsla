@@ -101,8 +101,9 @@ for day,g in bars.groupby("day"):
     def orb(nbars):
         w=g.iloc[:nbars]; hi=w["high"].max(); lo=w["low"].min()
         for _,r in g.iloc[nbars:].iterrows():
-            if r["close"]>hi*(1+BUF): return ("up",int(r["mod"]),float(r["close"]))
-            if r["close"]<lo*(1-BUF): return ("dn",int(r["mod"]),float(r["close"]))
+            # +5 = the bar's CLOSE minute (barclose fix 2026-07-24; bar-start was a lookahead)
+            if r["close"]>hi*(1+BUF): return ("up",int(r["mod"])+5,float(r["close"]))
+            if r["close"]<lo*(1-BUF): return ("dn",int(r["mod"])+5,float(r["close"]))
         return None
     rec={"day":day}
     b=orb(3)

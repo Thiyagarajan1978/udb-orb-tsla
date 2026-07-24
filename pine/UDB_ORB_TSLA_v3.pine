@@ -45,14 +45,14 @@ indicator("UDB-ORB TSLA v3.6 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.
 // placeholder). THIS INDICATOR NEEDED NO LOGIC CHANGE: its alerts are plain-text alert()/alertcondition()
 // messages (no webhook placeholder). Bumped only so chart + alerts show matching v3.1 names.
 
-// STATUS 2026-07-19 (no logic change — validation update): a SIMPLER rival concept (15m-OR long ATM
-// ±50% bracket + 30-min time stop, from the SPX "3-bot" system) was fully tested on TSLA with REAL OPRA
-// quotes over 2022-2026 (the 2024 quote gap is now pulled; coverage data/cache/opra/ = 2022-09..2026-07).
-// It IS profitable every year (+$45,916 @1ct, PF 3.02, worst day -$345) but ~4x BELOW this UDB system's
-// options results — UDB stays the TSLA system, unchanged. Credit spreads DON'T work on TSLA (thin credits,
-// $2.50 strikes, weekly expiry) — don't sell them here. Day-of-week: EVERY weekday is net-positive; FRIDAY
-// is TSLA's best options day (74% WR — the true 0DTE gamma day): never skip it; a Mon/Wed/Fri-only filter
-// costs ~40% of net. The SPX system lives in SEPARATE files: SPX_ORB_3BOT_v1(.pine/_strategy.pine).
+// STATUS 2026-07-19 (validation update) — CORRECTED 2026-07-24: the rival "3-bot" concept (15m-OR long
+// ATM ±50% + 30-min time stop, from the SPX system) originally showed +$45,916 @1ct on TSLA — that was
+// ENTIRELY the bar-START pricing lookahead. Barclose-corrected on the same OPRA quotes: TSLA 3-bot is
+// NEGATIVE (BOT1 -$2,295 @1ct 2022-26, WR 44%; spread bots all negative too) — UDB stays the TSLA
+// system, now unambiguously. Credit spreads DON'T work on TSLA (thin credits, $2.50 strikes, weekly
+// expiry) — don't sell them here. (The old day-of-week claims here predate the barclose correction —
+// see the corrected UDB options stats in docs/TRADERSPOST_OPTIONS.md before using them.)
+// The SPX system lives in SEPARATE files: SPX_ORB_3BOT_v1(.pine/_strategy.pine).
 // STATUS 2026-07-13: ONE indicator, FOUR selectable profiles (fires ALERTS; identical logic to the v3
 // STRATEGY). TSLA 5-minute, RTH, OR start 09:30 (selectable). Fires ALERTS + a PER-UNIT summary table;
 // the STRATEGY carries the sizing ($10,000 account / 25 shares default). Same entry engine, ADOPTED

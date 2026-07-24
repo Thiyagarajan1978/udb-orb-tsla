@@ -14,10 +14,22 @@
 > | COMBO | +$1,088,751 | **+$687,671** (worst day −$5,880) | −37% |
 >
 > **Every bot remains positive every year 2022–2026** (weakest: BOT1 2024 +$14,715) — the
-> system survives the correction at roughly ⅔ scale overall. Secondary findings below
-> (cheap-vs-rich premium terciles, weekday splits, ts30-vs-baseline margins) were computed
-> under the lookahead and should be re-verified before acting on them. `forward_test_spx.py`
+> system survives the correction at roughly ⅔ scale overall. `forward_test_spx.py`
 > was corrected and its ledger rebuilt the same day.
+>
+> **Secondary findings RE-VERIFIED on corrected fills (2026-07-24):**
+> - **ts30 adoption HOLDS, stronger**: BOT1 ts30 +$205,025 vs baseline +$160,485 (+28%, was
+>   "+9%"); ts60/ts90 slightly worse; time-stopping the spread bots still hurts (all-ts30
+>   COMBO +$626,625 < B1-only-ts30 +$687,671). Median BOT1 hold 28 min.
+> - **Premium terciles — SHARPER than before**: cheap PF 4.20 (+$127,830), mid PF 2.29
+>   (+$138,505), **rich tercile now NET NEGATIVE** (−$61,310, PF 0.77, WR 43%, hosts the
+>   −$6,980 worst day). Fixed-DOLLAR sizing is now near-mandatory: $1k-risk/day on BOT1
+>   (skip if 1ct risk > $1k → auto-skips rich days) = +$452,985 over 4.5yr, worst day −$1,610,
+>   trades 726/1107 days.
+> - **Weekday: every weekday still net-positive** (Mon best +$63,925; Fri weakest +$27,760).
+> - **Losing months (COMBO, B1 ts30): 5 of 55** (was 2/55), worst month −$4,235, median +$8,401.
+> - **TSLA cross-test COLLAPSED**: the 3-bot on TSLA was +$45,916 under the lookahead → 
+>   **−$2,295 barclose** (BOT1, WR 44%; all spread bots negative). 3-bot is SPX-ONLY, full stop.
 
 Recovered from the interrupted 2026-07-18 session. Scripts live in `scripts/spx/`,
 final trade CSVs + run logs in `exports/spx/` (gitignored), option-quote caches in
