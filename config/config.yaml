@@ -269,6 +269,19 @@ enhancements:
   #   min_frac: 0.0
   #   max_frac: 0.0
 
+  # 4e) LIQUIDITY gate — BUILT, TESTED, REJECTED (default OFF; tested 2026-07-24 on B1, from a
+  #     user-supplied ORB video: "a breakout into a nearby swing point ('liquidity') fakes out").
+  #     Skips a primary whose break trigger has a recent swing high (longs) / swing low (shorts)
+  #     from the prior lookback_days RTH sessions within proximity_frac x OR width beyond it
+  #     (swing = k=1 fractal). VERDICT: the premise is HALF true — it meaningfully improves the
+  #     choppy 2024 (+57 vs +20/unit at 0.25x1d, PF 1.28 vs 1.06) but blocks 35-60% of all trades
+  #     and guts trending 2025/2026 (3yr +174 vs +273 base at best). On TSLA, breaks THROUGH
+  #     liquidity mostly continue; the fakeout-days are already monetized by the reversal.
+  # liquidity_gate:
+  #   enabled: false
+  #   lookback_days: 1
+  #   proximity_frac: 0.25
+
   # 5) PDH/PDL confirmation filter. Prior-day high/low are strong S/R — a breakout that thrusts
   #    into them tends to fade (an immediate reversal / BE-stop). When PDH/PDL sits NEAR the
   #    breakout level (within proximity_pct of the OR width), require the bar to CLOSE BEYOND

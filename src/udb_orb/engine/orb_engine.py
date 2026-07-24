@@ -220,6 +220,17 @@ class OrbEngine:
         self._vg_on = bool(_vg.get("enabled", False))
         self._vg_min = float(_vg.get("min_frac", 0.0) or 0.0)
         self._vg_max = float(_vg.get("max_frac", 0.0) or 0.0)
+        # Liquidity gate (default OFF): skip a primary breakout that runs straight into resting
+        # "liquidity" — a recent swing high (longs) / swing low (shorts) from the prior
+        # lookback_days RTH sessions sitting within proximity_frac x OR width BEYOND the break
+        # trigger. Premise (2026-07-24, user-supplied ORB video): such breaks sweep the swing and
+        # reverse. Swing = k=1 fractal (bar high > both neighbors / low < both). Primary only —
+        # the reversal/resume legs stay ungated (a blocked direction simply doesn't trade).
+        _lq = self.enh.get("liquidity_gate", {})
+        self._lq_on = bool(_lq.get("enabled", False))
+        self._lq_days = int(_lq.get("lookback_days", 2))
+        self._lq_frac = float(_lq.get("proximity_frac", 0.5))
+        self._lq_map = {}
         _tt = self.enh.get("atr_trail_exit", {})
         self._tt_on = bool(_tt.get("enabled", False))
         self._tt_atr_period = int(_tt.get("atr_period", 5))
@@ -428,6 +439,23 @@ class OrbEngine:
             self._tt_arr = indicators.trade_tastic_trail(
                 df, atr_period=self._tt_atr_period, hhv_period=self._tt_hhv_period,
                 mult=self._tt_mult).to_numpy()
+        if self._lq_on:
+            # per-session k=1 fractal swings, then day -> swings of the prior lookback sessions
+            import numpy as np
+            sess_dates, sess_hi, sess_lo = [], [], []
+            for sd, g in df.groupby(df.index.date):
+                hh = g["high"].to_numpy(float)
+                ll = g["low"].to_numpy(float)
+                sh = [hh[i] for i in range(1, len(hh) - 1) if hh[i] > hh[i - 1] and hh[i] > hh[i + 1]]
+                sl = [ll[i] for i in range(1, len(ll) - 1) if ll[i] < ll[i - 1] and ll[i] < ll[i + 1]]
+                sess_dates.append(sd)
+                sess_hi.append(sh)
+                sess_lo.append(sl)
+            for i, sd in enumerate(sess_dates):
+                lo_i = max(0, i - self._lq_days)
+                self._lq_map[sd] = (
+                    np.array([x for s in sess_hi[lo_i:i] for x in s], dtype=float),
+                    np.array([x for s in sess_lo[lo_i:i] for x in s], dtype=float))
 
         # Last bar of each session. Half sessions (e.g. Christmas Eve, 13:00 close) never produce
         # a bar at/after eod_exit, so without this a position would be silently dropped at the
@@ -609,13 +637,22 @@ class OrbEngine:
                 long_ext_ok = (c - st.or_low) <= band
                 short_ext_ok = (st.or_high - c) <= band
 
+            lq_long_ok = lq_short_ok = True
+            if self._lq_on and st.or_width:
+                hs, ls = self._lq_map.get(d, (None, None))
+                band = self._lq_frac * st.or_width
+                if hs is not None and hs.size and long_trig is not None:
+                    lq_long_ok = not bool(((hs > long_trig) & (hs <= long_trig + band)).any())
+                if ls is not None and ls.size and short_trig is not None:
+                    lq_short_ok = not bool(((ls < short_trig) & (ls >= short_trig - band)).any())
+
             can_long = (
                 p.allow_longs and long_trig is not None and c > long_trig and long_confirm and long_ext_ok
-                and min_ok and max_ok and vwap_long_ok and self._rvol_ok(rv)
+                and min_ok and max_ok and vwap_long_ok and lq_long_ok and self._rvol_ok(rv)
             )
             can_short = (
                 p.allow_shorts and short_trig is not None and c < short_trig and short_confirm and short_ext_ok
-                and min_ok and max_ok and vwap_short_ok and self._rvol_ok(rv)
+                and min_ok and max_ok and vwap_short_ok and lq_short_ok and self._rvol_ok(rv)
             )
 
             # HTF trend gate on the primary. strict: a mismatch at the break bar kills that
