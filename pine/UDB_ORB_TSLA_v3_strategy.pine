@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.5 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.5 S", overlay=true,
+strategy("UDB-ORB TSLA v3.6 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.6 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -13,6 +13,14 @@ strategy("UDB-ORB TSLA v3.5 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="U
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// v3.6 2026-07-23 — D1 EXIT MODE OPTION (user request, like the C2 formula input): new "D1 Exit
+// mode" input — "Partial TP + ATR Trail" (default, the original D1) vs "FULL EXIT AT ATR TRAIL":
+// nothing is taken at the adaptive TP (its touch only ARMS the trail; no TP order is placed),
+// 100% exits on the TRADE TASTIC flip — ONE exit alert/order, so it also suits platforms that
+// cannot split exits. Tested (per unit, fixed trail, close-stop) full-trail vs partial:
+// 2024 +39.7 vs +38.4 | 2025 +85.2 vs +72.2 | 2026YTD +179.0 vs +162.3 -> full-trail wins ALL
+// THREE (3yr +304 vs +273; B1 ref +268), 2025 worst day -13.6 vs -12.0, ~1pt lower WR.
+// Python twin: tsla_config_D1.yaml with partial_qty_pct: 0.0.
 // v3.5 2026-07-23 — C2 TAKE-PROFIT FORMULA CHANGED (user request): C2's target is now the OPEN
 // BAR's High - Low (= OR width, no floor/scale) instead of the fixed $2. Per unit, close-stop,
 // OR-width vs fixed-$2: 2022 +29.7 vs +42.9 | 2023 +82.3 vs +88.8 | 2024 +36.6 vs -23.1 |
@@ -96,13 +104,15 @@ profile = input.string("C1 · ATR 0.25 + 25% Partial + VWAP", "Profile",
      options=["A1 · Adaptive + Peak-Trail", "B1 · Adaptive + VWAP", "C1 · ATR 0.25 + 25% Partial + VWAP", "C2 · OR-Width Full-Exit", "D1 · Adaptive + ATR-Trail (exp)"],
      group="Profile", tooltip="A1/B1 = adaptive OR-scaled target + 25% partial + runner (peak-trail vs VWAP). C1 = ATR-sized target + 25% partial + VWAP (best PF). C2 = full exit at OR-WIDTH target (open bar H-L; was fixed $2 pre-v3.5), no partial/runner. D1 (EXPERIMENTAL, not adopted) = B1 with the TRADE TASTIC ATR trail as the runner exit.")
 c2TPFormula = input.string("OR width (open bar High-Low)", "C2 Take-Profit formula", options=["OR width (open bar High-Low)", "Fixed $"], group="Profile", tooltip="ADOPTED v3.5 (default): C2's target = the OPEN BAR's High - Low (= OR width, no floor). vs the old fixed $2 (per unit, close-stop): 2024 +36.6 vs -23.1, 2025 +38.3 vs -0.3, 2026YTD +111.7 vs +49.0; 2022/23 slightly behind; 5yr ~2x and positive every year. 'Fixed $' = the pre-v3.5 C2 (uses the Fixed TP $ input).")
+d1ExitMode = input.string("Partial TP + ATR Trail", "D1 Exit mode", options=["Partial TP + ATR Trail", "Full exit at ATR Trail"], group="Profile", tooltip="D1 only. 'Partial TP + ATR Trail' (default) = 25% off at the adaptive TP, 75% rides to the TRADE TASTIC flip. 'Full exit at ATR Trail' = NOTHING is taken at the TP — its touch only ARMS the trail; 100% exits on the flip (ONE exit alert/order — also suits platforms that cannot split exits). v3.6 test (per unit, fixed trail): full-trail beats the partial in all of 2024/25/26 (+39.7/+85.2/+179.0 vs +38.4/+72.2/+162.3) at a slightly deeper 2025 worst day (-13.6 vs -12.0).")
 isA1 = str.startswith(profile, "A1")
 isB1 = str.startswith(profile, "B1")
 isC1 = str.startswith(profile, "C1")
 isC2 = str.startswith(profile, "C2")
 isD1 = str.startswith(profile, "D1")
 tpModeSel  = isC2 ? (str.startswith(c2TPFormula, "Fixed") ? "Fixed" : "ORw") : isC1 ? "ATR" : "Adaptive"
-usePartial = not isC2                 // C2 is a full exit; A1/B1/C1/D1 scale out 25%
+d1FullTrail = isD1 and str.startswith(d1ExitMode, "Full")   // D1 full-trail: TP touch only arms; 100% exits on the flip
+usePartial = not isC2                 // C2 is a full exit; A1/B1/C1/D1 scale out 25% (D1 full-trail: 0%)
 runnerVWAP = isB1 or isC1             // true = VWAP-cross runner ; false = peak-trail (A1) or ATR trail (D1)
 
 // ==================== INPUTS ====================
@@ -449,7 +459,7 @@ if active and not na(stop) and bar_index >= entryBar
                 part1 := true
                 tp := na
                 if showLabels
-                    label.new(bar_index, tdir == 1 ? high : low, "PARTIAL " + str.tostring(partialPct, "#") + "%", style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.tiny)
+                    label.new(bar_index, tdir == 1 ? high : low, d1FullTrail ? "TRAIL ARMED" : "PARTIAL " + str.tostring(partialPct, "#") + "%", style=tdir == 1 ? label.style_label_down : label.style_label_up, color=d1FullTrail ? color.new(color.yellow, 30) : color.rgb(7,170,75), textcolor=d1FullTrail ? color.black : color.white, size=size.tiny)
             // Step 4a: runner peak-trail level (A1; D1 uses the ATR trail in Step 4c instead)
             if part1 and not suppressPartial and not runnerVWAP and not isD1 and runnerMult > 0
                 runnerPeak := na(runnerPeak) ? (tdir == 1 ? high : low) : (tdir == 1 ? math.max(runnerPeak, high) : math.min(runnerPeak, low))
@@ -492,7 +502,7 @@ if active and not na(stop) and bar_index >= entryBar
         // Wick-mode resting-stop realism: a BE-retrace that fired THIS bar rests only from the NEXT bar.
         restStop = (beRealistic and beFiredNow) ? stopBarStart : stop
         beReason = beTrig ? ((tdir == 1 ? restStop > entry : restStop < entry) ? "BE Trail" : "BE Stop") : "Base SL"
-        partSh = math.round(posSh * partialPct / 100)   // whole-share 25% partial; runner takes the remainder
+        partSh = d1FullTrail ? 0 : math.round(posSh * partialPct / 100)   // whole-share 25% partial; runner takes the remainder (D1 full-trail: nothing off at TP)
         runSh  = posSh - partSh
         trailLevel = (usePartial and part1 and not suppressPartial and not runnerVWAP and not isD1 and runnerMult > 0 and not na(runnerPeak)) ? (tdir == 1 ? runnerPeak - runnerMult * orWidth : runnerPeak + runnerMult * orWidth) : na
         isTrail = not na(trailLevel) and (tdir == 1 ? trailLevel >= stop : trailLevel <= stop)
@@ -514,6 +524,11 @@ if active and not na(stop) and bar_index >= entryBar
             if not usePartial
                 strategy.exit("X", from_entry=entryId, stop=(stopClose ? na : restStop), limit=tp, comment_loss=(inRev ? "REV " : "") + beReason, comment_profit=(inRev ? "REV TP" : "TP"), alert_message=f_msg("Exit", posSh))
             else if suppressPartial
+                if not stopClose
+                    strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", posSh))
+            else if not part1 and d1FullTrail
+                // D1 full-trail: NO TP order at all — the target touch only ARMS the trail (the
+                // Step 3 mirror flips part1); wick mode still rests the full-size protective stop
                 if not stopClose
                     strategy.exit("RUN", from_entry=entryId, stop=restStop, comment=(inRev ? "REV " : "") + beReason, alert_message=f_msg("Exit", posSh))
             else if not part1
@@ -564,7 +579,7 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol reg
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.5", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.6", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
