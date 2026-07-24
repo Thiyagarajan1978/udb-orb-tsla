@@ -1,3 +1,9 @@
+# BARCLOSE CORRECTION 2026-07-24: entries are now priced at the signal bar's CLOSE (mod+5)
+# — the breakout only exists once the bar closes; the original bar-START pricing was a
+# 5-minute lookahead (the same bug found in the TSLA forward test 2026-07-20). Corrected
+# FULL 2022-2026 @1ct: BOT1 ts30 +$205,025 (was +$457,265, -55%; WR 63%->48%, PF 2.73->1.50,
+# worst day -$6,980), BOT2 +$245,665 (-15%), BOT3 +$236,981 (-31%), COMBO +$687,671 (was
+# +$1,088,751, -37%). Every bot stays POSITIVE EVERY YEAR — the system survives, smaller.
 import glob, re
 import pandas as pd, numpy as np
 CACHE = r"data/cache/spx"
@@ -82,8 +88,9 @@ for day,g in spx.groupby("day"):
         w=g.iloc[:nbars]; hi=w["high"].max(); lo=w["low"].min()
         post=g.iloc[nbars:]
         for _,r in post.iterrows():
-            if r["close"]>hi*(1+BUF): return ("up",int(r["mod"]),float(r["close"]))
-            if r["close"]<lo*(1-BUF): return ("dn",int(r["mod"]),float(r["close"]))
+            # +5 = the bar's CLOSE minute (barclose fix 2026-07-24; bar-start was a lookahead)
+            if r["close"]>hi*(1+BUF): return ("up",int(r["mod"])+5,float(r["close"]))
+            if r["close"]<lo*(1-BUF): return ("dn",int(r["mod"])+5,float(r["close"]))
         return None
     rec={"day":day}
     b=orb(3)

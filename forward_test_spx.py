@@ -34,13 +34,20 @@ def get_db_key():
 def osi(exp,cp,strike): return f"SPXW  {exp:%y%m%d}{cp}{int(round(strike*1000)):08d}"
 
 def day_entries(g):
-    """3-bot first-break entries from one day's 5m bars."""
+    """3-bot first-break entries from one day's 5m bars.
+
+    BARCLOSE FIX 2026-07-24: the recorded minute is the signal bar's CLOSE (index mod + 5),
+    not its start — the breakout only exists once the bar closes, so pricing the entry at the
+    bar-start quote was a 5-minute LOOKAHEAD (the same bug fixed in the TSLA forward test on
+    2026-07-20). All downstream anchors (entry ask, time stop, spread management, held-minutes)
+    key off this minute, so they are all fill-relative now. Ledger rebuilt same day.
+    """
     out={}
     for name,nb in [("bot1",3),("bot2",6),("bot3",12)]:
         w=g.iloc[:nb]; hi=w["high"].max(); lo=w["low"].min(); e=None
         for _,r in g.iloc[nb:].iterrows():
-            if r["close"]>hi*(1+BUF): e=("up",int(r["mod"]),float(r["close"])); break
-            if r["close"]<lo*(1-BUF): e=("dn",int(r["mod"]),float(r["close"])); break
+            if r["close"]>hi*(1+BUF): e=("up",int(r["mod"])+5,float(r["close"])); break
+            if r["close"]<lo*(1-BUF): e=("dn",int(r["mod"])+5,float(r["close"])); break
         if e: out[name]=e
     return out
 

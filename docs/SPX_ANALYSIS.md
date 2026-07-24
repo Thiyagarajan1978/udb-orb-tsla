@@ -1,5 +1,24 @@
 # SPX ORB Exploration — Full Record (2026-07-18 session)
 
+> **⚠ BARCLOSE CORRECTION 2026-07-24 — the 3-bot dollar figures below are INFLATED.**
+> All option entries in this record were priced at the signal bar's **START** quote — a
+> 5-minute lookahead (the breakout only exists at the bar's close; same bug found in the
+> TSLA forward test on 2026-07-20). Re-run on the same cached OPRA quotes with bar-CLOSE
+> entries (`scripts/spx/price_hersystem_ts30.py`, fixed; 1,137 sessions 2022-01→2026-07):
+>
+> | @1ct, 2022–2026 | bar-START (this doc) | bar-CLOSE (corrected) | Δ |
+> |---|---|---|---|
+> | BOT1 ts30 | +$457,265 (WR 63%, PF 2.73) | **+$205,025** (WR 48%, PF 1.50, worst day −$6,980) | −55% |
+> | BOT2 | +$289,550 | **+$245,665** | −15% |
+> | BOT3 | +$341,936 | **+$236,981** | −31% |
+> | COMBO | +$1,088,751 | **+$687,671** (worst day −$5,880) | −37% |
+>
+> **Every bot remains positive every year 2022–2026** (weakest: BOT1 2024 +$14,715) — the
+> system survives the correction at roughly ⅔ scale overall. Secondary findings below
+> (cheap-vs-rich premium terciles, weekday splits, ts30-vs-baseline margins) were computed
+> under the lookahead and should be re-verified before acting on them. `forward_test_spx.py`
+> was corrected and its ledger rebuilt the same day.
+
 Recovered from the interrupted 2026-07-18 session. Scripts live in `scripts/spx/`,
 final trade CSVs + run logs in `exports/spx/` (gitignored), option-quote caches in
 `data/cache/spx/` (gitignored, ~315MB — REAL Databento OPRA SPXW quotes; do not delete,
