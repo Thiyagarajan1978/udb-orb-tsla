@@ -1,8 +1,11 @@
-# CONFIG C — fixed $2 take-profit + $5 BE-stop (full exit, no partial/runner).
-# High win-rate / high-consistency profile: exit whole position at +$2, stop $5 with BE ratchet,
-# long+short+reversal, resting stop. Validated 2022-2026: POSITIVE every year incl 2022 bear
-# (+$17,244/100sh), 2023 +$18,962, 2024 +$7,975, 2025 +$8,119, 2026 +$13,692 (total +$65,992).
-# Trades small $2 wins often (WR 50-68%) -> steadier than A/B but caps upside (less total net).
+# CONFIG C (C2) — OR-WIDTH take-profit + $5 BE-stop (full exit, no partial/runner).
+# CHANGED 2026-07-23 (user request): TP = the OPEN BAR's High - Low (= OR width, no floor/scale)
+# instead of the old fixed $2. Per unit, close-stop: OR-width vs fixed-$2 ->
+#   2022 +29.7 vs +42.9 | 2023 +82.3 vs +88.8 | 2024 +36.6 vs -23.1 | 2025 +38.3 vs -0.3 |
+#   2026YTD(07-23) +111.7 vs +49.0  => 5yr +298.6 vs +157.3 (~2x) and POSITIVE EVERY YEAR.
+# WR drops (46-50% vs 50-63% — the fixed $2 banked more tiny wins) but net/PF up in every recent
+# year; TP floors ($1/$2) tested and changed nothing (TSLA OR is rarely that narrow).
+# To reproduce the OLD fixed-$2 C2: tp_mode: Fixed (fixed_tp: 2.0 kept below). Pine: v3.5 'C2'.
 symbol: TSLA
 timeframe_minutes: 5
 timezone: America/New_York
@@ -25,10 +28,10 @@ profile:
   sl_mode: Candle High/Low + Max Cap
   sl_offset: 0.0
   fixed_sl: 5.0
-  tp_mode: Fixed
-  adaptive_tp_scale: 1.0
-  adaptive_tp_min: 2.14
-  fixed_tp: 2.0
+  tp_mode: Adaptive        # TP dist = max(adaptive_tp_min, OR_width x adaptive_tp_scale)
+  adaptive_tp_scale: 1.0   # 1.0 + min 0.0 => TP = open bar High - Low, exactly
+  adaptive_tp_min: 0.0
+  fixed_tp: 2.0            # unused since 2026-07-23 (set tp_mode: Fixed to get the old C2)
   use_be_retrace: true
   be_retrace_trigger: 0.55
   be_trail_amount: 0.25

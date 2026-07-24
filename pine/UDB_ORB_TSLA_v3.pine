@@ -1,6 +1,13 @@
 //@version=6
-indicator("UDB-ORB TSLA v3.4 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.4", overlay=true, max_labels_count=500)
+indicator("UDB-ORB TSLA v3.5 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.5", overlay=true, max_labels_count=500)
 
+// v3.5 2026-07-23 — C2 TAKE-PROFIT FORMULA CHANGED (user request): C2's target is now the OPEN
+//   BAR's High - Low (= OR width, no floor/scale) instead of the fixed $2. Per unit, close-stop,
+//   OR-width vs fixed-$2: 2022 +29.7 vs +42.9 | 2023 +82.3 vs +88.8 | 2024 +36.6 vs -23.1 |
+//   2025 +38.3 vs -0.3 | 2026YTD +111.7 vs +49.0  => 5yr +298.6 vs +157.3 (~2x), POSITIVE EVERY
+//   YEAR (the fixed $2 was net-NEGATIVE 2024 and flat 2025 under the close stop). WR drops
+//   (46-50% vs 50-63%): fewer tiny banked wins, bigger targets on wide-OR days. TP floors $1/$2
+//   tested: no effect. The old behavior stays selectable: "C2 Take-Profit formula" = Fixed $.
 // v3.4 2026-07-23 — D1 SHORT-SIDE FIX (user-caught same day on the live chart): the original
 //   TRADE TASTIC script has ONE line — a SHORT must exit on the red->green flip of the SAME
 //   HHV(high - mult*ATR) line, not on an invented mirrored LLV(low + mult*ATR) line. On 2026-07-23's
@@ -45,7 +52,7 @@ indicator("UDB-ORB TSLA v3.4 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.
 //   A1 = Adaptive TP + 25% partial + PEAK-TRAIL runner   (Max Stop $5)
 //   B1 = Adaptive TP + 25% partial + VWAP-CROSS runner   (Max Stop $5)
 //   C1 = ATR-target (0.25x14d ATR) + 25% partial + VWAP  (Max Stop $6)   <- best PF
-//   C2 = Fixed $2 target, FULL exit (no partial/runner)  (Max Stop $5)   <- highest win rate, lowest net
+//   C2 = OR-WIDTH target (open bar H-L), FULL exit (no partial/runner) (Max Stop $5)  [was fixed $2 pre-v3.5]
 //  ADOPTED RESULTS (close-triggered stop = exitOnClose ON; net per 1 UNIT; x25 = strategy on $10k, x100 = @100sh):
 //  FULL 2022-2026 -> A1 +432.7/u (+108% on $10k), B1 +450.3/u (+113%), C1 +414.8/u (+104%), C2 +175.3/u (+44%).
 //  PF: A1 1.22 / B1 1.23 / C1 1.22 / C2 1.12.   MaxDD on $10k: A1 -16% / B1 -19% / C1 -19% / C2 -17%.
@@ -66,13 +73,14 @@ indicator("UDB-ORB TSLA v3.4 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.
 
 // ==================== PROFILE ====================
 profile = input.string("C1 · ATR 0.25 + 25% Partial + VWAP", "Profile",
-     options=["A1 · Adaptive + Peak-Trail", "B1 · Adaptive + VWAP", "C1 · ATR 0.25 + 25% Partial + VWAP", "C2 · Fixed $2 Full-Exit (max WR)", "D1 · Adaptive + ATR-Trail (exp)"], group="Profile")
+     options=["A1 · Adaptive + Peak-Trail", "B1 · Adaptive + VWAP", "C1 · ATR 0.25 + 25% Partial + VWAP", "C2 · OR-Width Full-Exit", "D1 · Adaptive + ATR-Trail (exp)"], group="Profile")
+c2TPFormula = input.string("OR width (open bar High-Low)", "C2 Take-Profit formula", options=["OR width (open bar High-Low)", "Fixed $"], group="Profile", tooltip="ADOPTED v3.5 (default): C2's target = the OPEN BAR's High - Low (= OR width, no floor). vs the old fixed $2 (per unit, close-stop): 2024 +36.6 vs -23.1, 2025 +38.3 vs -0.3, 2026YTD +111.7 vs +49.0; 2022/23 slightly behind; 5yr ~2x and positive every year. 'Fixed $' = the pre-v3.5 C2 (uses the Fixed TP $ input).")
 isA1 = str.startswith(profile, "A1")
 isB1 = str.startswith(profile, "B1")
 isC1 = str.startswith(profile, "C1")
 isC2 = str.startswith(profile, "C2")
 isD1 = str.startswith(profile, "D1")
-tpModeSel  = isC2 ? "Fixed" : isC1 ? "ATR" : "Adaptive"
+tpModeSel  = isC2 ? (str.startswith(c2TPFormula, "Fixed") ? "Fixed" : "ORw") : isC1 ? "ATR" : "Adaptive"
 usePartial = not isC2
 runnerVWAP = isB1 or isC1              // D1 = ATR chandelier trail runner (neither VWAP nor peak-trail)
 
@@ -261,7 +269,7 @@ if isORbar
 
 longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
 shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
-tpDist = tpModeSel == "Fixed" ? fixedTP : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMin, atrTPMult * dailyATR) : fixedTP) : (not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na)
+tpDist = tpModeSel == "Fixed" ? fixedTP : tpModeSel == "ORw" ? orWidth : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMin, atrTPMult * dailyATR) : fixedTP) : (not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na)
 canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar
 
 longConfirm  = not confirmBreakout or (close[1] > longBrk and (close >= open or not requireTrendCandle))
@@ -608,13 +616,13 @@ alertcondition(isD1 and aPart,    title="D1 Partial",  message="D1 PARTIAL - 25%
 alertcondition(isD1 and aWin,     title="D1 TP",       message="D1 TP - close remaining (ATR-trail / runner win) | {{ticker}} {{interval}}m @ {{close}}")
 alertcondition(isD1 and aStop,    title="D1 SL",       message="D1 SL - close position (stop hit) | {{ticker}} {{interval}}m @ {{close}}")
 alertcondition(isD1 and aEOD,     title="D1 EOD",      message="D1 EOD - end-of-day forced close | {{ticker}} {{interval}}m @ {{close}}")
-// --- C2 · Fixed $2 Full-Exit (no partial) ---
+// --- C2 · OR-Width Full-Exit (no partial; was fixed $2 pre-v3.5) ---
 alertcondition(isC2 and aEntryL,  title="C2 Buy",      message="C2 BUY - long breakout, buy at market | {{ticker}} {{interval}}m @ {{close}}")
 alertcondition(isC2 and aEntryS,  title="C2 Sell",     message="C2 SELL - short breakout, sell short at market | {{ticker}} {{interval}}m @ {{close}}")
 alertcondition(isC2 and aRevL,    title="C2 Rev Buy",  message="C2 REVERSAL BUY - risk-parity long at market | {{ticker}} {{interval}}m @ {{close}}")
 alertcondition(isC2 and aRevS,    title="C2 Rev Sell", message="C2 REVERSAL SELL - risk-parity short at market | {{ticker}} {{interval}}m @ {{close}}")
 alertcondition(isC2 and aBEFired, title="C2 BE",       message="C2 BREAK-EVEN - move stop to entry | {{ticker}} {{interval}}m @ {{close}}")
-alertcondition(isC2 and aWin,     title="C2 TP",       message="C2 TP - close position (fixed $2 target win) | {{ticker}} {{interval}}m @ {{close}}")
+alertcondition(isC2 and aWin,     title="C2 TP",       message="C2 TP - close position (OR-width target win) | {{ticker}} {{interval}}m @ {{close}}")
 alertcondition(isC2 and aStop,    title="C2 SL",       message="C2 SL - close position (stop hit) | {{ticker}} {{interval}}m @ {{close}}")
 alertcondition(isC2 and aEOD,     title="C2 EOD",      message="C2 EOD - end-of-day forced close | {{ticker}} {{interval}}m @ {{close}}")
 
@@ -630,7 +638,7 @@ if barstate.islast and showTable
     wr = nTrades > 0 ? nSucc * 100.0 / nTrades : 0.0
     pf = grossL > 0 ? grossP / grossL : na
     exp = nTrades > 0 ? netPnl / nTrades : 0.0
-    table.cell(tbl, 0, 0, "UDB-ORB v3.4", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(tbl, 0, 0, "UDB-ORB v3.5", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(tbl, 1, 0, str.substring(profile, 0, 2) + " · " + tpModeSel, text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     f_row(1, "Trades", str.tostring(nTrades), color.yellow)
     f_row(2, "Win Rate", str.tostring(wr, "#.#") + "%", color.orange)

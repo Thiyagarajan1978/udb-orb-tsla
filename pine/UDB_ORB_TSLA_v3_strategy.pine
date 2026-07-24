@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.4 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.4 S", overlay=true,
+strategy("UDB-ORB TSLA v3.5 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.5 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -13,6 +13,12 @@ strategy("UDB-ORB TSLA v3.4 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="U
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// v3.5 2026-07-23 — C2 TAKE-PROFIT FORMULA CHANGED (user request): C2's target is now the OPEN
+// BAR's High - Low (= OR width, no floor/scale) instead of the fixed $2. Per unit, close-stop,
+// OR-width vs fixed-$2: 2022 +29.7 vs +42.9 | 2023 +82.3 vs +88.8 | 2024 +36.6 vs -23.1 |
+// 2025 +38.3 vs -0.3 | 2026YTD +111.7 vs +49.0  => 5yr +298.6 vs +157.3 (~2x), POSITIVE EVERY
+// YEAR (the fixed $2 was net-NEGATIVE 2024 and flat 2025 under the close stop). WR drops
+// (46-50% vs 50-63%). The old behavior stays selectable: "C2 Take-Profit formula" = Fixed $.
 // v3.4 2026-07-23 — D1 SHORT-SIDE FIX (user-caught same day on the live chart): the original
 // TRADE TASTIC script has ONE line — a SHORT must exit on the red->green flip of the SAME
 // HHV(high - mult*ATR) line, not on an invented mirrored LLV(low + mult*ATR) line. On 2026-07-23's
@@ -53,7 +59,7 @@ strategy("UDB-ORB TSLA v3.4 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="U
 //   A1 = Adaptive TP + 25% partial + PEAK-TRAIL runner        (Max Stop $5)
 //   B1 = Adaptive TP + 25% partial + VWAP-CROSS runner        (Max Stop $5)
 //   C1 = ATR-target (0.25 x 14d ATR) + 25% partial + VWAP     (Max Stop $6)   <- best PF
-//   C2 = Fixed $2 target, FULL exit (no partial/runner)       (Max Stop $5)   <- highest win rate
+//   C2 = OR-WIDTH target (open bar H-L), FULL exit (no partial/runner) (Max Stop $5) [was fixed $2 pre-v3.5]
 //
 //  EXECUTION MODEL — proper OCO brackets (all fills intrabar at the level / open-on-gap = touch):
 //   * C2 (full exit): ONE strategy.exit("X", stop=, limit=) — whole position at stop OR target.
@@ -87,14 +93,15 @@ strategy("UDB-ORB TSLA v3.4 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="U
 
 // ==================== PROFILE ====================
 profile = input.string("C1 · ATR 0.25 + 25% Partial + VWAP", "Profile",
-     options=["A1 · Adaptive + Peak-Trail", "B1 · Adaptive + VWAP", "C1 · ATR 0.25 + 25% Partial + VWAP", "C2 · Fixed $2 Full-Exit (max WR)", "D1 · Adaptive + ATR-Trail (exp)"],
-     group="Profile", tooltip="A1/B1 = adaptive OR-scaled target + 25% partial + runner (peak-trail vs VWAP). C1 = ATR-sized target + 25% partial + VWAP (best PF). C2 = flat $2 full exit, no partial/runner (highest win rate). D1 (EXPERIMENTAL, not adopted) = B1 with the TRADE TASTIC ATR chandelier trail as the runner exit — wins trending tapes (2026), loses chop (2024/25).")
+     options=["A1 · Adaptive + Peak-Trail", "B1 · Adaptive + VWAP", "C1 · ATR 0.25 + 25% Partial + VWAP", "C2 · OR-Width Full-Exit", "D1 · Adaptive + ATR-Trail (exp)"],
+     group="Profile", tooltip="A1/B1 = adaptive OR-scaled target + 25% partial + runner (peak-trail vs VWAP). C1 = ATR-sized target + 25% partial + VWAP (best PF). C2 = full exit at OR-WIDTH target (open bar H-L; was fixed $2 pre-v3.5), no partial/runner. D1 (EXPERIMENTAL, not adopted) = B1 with the TRADE TASTIC ATR trail as the runner exit.")
+c2TPFormula = input.string("OR width (open bar High-Low)", "C2 Take-Profit formula", options=["OR width (open bar High-Low)", "Fixed $"], group="Profile", tooltip="ADOPTED v3.5 (default): C2's target = the OPEN BAR's High - Low (= OR width, no floor). vs the old fixed $2 (per unit, close-stop): 2024 +36.6 vs -23.1, 2025 +38.3 vs -0.3, 2026YTD +111.7 vs +49.0; 2022/23 slightly behind; 5yr ~2x and positive every year. 'Fixed $' = the pre-v3.5 C2 (uses the Fixed TP $ input).")
 isA1 = str.startswith(profile, "A1")
 isB1 = str.startswith(profile, "B1")
 isC1 = str.startswith(profile, "C1")
 isC2 = str.startswith(profile, "C2")
 isD1 = str.startswith(profile, "D1")
-tpModeSel  = isC2 ? "Fixed" : isC1 ? "ATR" : "Adaptive"
+tpModeSel  = isC2 ? (str.startswith(c2TPFormula, "Fixed") ? "Fixed" : "ORw") : isC1 ? "ATR" : "Adaptive"
 usePartial = not isC2                 // C2 is a full exit; A1/B1/C1/D1 scale out 25%
 runnerVWAP = isB1 or isC1             // true = VWAP-cross runner ; false = peak-trail (A1) or ATR trail (D1)
 
@@ -289,7 +296,7 @@ if isORbar
 longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
 shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
 // target distance by profile: Fixed (C2) / ATR (C1) / Adaptive OR-scaled (A1/B1)
-tpDist = tpModeSel == "Fixed" ? fixedTP : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMin, atrTPMult * dailyATR) : fixedTP) : (not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na)
+tpDist = tpModeSel == "Fixed" ? fixedTP : tpModeSel == "ORw" ? orWidth : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMin, atrTPMult * dailyATR) : fixedTP) : (not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na)
 canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar
 
 // ==================== PRIMARY ENTRY ====================
@@ -557,7 +564,7 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol reg
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.4", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.5", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
