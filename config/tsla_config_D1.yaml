@@ -1,9 +1,11 @@
-# TSLA D1 (EXPERIMENTAL — NOT adopted): B1's engine with the "TRADE TASTIC" ATR CHANDELIER
-# TRAIL as the runner exit instead of the VWAP cross (enhancement atr_trail_exit; the line =
-# HHV(high - mult*ATR(5), 10), moves only on a closing, extending bar; the post-partial runner
-# flattens when a bar CLOSES across it). Pine: v3.3 profile 'D1'.
-# TESTED 2026-07-23 (per unit, vs B1): 2024 +11.3 vs +20.2 | 2025 +80.7 vs +102.8 |
-# 2026YTD +153.4 vs +138.0. Wins trending tapes, loses chop — kept for easy comparison only.
+# TSLA D1 (EXPERIMENTAL — NOT adopted): B1's engine with the "TRADE TASTIC" ATR TRAIL as the
+# runner exit instead of the VWAP cross (enhancement atr_trail_exit). ONE line for both sides:
+# TS = HHV(high - mult*ATR(5), 10), moving only on a closing, extending bar; the runner exits on
+# the color flip — long when a bar CLOSES <= TS, short when it CLOSES > TS. Pine: v3.4 'D1'.
+# (2026-07-23 SHORT-SIDE FIX: the first port mirrored an LLV(low+mult*ATR) line for shorts —
+# no such line exists in the original; it exited 2026-07-23's short at 11:55 vs the true 10:35.)
+# CORRECTED numbers (per unit, vs B1): 2024 +38.4 vs +20.2 | 2025 +72.2 vs +102.8 |
+# 2026YTD +153.9 vs +138.0 -> 3yr ~tie (+264 vs +261). Kept for comparison; VWAP stays traded.
 symbol: TSLA
 timeframe_minutes: 5
 timezone: America/New_York

@@ -237,15 +237,17 @@ enhancements:
     # WR; later entries just miss the trend body. Keep at 1.
     hold_bars: 1
 
-  # 4c) "TRADE TASTIC" ATR chandelier trail as the RUNNER exit — BUILT, TESTED, REJECTED
-  #     (default OFF, opt-in only; tested 2026-07-23 on B1/C1). Port of the TV indicator
-  #     (ceyhun): line = HHV(high - mult*ATR(atr_period), hhv_period), moves only on a bar
-  #     that closes above it AND extends; runner exits when a bar CLOSES beyond the line
-  #     (replaces the VWAP-cross / peak-trail; hybrid_vwap keeps VWAP armed too).
-  #     REGIME-DEPENDENT: beats VWAP in trending 2026 (B1 +153 vs +138, C1 +154 vs +133/unit)
-  #     but LOSES 2025 (B1 +81 vs +103) and flips C1 2024 NEGATIVE (-12 vs +15). 3-yr total
-  #     below baseline on both profiles; mult sweep 1.5-3.5 found no robust winner. Same
-  #     trail-in-trend / VWAP-in-chop pattern as the runner_trail-vs-VWAP comparison.
+  # 4c) "TRADE TASTIC" ATR trail as the RUNNER exit — BUILT, TESTED, NOT ADOPTED (default OFF;
+  #     = Pine v3.4 Profile D1 / config/tsla_config_D1.yaml). Port of the TV indicator (ceyhun):
+  #     ONE line for both directions, TS = HHV(high - mult*ATR(atr_period), hhv_period), moving
+  #     only on a bar that closes above the HHV AND extends; the runner exits on the color flip
+  #     (long: bar CLOSES <= TS; short: bar CLOSES > TS — SAME line; the 2026-07-23 short-side
+  #     fix removed a wrongly mirrored LLV line that exited shorts late). Replaces the
+  #     VWAP-cross / peak-trail; hybrid_vwap keeps VWAP armed too.
+  #     CORRECTED verdict (per unit): on B1 it wins 2024 (+38 vs +20) and 2026 (+154 vs +138)
+  #     but loses 2025 (+72 vs +103) -> 3-yr ~tie (+264 vs +261); on C1 it wins only 2026
+  #     (+159 vs +133; 2024 +11 vs +15, 2025 +63 vs +77). No robust edge over VWAP; mult sweep
+  #     1.5-3.5 found no setting that wins all three years. VWAP stays the traded runner exit.
   # atr_trail_exit:
   #   enabled: false
   #   atr_period: 5

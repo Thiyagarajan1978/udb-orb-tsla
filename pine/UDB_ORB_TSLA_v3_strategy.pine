@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.3 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.3 S", overlay=true,
+strategy("UDB-ORB TSLA v3.4 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.4 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -13,13 +13,17 @@ strategy("UDB-ORB TSLA v3.3 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="U
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// v3.4 2026-07-23 — D1 SHORT-SIDE FIX (user-caught same day on the live chart): the original
+// TRADE TASTIC script has ONE line — a SHORT must exit on the red->green flip of the SAME
+// HHV(high - mult*ATR) line, not on an invented mirrored LLV(low + mult*ATR) line. On 2026-07-23's
+// short the true flip was 10:35 (close 324.30 > TS 319.48); the mirror exited 11:55. Fixed here,
+// in the v3.4 indicator, and in the Python engine (single-line everywhere; longs unchanged).
+// CORRECTED numbers, per unit, D1 vs B1: 2024 +38.4 vs +20.2 | 2025 +72.2 vs +102.8 |
+// 2026YTD +153.9 vs +138.0 -> 3yr ~tie (+264 vs +261). Still experimental / NOT adopted.
 // v3.3 2026-07-23 — NEW PROFILE D1 (experimental, for side-by-side comparison — NOT adopted):
-// D1 = B1's engine (Adaptive TP + 25% partial) with the "TRADE TASTIC" ATR CHANDELIER TRAIL as the
-// runner exit instead of the VWAP cross: line = HHV(high - mult*ATR(5), 10) (short side mirrored),
-// moves only on a closing, extending bar; the runner flattens when a bar CLOSES across it. Python
-// twin: config/tsla_config_D1.yaml (enhancement atr_trail_exit). TESTED 2026-07-23 (per unit):
-// D1 vs B1 -> 2024 +11.3 vs +20.2 | 2025 +80.7 vs +102.8 | 2026YTD +153.4 vs +138.0. The trail wins
-// the trending 2026 tape, loses 2024/25 chop — VWAP stays adopted; D1 makes the comparison easy.
+// D1 = B1's engine (Adaptive TP + 25% partial) with the "TRADE TASTIC" ATR TRAIL as the runner
+// exit instead of the VWAP cross. Python twin: config/tsla_config_D1.yaml (atr_trail_exit).
+// (v3.3's short side + numbers were the buggy mirror — superseded by the v3.4 fix above.)
 
 // v3.2 2026-07-23 — PARTIAL-AS-ORDER OPTION (no trade-logic change): new Shares-mode input "Partial exit
 // as opposite-side order". Some execution platforms treat action=exit as FLATTEN-ALL and ignore the
@@ -185,21 +189,20 @@ showLevels = input.bool(true, "Show Levels", group=grpU)
 
 maxCapSL = maxCapOverride > 0 ? maxCapOverride : (isC1 ? 6.0 : 5.0)
 
-// ==================== "TRADE TASTIC" ATR CHANDELIER TRAIL (D1 runner exit) ====================
-// Long line = HHV(high - mult*ATR, hhv); it MOVES only on a bar that closes above it AND extends
-// (close > prev close) — otherwise it holds. Short side mirrored. First 16 bars pin to the close
-// (the original indicator's warm-up). Runner exit = a bar CLOSING across the line (color flip).
+// ==================== "TRADE TASTIC" ATR TRAIL (D1 runner exit) ====================
+// ONE line for BOTH directions, exactly the original script: TS = HHV(high - mult*ATR, hhv);
+// it MOVES only on a bar that closes above the HHV AND extends (close > prev close) — else it
+// holds. Color = close > TS. LONG runner exits on green->red (close <= TS); SHORT runner exits
+// on red->green (close > TS) — after a waterfall the falling HHV drags the accepted level down,
+// which is how the line comes back under price to catch the cover flip (2026-07-23: flip 10:35
+// where the removed "mirror" line exited 11:55). First 16 bars pin to the close (script warm-up).
 ttATR = ta.rma(ta.tr(true), ttAtrPeriod)
 ttHHV = ta.highest(high - ttMult * ttATR, ttHhvPeriod)
-ttLLV = ta.lowest(low + ttMult * ttATR, ttHhvPeriod)
-var float ttLong = na
-var float ttShort = na
+var float ttTS = na
 if bar_index < 16
-    ttLong := close
-    ttShort := close
+    ttTS := close
 else
-    ttLong := close > ttHHV and close > close[1] ? ttHHV : ttLong
-    ttShort := close < ttLLV and close < close[1] ? ttLLV : ttShort
+    ttTS := close > ttHHV and close > close[1] ? ttHHV : ttTS
 
 // ==================== PRIOR-DAY VOL + DAILY ATR (no repaint) ====================
 f_priorRvol() =>
@@ -460,8 +463,9 @@ if active and not na(stop) and bar_index >= entryBar
                     stop := na
                     vwapArmed := false
                     vwapExited := true
-            // Step 4c: runner ATR-trail exit (D1) — a bar CLOSES across the TRADE TASTIC line
-            if part1 and not suppressPartial and isD1 and (tdir == 1 ? close <= ttLong : close >= ttShort)
+            // Step 4c: runner ATR-trail exit (D1) — the TRADE TASTIC color flip: long exits
+            // close <= TS (green->red), short exits close > TS (red->green; SAME line)
+            if part1 and not suppressPartial and isD1 and (tdir == 1 ? close <= ttTS : close > ttTS)
                 strategy.cancel("P1")
                 strategy.cancel("RUN")
                 strategy.close(entryId, comment=(inRev ? "REV ATR Trail" : "ATR Trail"), alert_message=f_msg("Exit", math.round(math.abs(strategy.position_size))))
@@ -553,7 +557,7 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol reg
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.3", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.4", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)

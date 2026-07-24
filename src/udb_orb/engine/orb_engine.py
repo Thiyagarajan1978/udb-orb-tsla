@@ -204,10 +204,11 @@ class OrbEngine:
         self._regime_tp_thresh = float(_rt.get("or_atr_thresh", 0.16))
         self._regime_tp_trend = float(_rt.get("trend_mult", 0.40))
         self._regime_tp_range = float(_rt.get("range_mult", 0.15))
-        # ATR-trail runner exit ("TRADE TASTIC" chandelier, default OFF): replaces the runner's
-        # VWAP-cross / peak-trail exit for the post-partial remainder. The trail line lives on the
-        # 5m series itself (indicators.trade_tastic_trail); the runner exits when a bar CLOSES
-        # beyond it (fill at the close — the indicator's color flip is close-based by definition).
+        # ATR-trail runner exit ("TRADE TASTIC", default OFF): replaces the runner's VWAP-cross /
+        # peak-trail exit for the post-partial remainder. ONE line for both directions
+        # (indicators.trade_tastic_trail); the runner exits on the indicator's color flip —
+        # a LONG when the bar CLOSES <= the line, a SHORT when it CLOSES > the line (fill at
+        # the close — the flip is close-based by definition).
         # hybrid_vwap: keep the VWAP-cross armed too; the runner leaves on whichever fires first.
         _tt = self.enh.get("atr_trail_exit", {})
         self._tt_on = bool(_tt.get("enabled", False))
@@ -215,8 +216,7 @@ class OrbEngine:
         self._tt_hhv_period = int(_tt.get("hhv_period", 10))
         self._tt_mult = float(_tt.get("mult", 2.5))
         self._tt_hybrid_vwap = bool(_tt.get("hybrid_vwap", False))
-        self._tt_long_arr = None
-        self._tt_short_arr = None
+        self._tt_arr = None
 
     def _atr_or(self, on: bool, mult: float, fixed: float) -> float:
         """mult*ATR when atr_normalize+this param are on and ATR is available, else the fixed value."""
@@ -415,10 +415,9 @@ class OrbEngine:
         vwap = indicators.session_vwap(df)
         rvol = indicators.relative_volume(df, int(self.enh.get("rvol_filter", {}).get("lookback_bars", 20)))
         if self._tt_on:
-            _ttl, _tts = indicators.trade_tastic_trail(
-                df, atr_period=self._tt_atr_period, hhv_period=self._tt_hhv_period, mult=self._tt_mult)
-            self._tt_long_arr = _ttl.to_numpy()
-            self._tt_short_arr = _tts.to_numpy()
+            self._tt_arr = indicators.trade_tastic_trail(
+                df, atr_period=self._tt_atr_period, hhv_period=self._tt_hhv_period,
+                mult=self._tt_mult).to_numpy()
 
         # Last bar of each session. Half sessions (e.g. Christmas Eve, 13:00 close) never produce
         # a bar at/after eod_exit, so without this a position would be silently dropped at the
@@ -841,8 +840,8 @@ class OrbEngine:
         runner_trail_px = None
         if p.use_partial_exit and st.part1_closed:
             if self._tt_on:
-                # TRADE TASTIC trail: exit when the bar CLOSES at/below the line (color flip)
-                if c <= self._tt_long_arr[bar_i]:
+                # TRADE TASTIC: long exits when the bar CLOSES at/below the line (green->red)
+                if c <= self._tt_arr[bar_i]:
                     long_runner_trail = True
                     runner_trail_px = c
             elif self._runner_trail_on:
@@ -933,8 +932,9 @@ class OrbEngine:
         runner_trail_px = None
         if p.use_partial_exit and st.part1_closed:
             if self._tt_on:
-                # TRADE TASTIC trail (short mirror): exit when the bar CLOSES at/above the line
-                if c >= self._tt_short_arr[bar_i]:
+                # TRADE TASTIC: short exits when the bar CLOSES ABOVE the SAME line (red->green
+                # flip). FIXED 2026-07-23 — no mirrored short line exists in the original script.
+                if c > self._tt_arr[bar_i]:
                     short_runner_trail = True
                     runner_trail_px = c
             elif self._runner_trail_on:

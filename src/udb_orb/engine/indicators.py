@@ -43,18 +43,21 @@ def relative_volume(df: pd.DataFrame, lookback: int) -> pd.Series:
 
 
 def trade_tastic_trail(df: pd.DataFrame, atr_period: int = 5, hhv_period: int = 10,
-                       mult: float = 2.5, init_bars: int = 16) -> tuple[pd.Series, pd.Series]:
-    """'TRADE TASTIC' chandelier trail (ceyhun, TradingView) + its short-side mirror.
+                       mult: float = 2.5, init_bars: int = 16) -> pd.Series:
+    """'TRADE TASTIC' trail line (ceyhun, TradingView) — ONE line for BOTH directions.
 
-    Long line: rawStop = high - mult*ATR(atr_period), pushed through the HHV of the last
-    hhv_period rawStops; the line only MOVES on a bar that closes above it AND extends
-    (close > prev close) — otherwise it holds its prior value. It is not a strict ratchet:
-    after a deep pullback the HHV can bring an accepted level back DOWN. Short line is the
-    exact mirror (low + mult*ATR, LLV, close < prev close). The first init_bars bars pin the
-    line to the close (the Pine warm-up). ATR is Wilder/RMA to match Pine `ta.atr`.
-    Computed on the series as-is — RTH-continuous across days, like the TV RTH chart.
-    Exit semantics used by the engine: long exits when the bar CLOSES <= long line
-    (the indicator's green->red flip), short when it closes >= the short line.
+    TS = HHV(high - mult*ATR(atr_period), hhv_period), but it only MOVES on a bar that
+    closes above the HHV AND extends (close > prev close) — otherwise it holds. It is not
+    a strict ratchet: after a deep fall the HHV drags an accepted level DOWN, which is how
+    the line comes back under price to catch the short-cover flip. Color = close > TS.
+    Exit semantics (the indicator's color flips, state-based): a LONG exits when the bar
+    CLOSES <= TS (green->red); a SHORT exits when the bar CLOSES > TS (red->green).
+    FIXED 2026-07-23: the first port gave shorts a mirrored LLV(low + mult*ATR) line —
+    the original script has NO short line; on 2026-07-23 the mirror exited the short at
+    11:55 where the true flip was 10:35 (user-verified against the TV original).
+    The first init_bars bars pin the line to the close (the Pine warm-up). ATR is
+    Wilder/RMA to match Pine `ta.atr`. Computed on the series as-is — RTH-continuous
+    across days, like the TV RTH chart.
     """
     h = df["high"].to_numpy(dtype=float)
     l = df["low"].to_numpy(dtype=float)
@@ -64,17 +67,13 @@ def trade_tastic_trail(df: pd.DataFrame, atr_period: int = 5, hhv_period: int = 
     tr = np.maximum(h - l, np.maximum(np.abs(h - pc), np.abs(l - pc)))
     atr = pd.Series(tr, index=df.index).ewm(alpha=1.0 / atr_period, adjust=False).mean().to_numpy()
     hhv = pd.Series(h - mult * atr, index=df.index).rolling(hhv_period, min_periods=1).max().to_numpy()
-    llv = pd.Series(l + mult * atr, index=df.index).rolling(hhv_period, min_periods=1).min().to_numpy()
-    ts_long = np.empty(len(c))
-    ts_short = np.empty(len(c))
+    ts = np.empty(len(c))
     for i in range(len(c)):
         if i < init_bars:
-            ts_long[i] = c[i]
-            ts_short[i] = c[i]
+            ts[i] = c[i]
         else:
-            ts_long[i] = hhv[i] if (c[i] > hhv[i] and c[i] > c[i - 1]) else ts_long[i - 1]
-            ts_short[i] = llv[i] if (c[i] < llv[i] and c[i] < c[i - 1]) else ts_short[i - 1]
-    return pd.Series(ts_long, index=df.index), pd.Series(ts_short, index=df.index)
+            ts[i] = hhv[i] if (c[i] > hhv[i] and c[i] > c[i - 1]) else ts[i - 1]
+    return pd.Series(ts, index=df.index)
 
 
 def opening_range(day_df: pd.DataFrame, market_open) -> tuple[float, float] | None:
