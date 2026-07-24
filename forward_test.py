@@ -17,6 +17,8 @@ Usage:
     python forward_test.py                 # price all new priceable days since the ledger
     python forward_test.py --start 2026-07-10 --end 2026-07-16   # explicit range
     python forward_test.py --dry-run       # print, do not write the ledger
+    python forward_test.py --profiles D1 --start 2026-01-02      # one profile only (per-profile
+                                           # idempotency: used 2026-07-23 to backfill the new D1)
 
 Requires DATABENTO_API_KEY (env var, or in .env / gap_analyzer .env). FMP key as usual.
 """
@@ -32,7 +34,8 @@ from udb_orb.engine.params import Params
 ROOT = os.path.dirname(os.path.abspath(__file__))
 LEDGER = os.path.join(ROOT, "exports", "forward_options_ledger.csv")
 PROFILES = [("A1", "config/tsla_best_A.yaml"), ("B1", "config/tsla_best_B.yaml"),
-            ("C1", "config/tsla_config_C1.yaml"), ("C2", "config/tsla_config_C.yaml")]
+            ("C1", "config/tsla_config_C1.yaml"), ("C2", "config/tsla_config_C.yaml"),
+            ("D1", "config/tsla_config_D1.yaml")]   # 2026-07-23: ATR chandelier trail runner (experimental)
 DATASET = "OPRA.PILLAR"
 
 
@@ -67,10 +70,10 @@ def load_underlying():
     return full[~full.index.duplicated(keep="last")]
 
 
-def signals(full):
+def signals(full, profiles):
     """{profile: [trades]} for every session in the frame."""
     out = {}
-    for name, path in PROFILES:
+    for name, path in profiles:
         cfg = load_config(path)
         out[name] = run_engine(full, Params.from_config(cfg), cfg["enhancements"]).trades
     return out
@@ -84,19 +87,38 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="reprice days already in the ledger (their old rows are REPLACED) — "
                          "requires --start; used 2026-07-20 to backfill the *_bc columns")
+    ap.add_argument("--profiles",
+                    help="comma-separated subset (e.g. D1): signal/price ONLY these profiles; "
+                         "idempotency and --force replacement then apply per-profile, so a new "
+                         "profile can be backfilled without touching the others' rows")
     args = ap.parse_args()
+
+    profiles = PROFILES
+    if args.profiles:
+        want = {p.strip().upper() for p in args.profiles.split(",")}
+        unknown = want - {n for n, _ in PROFILES}
+        if unknown:
+            sys.exit(f"unknown profile(s): {sorted(unknown)} — known: {[n for n, _ in PROFILES]}")
+        profiles = [(n, p) for n, p in PROFILES if n in want]
 
     import databento as dbnt
     cl = dbnt.Historical(get_db_key())
     rng_end = pd.to_datetime(cl.metadata.get_dataset_range(DATASET)["end"])  # UTC, T+1 release edge
 
     full = load_underlying()
-    sig = signals(full)
+    sig = signals(full, profiles)
     all_days = sorted({t.day for T in sig.values() for t in T})
 
     done = set()
     if os.path.exists(LEDGER):
-        done = set(pd.read_csv(LEDGER, usecols=["trade_day"])["trade_day"].astype(str))
+        led = pd.read_csv(LEDGER, usecols=["trade_day", "profile"])
+        if args.profiles:
+            # a day is done only when EVERY selected profile already has rows for it
+            sel = led[led["profile"].isin([n for n, _ in profiles])]
+            cnt = sel.groupby("trade_day")["profile"].nunique()
+            done = set(cnt[cnt >= len(profiles)].index.astype(str))
+        else:
+            done = set(led["trade_day"].astype(str))
 
     def priceable(day):
         close_utc = pd.Timestamp(day + " 16:00", tz="America/New_York").tz_convert("UTC")
@@ -218,7 +240,10 @@ def main():
     if os.path.exists(LEDGER):
         prev = pd.read_csv(LEDGER)
         if args.force:
-            prev = prev[~prev["trade_day"].astype(str).isin(set(days))]
+            drop = prev["trade_day"].astype(str).isin(set(days))
+            if args.profiles:
+                drop &= prev["profile"].isin([n for n, _ in profiles])
+            prev = prev[~drop]
         new = pd.concat([prev, new], ignore_index=True).sort_values(
             ["trade_day", "profile"], kind="stable")
     new.to_csv(LEDGER, index=False)
