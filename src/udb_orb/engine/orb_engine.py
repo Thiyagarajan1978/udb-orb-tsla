@@ -682,8 +682,14 @@ class OrbEngine:
             # ---- REVERSAL ENTRY ----
             # trigger_on_be_stop uses the RAW OR boundary (earlier/more frequent) instead of
             # requiring a fresh *buffered* close-break past the opposite trigger.
+            # reversal_capture.midline_trigger (default OFF, 2026-07-25 ORB-webinar concept): trigger
+            # at the OR MIDLINE instead — the reversal enters as soon as price closes back through
+            # mid-range after the stop, roughly half an OR earlier. Entry is nearer the reversal's
+            # stop (the crossed boundary), so per-unit risk shrinks and the risk-parity cap sizes up.
             rev_long_level = st.or_high if self._rev_trigger_raw() else long_brk
             rev_short_level = st.or_low if self._rev_trigger_raw() else short_brk
+            if bool(self._rev_cfg.get("midline_trigger", False)) and st.or_high is not None and st.or_low is not None:
+                rev_long_level = rev_short_level = (st.or_high + st.or_low) / 2.0
             if (p.use_reversal and st.prim_stopped and not st.active and entry_ok_common):
                 if st.prim_dir == 1 and rev_short_level is not None and c < rev_short_level and max_ok and vwap_short_ok and self._rvol_ok(rv) and self._htf_ok(ts, -1):
                     rqty = self._reversal_qty(st, c, -1)

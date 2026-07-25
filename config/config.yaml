@@ -176,6 +176,11 @@ enhancements:
                                 # of waiting for a fresh *buffered* close-break
     trail_to_eod: true          # reversal rides the full move (no fixed $5 TP, no partial) —
                                 # BE-trail + EOD only, to capture the whole reverse trend
+    midline_trigger: false      # BUILT, TESTED, REJECTED (2026-07-25 ORB-webinar concept): true =
+                                # reversal triggers on a close back through the OR MIDLINE (~half an
+                                # OR earlier; risk parity sizes up). B1/unit: WINS 2024 (+61 vs +20)
+                                # + 2025 (+120 vs +103), LOSES 2022/23/26 -> 5yr +423 vs +451.
+                                # Early reversals win mean-revert years, bleed in trend years.
     target_or_mult: 0.0         # >0: reversal TP = mult * OR_width (adaptive) instead of fixed $5
     reenter_after_whipsaw: false  # after BOTH primary AND reversal stop out (a whipsaw day),
                                 # re-enter ONCE in the ORIGINAL direction on a fresh raw OR break
