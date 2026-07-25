@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.7 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.7 S", overlay=true,
+strategy("UDB-ORB TSLA v3.8 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.8 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -13,6 +13,14 @@ strategy("UDB-ORB TSLA v3.7 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="U
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// v3.8 2026-07-25 — OPTION QUANTITY MODE (enables the +49-63% fixed-DOLLAR sizing finding): new
+// "Option quantity mode" input. "Fixed contracts" (default) = unchanged. "TradersPost sizing" =
+// the options entry JSON OMITS the quantity field so TradersPost's strategy-level position sizing
+// ("Amount per position" ~$1,100 + max-qty cap ~4) computes contracts from the premium — the
+// 2026-07 analysis: fixed-$ sizing beat fixed 2ct by +49-63% (A1 +$42,093 vs +$25,790) with lower
+// premium at risk. VERIFY IN PAPER first that TradersPost divides by the option PREMIUM for
+// options (docs don't say); exits unaffected. Mid-price ENTRY LIMITS were fill-simulated same day
+// and REFUTED (adverse selection: missed winners > all spread savings) — entries stay MARKET.
 // v3.7 2026-07-24 — CONFIGURABLE SHARE QUANTITY (user request, mirrors the Option-contracts input):
 // the "Shares per 'unit'" input is RENAMED "Share quantity (Shares mode, per 1.0-unit trade)" —
 // set your fixed share size there once; every order and webhook JSON quantity = Units Per Trade x
@@ -171,6 +179,8 @@ orderAsset     = input.string("Shares", "Order asset", options=["Shares", "Optio
 optContracts   = input.int(2,        "Option contracts (quantity)", minval=1, group=grpO, tooltip="DEFAULT 2. The real 0DTE backtest figures are PER CONTRACT, so 2 contracts = 2x P&L AND 2x premium at risk (~$465/ct -> ~$930/trade on TSLA, ~9% of a $10k account). Losses are capped small (~-$97/ct). Raise/lower to your risk tolerance.")
 optExpiration  = input.string("+0 days", "Option expiration", options=["+0 days", "Friday (weekly)", "+1 days", "+2 days", "+3 days", "+7 days"], group=grpO, tooltip="TradersPost resolves '+N days' to the NEAREST LISTED expiry ON/AFTER today+N — and TSLA lists only ~Mon/Wed/Fri weeklies (NO daily expiries, unlike SPX). So '+0 days' (default) = nearest listed: true 0DTE only on listed days; on Tue/Thu it grabs the next Wed/Fri (1DTE). 'Friday (weekly)' computes days-to-Friday DYNAMICALLY each day (Mon +4 .. Fri +0) — the only setting that matches the forward test's weekly leg. The fixed '+2'/'+3 days' values hit Friday only early in the week and roll into NEXT week from Wed/Thu/Fri — kept for manual experiments only. BACKTEST: WEEKLY (nearest-Friday) beat 0DTE by ~3-5% net (A1/B1/C1 +$2-3k over 2025-26, less theta on 2-3h holds) but costs ~22% more premium ($6.37 vs $5.24/ct), so 2 weekly ct risk more $ than 2 0DTE ct.")
 optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0, group=grpO)
+optQtyMode     = input.string("Fixed contracts", "Option quantity mode", options=["Fixed contracts", "TradersPost sizing (omit quantity)"], group=grpO, tooltip="Fixed contracts (default) = the webhook sends the 'Option contracts' quantity. 'TradersPost sizing' = the entry JSON OMITS the quantity field so TradersPost's strategy-level position sizing decides the contract count — set 'Amount per position' ~$1,100 there (+ a max-quantity cap ~4 if available). WHY: the 2026-07 analysis found fixed-DOLLAR sizing (contracts = floor($1,100/premium), cap 4, skip if unaffordable) beats fixed 2ct by +49-63% with LOWER premium at risk — cheap-premium days carry the edge. VERIFY IN PAPER FIRST: TradersPost's docs don't state whether 'Amount per position' divides by the option PREMIUM (correct) or the underlying price (wrong) for options — watch one fill's contract count before trusting it. Exits are unaffected (action=exit closes the whole position).")
+optQtyFixed    = str.startswith(optQtyMode, "Fixed")
 partialAsOrder = input.bool(false,   "Partial exit as opposite-side order (Shares mode)", group=grpO, tooltip="For platforms where action=exit ALWAYS flattens the whole position and ignores the quantity (cannot split). ON: the 25% partial fires as a plain opposite-side order — long -> action=Sell qty N, short -> action=Buy qty N — so a NETTING platform reduces the position by N and the 75% runner keeps riding. The runner/stop/VWAP/EOD exits still send the normal full 'Exit'. WARNING: only works if your platform NETS an opposite-side order against the open position; if it REVERSES (flatten + open opposite), leave OFF. Designed for the default Close stop mode; in Wick mode a stop-out day sends Sell-partial + Exit back-to-back (still ends flat). Test one partial fill in paper first. OFF = the original Exit-with-quantity JSON (TradersPost honors it).")
 
 // ---- WEBHOOK ALERTS: per-order JSON via alert_message. In TradingView set the alert message to
@@ -202,7 +212,12 @@ f_msg(act, q) =>
             // explicit put contract with action=sell as SELL-TO-OPEN a short put (unless the opt-in
             // "Invert puts" strategy setting is enabled) — leave "Invert puts" UNCHECKED with these signals.
             ot = act == "Buy" ? "call" : "put"
-            out := '{"ticker":"{{ticker}}", "action":"buy", "quantity":' + str.tostring(optContracts) + ', "expiration":"' + f_expStr() + '", "optionType":"' + ot + '", "strikesAway":' + str.tostring(optStrikesAway) + '}'
+            // v3.8: in "TradersPost sizing" mode the quantity field is OMITTED so the TradersPost
+            // strategy-level position sizing (e.g. "Amount per position" dollar budget) decides the
+            // contract count — the July analysis showed fixed-DOLLAR sizing beats fixed contracts
+            // +49-63%. An explicit quantity in the JSON would override it, hence the omission.
+            qpart = optQtyFixed ? '"quantity":' + str.tostring(optContracts) + ', ' : ''
+            out := '{"ticker":"{{ticker}}", "action":"buy", ' + qpart + '"expiration":"' + f_expStr() + '", "optionType":"' + ot + '", "strikesAway":' + str.tostring(optStrikesAway) + '}'
     else
         out := '{"ticker":"{{ticker}}", "action":"' + act + '", "quantity":' + str.tostring(q, "#") + ', "price":"{{close}}"}'
     out
@@ -586,7 +601,7 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol reg
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.7", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.8", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)

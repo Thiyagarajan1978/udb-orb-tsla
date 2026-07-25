@@ -1,6 +1,10 @@
 //@version=6
-indicator("UDB-ORB TSLA v3.7 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.7", overlay=true, max_labels_count=500)
+indicator("UDB-ORB TSLA v3.8 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.8", overlay=true, max_labels_count=500)
 
+// v3.8 2026-07-25 — version bump in lockstep with the STRATEGY's "Option quantity mode" input
+//   (options webhook can omit quantity so TradersPost's dollar-based position sizing decides the
+//   contract count — the +49-63% fixed-$ sizing finding). THIS INDICATOR NEEDED NO CHANGE (its
+//   alerts are plain text, no webhook JSON). Bumped only so chart + alerts show matching names.
 // v3.7 2026-07-24 — CONFIGURABLE SHARE QUANTITY (user request, mirrors the Option-contracts input):
 //   new "Share quantity (shares per 1.0 unit)" input (default 25 = the old hardcoded scale).
 //   INDICATOR: entry / reversal / partial alerts now state the exact share count to place
@@ -663,7 +667,7 @@ if barstate.islast and showTable
     wr = nTrades > 0 ? nSucc * 100.0 / nTrades : 0.0
     pf = grossL > 0 ? grossP / grossL : na
     exp = nTrades > 0 ? netPnl / nTrades : 0.0
-    table.cell(tbl, 0, 0, "UDB-ORB v3.7", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(tbl, 0, 0, "UDB-ORB v3.8", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(tbl, 1, 0, str.substring(profile, 0, 2) + " · " + tpModeSel, text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     f_row(1, "Trades", str.tostring(nTrades), color.yellow)
     f_row(2, "Win Rate", str.tostring(wr, "#.#") + "%", color.orange)
