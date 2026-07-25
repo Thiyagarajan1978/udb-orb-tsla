@@ -190,7 +190,9 @@ partialAsOrder = input.bool(false,   "Partial exit as opposite-side order (Share
 //             full-exit->"exit"; contracts + 0DTE ATM via inputs. Leave "Invert puts" UNCHECKED in TradersPost.
 //             WORKS ON ALL PROFILES: the 25% partial's webhook is auto-suppressed so 1 contract HOLDS to the
 //             runner exit. BARCLOSE-CORRECTED 2026-07-20 (old figures carried a 5-min entry lookahead):
-//             A1/B1/C1 >> C2 on real 0DTE options: +$12.9k/+$11.2k/+$10.1k vs -$1k @1ct 2025-01..2026-07.
+//             Real 0DTE @1ct barclose 2025-01..2026-07-17 (UPDATED 2026-07-25, incl D1 + OR-width C2):
+//             A1 +$12.9k / D1 +$11.3k / B1 +$11.2k / C1 +$10.1k / C2 +$4.2k (the v3.5 OR-width TP
+//             flipped C2 positive; old fixed-$2 C2 was -$1k). 2026 YTD: A1 +$9.0k > D1 +$7.5k > B1 +$5.8k.
 //             EXPIRY: 0DTE vs WEEKLY tested — WEEKLY (nearest Friday) beat 0DTE ~3-5% net (less theta on
 //             2-3h holds) but costs ~22% more premium. TSLA lists only ~Mon/Wed/Fri expiries (SPX is daily),
 //             and TradersPost '+N days' = nearest listed on/after today+N, so a FIXED offset cannot target
