@@ -161,10 +161,15 @@ enhancements:
     skip_above: 0.0          # skip if OR width > this (0 = no cap)
 
   # 3) Time-of-day entry window (ET). Only enter within [start, end].
+  #    ADOPTED 2026-07-26 @ end 12:00: post-noon entries were a net-NEGATIVE cohort across 5 years
+  #    (the 12:00-13:00 lunch hour is the toxic pocket; 13:00+ mildly positive but not worth the
+  #    tail). No NEW entries (primary or reversal) after 12:00; open positions manage to their
+  #    normal exits. WR up in every tested year-cell on A1/B1/C1/D1 incl 2022-23 OOS, net +3-4%
+  #    (B1 5yr +463.4 vs +450.7/unit), worst day never worse. Pine v3.9 "Entry cutoff" = the twin.
   time_window:
-    enabled: false
+    enabled: true
     start: "09:35"
-    end:   "14:00"
+    end:   "12:00"
 
   # 4) Improved reversal capture on false-breakout days (they close opposite ~74% of the
   #    time). ADOPTED default = trigger_on_be_stop + trail_to_eod — validated train(2024-25)

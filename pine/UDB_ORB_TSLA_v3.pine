@@ -1,6 +1,15 @@
 //@version=6
-indicator("UDB-ORB TSLA v3.8 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.8", overlay=true, max_labels_count=500)
+indicator("UDB-ORB TSLA v3.9 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9", overlay=true, max_labels_count=500)
 
+// v3.9 2026-07-26 — ENTRY CUTOFF ADOPTED (default ON, 12:00): loss-anatomy on 5 years of trades
+//   showed post-noon entries are a net-NEGATIVE cohort (the 12:00-13:00 lunch hour is the toxic
+//   pocket; losing stops die in ~30min while winners run for hours). No NEW entries — primary or
+//   reversal — after 12:00; open positions still manage to their normal exits. Verified on
+//   A1/B1/C1/D1 incl 2022-23 OOS: WR up in every tested year-cell, net +3-4% (B1 5yr +463.4 vs
+//   +450.7/unit), worst day never worse (2025's improves −10.9 vs −12.0). Python twin:
+//   enhancements.time_window {start 09:35, end 12:00} enabled in the A1/B1/C1/D1 + default yamls.
+//   Knob re-sweep same day: stop cap $5, BE trigger 0.55, BE trail $0.25 all confirmed optimal
+//   (BE 0.85 buys ~+4pt WR but costs $65/3yr and deeper tails — not taken).
 // v3.8 2026-07-25 — version bump in lockstep with the STRATEGY's "Option quantity mode" input
 //   (options webhook can omit quantity so TradersPost's dollar-based position sizing decides the
 //   contract count — the +49-63% fixed-$ sizing finding). THIS INDICATOR NEEDED NO CHANGE (its
@@ -112,6 +121,9 @@ grpS = "Session"
 eodHour = input.int(15, "EOD Exit Hour", minval=0, maxval=23, group=grpS)
 eodMin  = input.int(50, "EOD Exit Minute", minval=0, maxval=59, group=grpS)
 orStart = input.string("09:30", "Opening Range start bar", options=["09:30", "09:45"], group=grpS)
+entryCutOn = input.bool(true, "Entry cutoff — no NEW entries after the time below", group=grpS, tooltip="ADOPTED 2026-07-26 (default ON, 12:00): entries after noon were a net-NEGATIVE cohort in 5 years of trade data — the damage concentrates in the 12:00-13:00 lunch hour. Blocking NEW entries (primary AND reversal; open positions still manage to their normal exits) after 12:00: WR up in all 7 tested year-cells on B1/D1 (+A1/C1 confirmed), net +3-4% (B1 5yr +463 vs +451/unit), worst day never worse, 2025's improves. OFF = trade all day (pre-cutoff behavior).")
+entryCutH  = input.int(12, "Entry Cutoff Hour", minval=9, maxval=15, group=grpS)
+entryCutM  = input.int(0,  "Entry Cutoff Minute", minval=0, maxval=59, group=grpS)
 
 grpR = "Risk / Regime Gates"
 maxORWidth  = input.float(8.0,  "Max OR Width ($) — skip wider days", step=0.5, group=grpR)
@@ -294,7 +306,7 @@ if isORbar
 longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
 shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
 tpDist = tpModeSel == "Fixed" ? fixedTP : tpModeSel == "ORw" ? orWidth : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMin, atrTPMult * dailyATR) : fixedTP) : (not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na)
-canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar
+canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar and (not entryCutOn or hour * 60 + minute <= entryCutH * 60 + entryCutM)
 
 longConfirm  = not confirmBreakout or (close[1] > longBrk and (close >= open or not requireTrendCandle))
 shortConfirm = not confirmBreakout or (close[1] < shortBrk and (close <= open or not requireTrendCandle))
@@ -669,7 +681,7 @@ if barstate.islast and showTable
     wr = nTrades > 0 ? nSucc * 100.0 / nTrades : 0.0
     pf = grossL > 0 ? grossP / grossL : na
     exp = nTrades > 0 ? netPnl / nTrades : 0.0
-    table.cell(tbl, 0, 0, "UDB-ORB v3.8", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(tbl, 0, 0, "UDB-ORB v3.9", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(tbl, 1, 0, str.substring(profile, 0, 2) + " · " + tpModeSel, text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     f_row(1, "Trades", str.tostring(nTrades), color.yellow)
     f_row(2, "Win Rate", str.tostring(wr, "#.#") + "%", color.orange)

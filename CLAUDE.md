@@ -84,7 +84,11 @@ separate, toggleable, and default OFF.
 ## Enhancements (config `enhancements:`)
 1. **RVOL filter** (default OFF) — breakout bar volume ≥ `min_rvol × avg`.
 2. **OR-width regime gate** (default OFF) — skip days by opening-range width buckets.
-3. **Time-of-day window** (default OFF) — only enter within `[start, end]` ET.
+3. **Time-of-day window** (default **ON** since 2026-07-26, end 12:00) — no NEW entries (primary
+   or reversal) after noon; open positions manage to their normal exits. Post-noon entries were a
+   net-negative cohort over 5 years (the 12:00-13:00 lunch hour is the toxic pocket). WR up in
+   every tested year-cell on A1/B1/C1/D1 incl 2022-23 OOS, net +3-4%, worst day never worse.
+   Enabled in config.yaml + the A1/B1/C1/D1 yamls; Pine v3.9 "Entry cutoff" input is the twin.
 4. **Reversal capture** (default **ON** — adopted) — `trigger_on_be_stop` + `trail_to_eod`.
 5. **Walk-forward tuning** (`tuning/`) — re-fit `adaptive_tp_scale` etc. from stored trades.
 

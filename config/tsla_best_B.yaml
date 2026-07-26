@@ -60,10 +60,10 @@ enhancements:
     enabled: false
     skip_below: 0.0
     skip_above: 0.0
-  time_window:
-    enabled: false
-    start: 09:35
-    end: '14:00'
+  time_window:            # ADOPTED 2026-07-26: no NEW entries (primary or reversal) after 12:00
+    enabled: true         # post-noon entries were a net-NEGATIVE cohort (lunch-hour chop); WR up in
+    start: 09:35          # every tested year-cell A1/B1/C1/D1 incl 2022-23 OOS, net +3-4%, worst day
+    end: '12:00'          # never worse. Pine v3.9 'Entry cutoff' input (default ON) is the twin.
   reversal_capture:
     enabled: true
     trigger_on_be_stop: true
