@@ -453,6 +453,34 @@ def test_reversal_trigger_on_be_stop_uses_raw_break():
     assert not any(t.is_reversal for t in res_buf.trades)  # buffered break did NOT
 
 
+def test_immediate_reversal_enters_on_the_be_stop_bar():
+    """immediate_on_be_stop flips on the SAME bar the primary BE-stops, not on an OR break.
+
+    Default OFF: the same day with the flag off waits for the raw opposite break (which never
+    comes here), so no reversal is taken at all.
+    """
+    rows = [
+        (9, 30, 100, 101.0, 99.0, 100.0, 1000),      # OR 99.0-101.0
+        (9, 35, 101, 101.6, 100.5, 101.5, 1000),     # primary long @101.5
+        (9, 40, 101, 101.6, 100.0, 100.4, 1000),     # closes back below entry -> BE Stop
+        (9, 45, 100.4, 100.6, 100.0, 100.2, 1000),   # stays INSIDE the OR: no raw break ever
+        (15, 50, 100.2, 100.4, 100.0, 100.1, 1000),  # EOD
+    ]
+    enh = {"reversal_capture": {"enabled": True, "trigger_on_be_stop": True, "trail_to_eod": True}}
+    res_off = _run({"2024-06-03": rows}, enh_overrides=enh)
+    assert not any(t.is_reversal for t in res_off.trades)   # default: nothing to reverse on
+
+    enh_on = {"reversal_capture": {**enh["reversal_capture"], "immediate_on_be_stop": True}}
+    res_on = _run({"2024-06-03": rows}, enh_overrides=enh_on)
+    revs = [t for t in res_on.trades if t.is_reversal]
+    assert len(revs) == 1
+    prim = next(t for t in res_on.trades if not t.is_reversal)
+    assert revs[0].direction.startswith("S")             # flipped short after the long primary
+    assert revs[0].entry_ts == prim.exit_ts              # same bar as the BE-stop fill
+    assert revs[0].entry_price == 100.4                  # at that bar's CLOSE (when the alert fires;
+                                                         # under close-mode stops that IS the exit fill)
+
+
 def test_whipsaw_reenter_fires_once():
     """After primary AND reversal both stop, a re-entry in the ORIGINAL direction fires once."""
     rows = [

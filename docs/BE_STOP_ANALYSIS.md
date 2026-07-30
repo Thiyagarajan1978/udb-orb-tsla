@@ -913,3 +913,72 @@ tolerance that would manufacture phantom partials elsewhere. Judge marginal fill
 BE 0.55 · reversal capture · tp_scale 1.0 · runner_trail 0.75×OR · max_or_width $8:
 **150 trades · 50.7% WR · net +$238.06 · PF 1.87 · worst −$16.47** (vs the un-re-tuned realistic
 +$214 / PF 1.67 / −$22.06). Reproduce optimistic Pine numbers with `config/faithful_be035.yaml`.
+
+## 31. Immediate reversal on the BE Stop bar — BUILT, TESTED, REJECTED (2026-07-28)
+
+**Question (from the chart):** when the primary BE-stops, why wait for a close back through the
+opposite OR boundary? Why not flip *right there*, on the bar that stopped us?
+
+Built as `enhancements.reversal_capture.immediate_on_be_stop` (default **OFF**): the flip enters at
+the same 5m close the BE stop filled at. Two stop placements were tested, because a BE-stop fill
+frequently lands *inside* the OR (or, after a short primary, still below the OR low) — parking the
+flip's stop at the usual OR boundary then puts it on the **wrong side of entry**, or a few cents
+away, which the risk-parity cap turns into an absurd size:
+- `swing` (default) — stop at the primary's failed extreme.
+- `or_boundary` — the standard reversal stop, falling back to `swing` when invalid.
+Sizing reuses the `reversal_risk_cap` parity, but may only **shrink** the 2× base, never inflate it
+off a tight stop. `immediate_min_risk_or_mult` (0.15×OR) drops flips with a noise-tight stop.
+
+C1, per unit, close-mode stops, `scripts/immediate_reversal_test.py`:
+
+| window | base (wait for OR break) | imm-swing | imm-orb | no reversal |
+|---|---:|---:|---:|---:|
+| 2026-05-27→07-24 (41 sess) | **+85.7** (PF 2.60) | +72.1 | +82.3 | +60.9 |
+| 1 year → 2026-07-24 | +224.6 (PF 1.53) | +227.3 | **+250.0** | +204.3 |
+| 2024-2026 | **+265.7** (PF 1.28) | +237.2 | +271.5 | +237.1 |
+| 2022-2026 | **+435.9** (PF 1.25) | +370.1 | +422.3 | +290.3 |
+
+**The wait is a filter, not latency.** Over 2022-26 the immediate flip roughly **doubles** the
+reversal count (198 → 374) while total reversal P&L **falls** (+145.6 → +79.8) — the ~176 extra
+flips are collectively net-negative. Reversal WR drops 38.9% → 35.3%. `imm-orb` looks close to base
+only because its wider stop declines the worst flips; it still never beats base on 2024-26 or
+2022-26 and carries a worse worst-day (−13.8 vs −13.3) and worse maxDD.
+
+Per-day detail over the 2-month window makes the mechanism visible: **12** days had a primary BE
+Stop. Base entered only **3** flips (2 of them the EOD trend winners, +10.26 and +8.43). Immediate
+entered all **12**; 7 lost outright and 2 more were ~breakeven, and most died within 1-4 bars (enter
+10:15, BE-stopped 10:25) — the flip is entering into chop *inside* the opening range. The day was
+**worse with immediate on 8 of the 12**. Net on those 12 days: **−23.62 base vs −37.27 immediate**. Requiring price to travel the full OR is what distinguishes a genuine failed breakout
+from range noise; the reversal's own stop is only meaningful once price has crossed the range.
+
+Also tested `immediate_reasons` = all primary stops (Base SL / BE Trail / BE Stop) — identical to
+BE-Stop-only, no additional edge.
+
+### All five profiles (2026-07-28) — same verdict, and it is a REGIME TRAP
+
+`--profiles all`. On multi-year *window* totals `imm-orb` looks like a winner: it beat base on
+2024-2026 and on the trailing year in **every** profile (A1 +17.6, B1 +17.6, C1 +5.7, C2 +28.0,
+D1 +23.4). Per-year (`--years`) shows that is one year wearing a disguise:
+
+| profile | 2022 | 2023 | 2024 | 2025 | 2026 YTD |
+|---|---:|---:|---:|---:|---:|
+| A1 | −17.1 | −30.8 | −11.0 | **+24.8** | +3.8 |
+| B1 | −17.1 | −26.4 | −11.0 | **+24.8** | +3.8 |
+| C1 | −3.1 | −22.9 | −7.5 | **+2.3** | +11.0 |
+| C2 | −28.6 | −40.9 | −17.3 | **+28.8** | +16.5 |
+| D1 | −13.1 | −30.8 | −9.1 | **+28.8** | +3.8 |
+| **sum(5)** | **−78.8** | **−151.7** | **−56.0** | **+109.5** | **+38.9** |
+
+(delta = imm-orb − base, per unit; + = the immediate flip helped)
+
+**It loses 2022, 2023 AND 2024 in all five profiles**, and the two worst losing years are the true
+OOS ones. The entire "edge" is **2025 plus a thin 2026** — and even inside 2026, the trailing
+2-month slice is negative for all five (A1 −2.8, B1 −2.8, C1 −3.5, C2 −0.2, D1 −2.8). D1's maxDD
+also degrades badly (−56.1 → −66.6 over 5yr) while `imm-swing` loses across the board everywhere.
+
+That per-year signature — **wins 2025, loses 2022/23/24** — is the same one that killed the midline
+trigger (§ 2026-07-25, "wins 24/25, loses 22/23/26"). Early reversals pay in mean-reverting years
+and bleed in trending ones; the profile you pick does not change that, because all five profiles
+share one entry engine and only differ in how the runner exits. Every attempt to make the reversal
+enter *earlier and more often* has now cost money on TSLA: midline trigger, mid-price entry limits,
+immediate flip. **The OR-break wait stays.**

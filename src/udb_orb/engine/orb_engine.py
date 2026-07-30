@@ -143,6 +143,10 @@ class _DayState:
         self.prim_dir = 0
         self.prim_stopped = False
         self.qty_total: Optional[float] = None
+        # immediate_on_be_stop: reason string of a primary stop that just closed on THIS bar,
+        # so the flip can be taken at that same bar's close instead of waiting for an OR break
+        self.pending_immediate_rev: Optional[str] = None
+        self.prim_ext: Optional[float] = None   # primary's favorable extreme (swing stop basis)
 
         # whipsaw re-entry (original direction after BOTH primary and reversal stop)
         self.is_reenter = False
@@ -275,6 +279,16 @@ class OrbEngine:
         return self._rev_on and bool(self._rev_cfg.get("trigger_on_be_stop", False))
 
     @property
+    def _rev_immediate_on(self) -> bool:
+        """immediate_on_be_stop (default OFF): flip on the SAME bar the primary stop closes,
+        instead of waiting for a close back through the opposite OR boundary."""
+        return self._rev_on and bool(self._rev_cfg.get("immediate_on_be_stop", False))
+
+    @property
+    def _rev_immediate_reasons(self) -> tuple:
+        return tuple(self._rev_cfg.get("immediate_reasons", ["BE Stop"]) or ["BE Stop"])
+
+    @property
     def _reenter_on(self) -> bool:
         return self._rev_on and bool(self._rev_cfg.get("reenter_after_whipsaw", False))
 
@@ -398,6 +412,32 @@ class OrbEngine:
             else:  # scale
                 qty = min(qty, cap / risk_per_unit)
         return qty
+
+    def _immediate_rev_stop(self, st: _DayState, c: float, direction: int) -> Optional[float]:
+        """Stop for an immediate (same-bar) flip, or None if no sane stop exists.
+
+        A BE-stop exit can land *inside* the opening range — or, for a short primary that
+        BE-stops only slightly above entry, still BELOW the OR low. Parking the flip's stop at
+        the OR boundary would then put the stop on the WRONG side of entry (or a hair away,
+        which the risk-parity cap turns into an absurd position size). So:
+          - 'swing'       : stop at the primary's favorable extreme (the failed swing).
+          - 'or_boundary' : the standard reversal stop, falling back to 'swing' when invalid.
+        Either way the distance must clear `immediate_min_risk_or_mult` x OR width.
+        """
+        p = self.p
+        or_size = st.or_width or 0.0
+        mode = str(self._rev_cfg.get("immediate_stop_mode", "swing"))
+        cands = []
+        if mode == "or_boundary":
+            cands.append((st.or_low - p.sl_offset) if direction == 1 else (st.or_high + p.sl_offset))
+        if st.prim_ext is not None:
+            cands.append((st.prim_ext - p.sl_offset) if direction == 1 else (st.prim_ext + p.sl_offset))
+        floor = float(self._rev_cfg.get("immediate_min_risk_or_mult", 0.15)) * or_size
+        for stop in cands:
+            risk = (c - stop) if direction == 1 else (stop - c)
+            if risk > 0 and risk >= floor:
+                return stop
+        return None
 
     def _reversal_tp_dist(self, or_size: float) -> Optional[float]:
         """Distance for the reversal TP, or None to disable TP (trail to EOD)."""
@@ -745,12 +785,55 @@ class OrbEngine:
                     st.reenter_taken = True
                     self.result.events.append(Event(ts, EV_PRIMARY_ENTRY, "S (Re)", c, st.qty_total, None, "whipsaw re-entry"))
 
+            # Track the primary's favorable extreme — the structural swing the trade ran to.
+            # immediate_stop_mode 'swing' parks the flip's stop there.
+            if st.active and not st.in_reversal and st.dir != 0:
+                if st.dir == 1:
+                    st.prim_ext = h if st.prim_ext is None else max(st.prim_ext, h)
+                else:
+                    st.prim_ext = l if st.prim_ext is None else min(st.prim_ext, l)
+
             # ---- EXIT ENGINE ----
             if st.active and st.entry_bar is not None and bar_i > st.entry_bar:
                 if st.dir == 1:
                     self._exit_long(st, ts, bar_i, o, h, l, c, vw)
                 elif st.dir == -1:
                     self._exit_short(st, ts, bar_i, o, h, l, c, vw)
+
+            # ---- IMMEDIATE REVERSAL (enhancement, default OFF) ----
+            # The primary just stopped on THIS bar's close; flip right here rather than waiting
+            # for a close back through the opposite OR boundary. Entry is the same close the
+            # stop filled at (close-mode stops fill at the bar close, so this is executable).
+            # If the direction filters reject it, prim_stopped stays armed and the normal
+            # OR-break reversal can still fire later.
+            if st.pending_immediate_rev is not None:
+                rdir = -st.prim_dir
+                if (p.use_reversal and not st.active and entry_ok_common and rdir != 0 and max_ok
+                        and (vwap_long_ok if rdir == 1 else vwap_short_ok)
+                        and self._rvol_ok(rv) and self._htf_ok(ts, rdir)):
+                    rstop = self._immediate_rev_stop(st, c, rdir)
+                    rqty = None
+                    if rstop is not None:
+                        # risk parity, same cap as the standard reversal — but it may only SHRINK
+                        # the 2x base size, never inflate it off a tight stop.
+                        risk_pu = abs(c - rstop)
+                        cap = self._atr_or(self._atr_rev_on, self._atr_rev_mult, p.reversal_risk_cap)
+                        rqty = p.trade_qty * p.reversal_qty_mult
+                        if cap and cap > 0 and risk_pu > 0:
+                            if p.reversal_risk_mode == "skip" and risk_pu * rqty > cap:
+                                rqty = None
+                            elif p.reversal_risk_mode != "skip":
+                                rqty = min(rqty, cap / risk_pu)
+                    if rqty is not None and rqty > 0:
+                        self._enter(st, ts, bar_i, direction=rdir, c=c, reversal=True, qty=rqty,
+                                    stop_override=rstop)
+                        st.prim_stopped = False
+                        if self._resume_disarms:
+                            st.resume_armed = False
+                        lbl = "L (Rev)" if rdir == 1 else "S (Rev)"
+                        self.result.events.append(
+                            Event(ts, EV_REVERSAL_ENTRY, lbl, c, st.qty_total, None, "immediate reversal"))
+                st.pending_immediate_rev = None
 
             # ---- EOD forced close (also on the session's last bar, for half days) ----
             if is_flatten_bar and st.active and st.dir != 0:
@@ -766,7 +849,8 @@ class OrbEngine:
         return self.result
 
     # ---- entry helper ---------------------------------------------------
-    def _enter(self, st: _DayState, ts, bar_i, direction, c, reversal, reenter=False, qty=None):
+    def _enter(self, st: _DayState, ts, bar_i, direction, c, reversal, reenter=False, qty=None,
+               stop_override=None):
         p = self.p
         st.active = True
         st.dir = direction
@@ -806,6 +890,8 @@ class OrbEngine:
                 st.stop = st.or_low - p.sl_offset
                 st.tp = None if tp_dist is None else c + tp_dist
                 st.be_level = st.or_high - (p.be_retrace_trigger * or_size) if or_size else None
+            if stop_override is not None:
+                st.stop = stop_override
             st.qty_total = qty if qty is not None else (p.trade_qty * p.reversal_qty_mult)
 
         st.init_stop = st.stop   # record base SL as the risk basis (before any BE ratchet)
@@ -1112,6 +1198,8 @@ class OrbEngine:
         was_primary_sl = (not st.in_reversal) and (not st.is_reenter) and reason in ("Base SL", "BE Stop", "BE Trail")
         if was_primary_sl and p.use_reversal:
             st.prim_stopped = True
+            if self._rev_immediate_on and reason in self._rev_immediate_reasons:
+                st.pending_immediate_rev = reason
         # resume re-entry arms on the SAME primary stop that arms the reversal
         if was_primary_sl and self._resume_on:
             st.resume_armed = True

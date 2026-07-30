@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.9 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9 S", overlay=true,
+strategy("UDB-ORB TSLA v3.9.1 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.1 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -13,6 +13,29 @@ strategy("UDB-ORB TSLA v3.9 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="U
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// v3.9.1 2026-07-28 — DOCUMENTATION ONLY (no logic, no input, no order, no webhook change).
+// Records a concept tested and REJECTED 2026-07-28, so it is not re-proposed from the chart:
+// IMMEDIATE REVERSAL ON THE BE-STOP BAR — flip at the same 5m close the BE stop fills at, instead
+// of waiting for a close back through the raw opposite OR boundary (the current rule). Asked from
+// a live chart where the flip would have worked; built as the Python enhancement
+// reversal_capture.immediate_on_be_stop (default OFF) and swept on ALL FIVE profiles.
+// It roughly DOUBLES the reversal count (198 -> 374 over 5yr) while total reversal P&L FALLS
+// (+145.6 -> +79.8/unit) — the ~176 extra flips are collectively net-negative. The best variant
+// beat baseline on 2024-2026 WINDOW TOTALS in every profile (A1 +17.6, B1 +17.6, C1 +5.7,
+// C2 +28.0, D1 +23.4) — but per YEAR it loses 2022, 2023 AND 2024 in every profile:
+//   delta/unit vs base, sum of A1+B1+C1+C2+D1:
+//   2022 -78.8 | 2023 -151.7 | 2024 -56.0 | 2025 +109.5 | 2026YTD +38.9   (2022-23 = true OOS)
+// The whole "edge" is 2025. Trailing 2 months negative in all five (A1/B1/D1 -2.8, C1 -3.5,
+// C2 -0.2); D1's 5yr maxDD degrades -56.1 -> -66.6. Same 2025-only regime signature that killed
+// the midline-trigger reversal. Profile choice cannot rescue it: all five share ONE entry engine
+// and differ only in the runner exit, so the flip lands on the identical set of BE-stop bars.
+// DO NOT RE-ADD. The OR-break wait is a FILTER, not latency — crossing the whole range is what
+// distinguishes a genuine failed breakout from chop INSIDE the range, and the reversal's own stop
+// is only meaningful once price has crossed it. (Structural note: a BE-stop fill often lands
+// inside/below the OR, which would put the normal reversal stop on the WRONG side of entry and
+// let the risk-parity cap inflate size absurdly.)
+// Reproduce: python scripts/immediate_reversal_test.py --profiles all --years [--windows|--detail]
+// Full analysis: docs/BE_STOP_ANALYSIS.md §31.
 // v3.9 2026-07-26 — ENTRY CUTOFF ADOPTED (default ON, 12:00): loss-anatomy on 5 years of trades
 // showed post-noon entries are a net-NEGATIVE cohort (the 12:00-13:00 lunch hour is the toxic
 // pocket; losing stops die in ~30min while winners run for hours). No NEW entries — primary or
@@ -614,7 +637,7 @@ bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol reg
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.9", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.9.1", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)

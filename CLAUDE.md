@@ -60,6 +60,14 @@ Built but **NOT adopted** (default OFF, opt-in): `reenter_after_whipsaw` (margin
 OOS) and `pdh_pdl_filter` (require close beyond prior-day high/low when it's near the break level —
 barely triggers on TSLA; see `docs/BE_STOP_ANALYSIS.md` §6).
 
+**Do not re-propose making the reversal enter earlier.** Three variants are now built, swept and
+rejected — `midline_trigger`, mid-price entry limits, and `immediate_on_be_stop` (flip on the
+BE-Stop bar instead of waiting for the opposite OR break; swept on all 5 profiles 2026-07-28, §31).
+All three share one signature: they win 2025 and lose 2022/2023/2024. The OR-break wait is a
+**filter**, not latency. **Method rule from §31: multi-year WINDOW totals hid a 3-losing-year
+regime trap — always run the per-year table** (`scripts/immediate_reversal_test.py --profiles all
+--years`) before believing any entry-timing "win".
+
 To reproduce the **exact Pine v12.4.3 numbers**, use `config/faithful_be035.yaml` (BE 0.35,
 reversal_capture OFF). `tests/test_params.py` asserts both: the tuned default AND the port.
 

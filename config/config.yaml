@@ -186,6 +186,25 @@ enhancements:
                                 # OR earlier; risk parity sizes up). B1/unit: WINS 2024 (+61 vs +20)
                                 # + 2025 (+120 vs +103), LOSES 2022/23/26 -> 5yr +423 vs +451.
                                 # Early reversals win mean-revert years, bleed in trend years.
+    immediate_on_be_stop: false # BUILT, TESTED, REJECTED (2026-07-28): true = flip on the SAME bar
+                                # close the primary BE-stops at, instead of waiting for a close back
+                                # through the opposite OR boundary. C1/unit 2022-26: +370 vs +436
+                                # base; 2024-26 +237 vs +266; last 2mo +72 vs +86. It roughly DOUBLES
+                                # the reversal count (198 -> 374 over 5yr) while reversal P&L FALLS
+                                # (+146 -> +80) — the ~176 extra flips are net-negative. The OR-break
+                                # wait is a real filter, not latency: it separates a true failed
+                                # breakout from chop inside the range.
+                                # SWEPT ON ALL 5 PROFILES (A1/B1/C1/C2/D1) — same verdict, and it is
+                                # a REGIME TRAP: the best variant (imm-orb) beats base on 2024-26
+                                # window totals in every profile, but per year it LOSES 2022, 2023
+                                # AND 2024 in every profile (sum -78.8 / -151.7 / -56.0) and only
+                                # wins 2025 (+109.5). Same signature as midline_trigger above.
+                                # See BE_STOP_ANALYSIS.md §31.
+    immediate_stop_mode: swing  # swing = stop at the primary's failed extreme; or_boundary = the
+                                # standard reversal stop (falls back to swing when it lands on the
+                                # wrong side of entry, which a BE-stop fill often does)
+    immediate_reasons: ["BE Stop"]      # which primary stop reasons arm the immediate flip
+    immediate_min_risk_or_mult: 0.15    # skip flips whose stop is closer than this x OR width
     target_or_mult: 0.0         # >0: reversal TP = mult * OR_width (adaptive) instead of fixed $5
     reenter_after_whipsaw: false  # after BOTH primary AND reversal stop out (a whipsaw day),
                                 # re-enter ONCE in the ORIGINAL direction on a fresh raw OR break
