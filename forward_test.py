@@ -22,7 +22,7 @@ Usage:
 
 Requires DATABENTO_API_KEY (env var, or in .env / gap_analyzer .env). FMP key as usual.
 """
-import argparse, os, re, sys, datetime as dt
+import argparse, os, re, sys, time, datetime as dt
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
 import pandas as pd
 from udb_orb.config import load_config, db_path
@@ -37,6 +37,27 @@ PROFILES = [("A1", "config/tsla_best_A.yaml"), ("B1", "config/tsla_best_B.yaml")
             ("C1", "config/tsla_config_C1.yaml"), ("C2", "config/tsla_config_C.yaml"),
             ("D1", "config/tsla_config_D1.yaml")]   # 2026-07-23: ATR chandelier trail runner (experimental)
 DATASET = "OPRA.PILLAR"
+
+
+def import_databento(attempts=4, delay=15):
+    """Import databento, retrying transient Windows Application Control DLL blocks.
+
+    The native databento_dbn extension is intermittently refused at load time
+    ("An Application Control policy has blocked this file"), which silently killed
+    ~40% of the scheduled runs through 2026-07-28. The block clears by itself, so
+    retry a few times; a genuine failure still exits non-zero for the .bat to see.
+    """
+    for i in range(1, attempts + 1):
+        try:
+            import databento as dbnt
+            return dbnt
+        except ImportError as e:
+            for mod in [m for m in list(sys.modules) if m.split(".")[0] in ("databento", "databento_dbn")]:
+                del sys.modules[mod]          # let the retry re-run the extension load
+            if i == attempts:
+                sys.exit(f"databento import failed after {attempts} attempts: {e}")
+            print(f"databento import blocked (attempt {i}/{attempts}): {e}\n  retrying in {delay}s...", flush=True)
+            time.sleep(delay)
 
 
 def get_db_key():
@@ -101,7 +122,7 @@ def main():
             sys.exit(f"unknown profile(s): {sorted(unknown)} — known: {[n for n, _ in PROFILES]}")
         profiles = [(n, p) for n, p in PROFILES if n in want]
 
-    import databento as dbnt
+    dbnt = import_databento()
     cl = dbnt.Historical(get_db_key())
     rng_end = pd.to_datetime(cl.metadata.get_dataset_range(DATASET)["end"])  # UTC, T+1 release edge
 

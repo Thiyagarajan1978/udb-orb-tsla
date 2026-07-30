@@ -10,7 +10,7 @@ Usage:
     python forward_test_spx.py                              # new sessions since ledger
     python forward_test_spx.py --start 2026-07-17 --end 2026-07-17
 """
-import argparse, os, re, sys, datetime as dt
+import argparse, os, re, sys, time, datetime as dt
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
 import pandas as pd, numpy as np
 from udb_orb.data.fmp_client import fetch_5min, rth_only
@@ -19,6 +19,20 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 LEDGER = os.path.join(ROOT, "exports", "forward_spx_ledger.csv")
 BUF=0.0005; L_TGT,L_STP=1.50,0.50; S_OTM=0.0030; S_TGT_FRAC=0.50; S_STP_MULT=2.0
 TS_MAIN=30; W30,W60=5,10
+
+def import_databento(attempts=4, delay=15):
+    """Import databento, retrying transient Windows Application Control DLL blocks
+    ("An Application Control policy has blocked this file") — see forward_test.py."""
+    for i in range(1, attempts + 1):
+        try:
+            import databento as db
+            return db
+        except ImportError as e:
+            for mod in [m for m in list(sys.modules) if m.split(".")[0] in ("databento", "databento_dbn")]:
+                del sys.modules[mod]
+            if i == attempts: sys.exit(f"databento import failed after {attempts} attempts: {e}")
+            print(f"databento import blocked (attempt {i}/{attempts}): {e}\n  retrying in {delay}s...", flush=True)
+            time.sleep(delay)
 
 def get_db_key():
     k = os.getenv("DATABENTO_API_KEY")
@@ -71,7 +85,7 @@ def main():
     bars = bars[(bars.index.date >= start) & (bars.index.date <= end)].copy()
     if not len(bars): print("No new sessions."); return
     bars["day"]=bars.index.strftime("%Y-%m-%d"); bars["mod"]=bars.index.hour*60+bars.index.minute
-    import databento as db
+    db = import_databento()
     cl = db.Historical(get_db_key())
     rows=[]; run_ts=dt.datetime.now().strftime("%Y-%m-%dT%H:%M")
     for day, g in bars.groupby("day"):
