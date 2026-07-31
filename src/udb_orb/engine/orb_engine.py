@@ -235,6 +235,17 @@ class OrbEngine:
         self._lq_days = int(_lq.get("lookback_days", 2))
         self._lq_frac = float(_lq.get("proximity_frac", 0.5))
         self._lq_map = {}
+        # Flow entry (default OFF): take the primary from an EXTERNAL per-date direction instead
+        # of a breakout — e.g. the 09:30-09:31 order-flow imbalance. Entry is the OR bar's CLOSE
+        # (09:35:00 on a 5m grid), the first executable price at which or_high/or_low — and hence
+        # the stop and BE level — are known, so nothing looks ahead. Everything downstream (SL,
+        # adaptive/ATR TP, partial, BE retrace, VWAP-cross runner, EOD) is untouched.
+        # `signals` is injected by the caller as {date_str: +1 long / -1 short}; absent or 0 = no
+        # trade that day. The engine stays network- and file-free: loading is the script's job.
+        _fe = self.enh.get("flow_entry", {})
+        self._flow_on = bool(_fe.get("enabled", False))
+        self._flow_rev_ok = bool(_fe.get("allow_reversal", True))
+        self._flow_sig = {str(k): int(v) for k, v in (_fe.get("signals") or {}).items()}
         _tt = self.enh.get("atr_trail_exit", {})
         self._tt_on = bool(_tt.get("enabled", False))
         self._tt_atr_period = int(_tt.get("atr_period", 5))
@@ -710,8 +721,22 @@ class OrbEngine:
                 can_long = can_long and not st.htf_blocked_long
                 can_short = can_short and not st.htf_blocked_short
 
+            # ---- FLOW ENTRY (enhancement, default OFF) — replaces the breakout primary ----
+            # Fires on the OR-completing bar's close. It deliberately bypasses `entry_ok_common`,
+            # which requires t > market_open and forbids the OR bar: those guard the *breakout*
+            # trigger, which cannot be evaluated until after the OR. The day-level filters that do
+            # apply (vol regime, OR-width gates, loss breaker) are re-checked here.
+            if self._flow_on and or_completing_now and not st.active and not st.first_taken:
+                fdir = self._flow_sig.get(str(d), 0)
+                if (fdir and not st.skipped_by_regime and not st.skipped_by_vol
+                        and min_ok and max_ok and breaker_ok):
+                    self._enter(st, ts, bar_i, direction=fdir, c=c, reversal=False)
+                    self.result.events.append(Event(
+                        ts, EV_PRIMARY_ENTRY, "L" if fdir == 1 else "S", c, st.qty_total,
+                        None, "flow entry"))
+
             # ---- PRIMARY ENTRY ----
-            if entry_ok_common and not st.active and not st.first_taken:
+            if entry_ok_common and not self._flow_on and not st.active and not st.first_taken:
                 if can_long:
                     self._enter(st, ts, bar_i, direction=1, c=c, reversal=False)
                     self.result.events.append(Event(ts, EV_PRIMARY_ENTRY, "L", c, st.qty_total, None, "entry"))
@@ -730,7 +755,8 @@ class OrbEngine:
             rev_short_level = st.or_low if self._rev_trigger_raw() else short_brk
             if bool(self._rev_cfg.get("midline_trigger", False)) and st.or_high is not None and st.or_low is not None:
                 rev_long_level = rev_short_level = (st.or_high + st.or_low) / 2.0
-            if (p.use_reversal and st.prim_stopped and not st.active and entry_ok_common):
+            if (p.use_reversal and (self._flow_rev_ok or not self._flow_on)
+                    and st.prim_stopped and not st.active and entry_ok_common):
                 if st.prim_dir == 1 and rev_short_level is not None and c < rev_short_level and max_ok and vwap_short_ok and self._rvol_ok(rv) and self._htf_ok(ts, -1):
                     rqty = self._reversal_qty(st, c, -1)
                     if rqty is not None:
