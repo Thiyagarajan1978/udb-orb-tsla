@@ -246,6 +246,17 @@ class OrbEngine:
         self._flow_on = bool(_fe.get("enabled", False))
         self._flow_rev_ok = bool(_fe.get("allow_reversal", True))
         self._flow_sig = {str(k): int(v) for k, v in (_fe.get("signals") or {}).items()}
+        # E1 mode: enter at the 09:31 price instead of the OR bar's close. `entry_price` is
+        # {date: px} (the first executable print at 09:31:00) and `entry_range` is
+        # {date: [hi, lo]} of the 09:30-09:31 candle — the only range that exists at that
+        # instant, so the primary's stop/BE must be sized from it, not from the 5m OR. Both
+        # apply to the PRIMARY only; the reversal cannot fire before 09:35 and keeps the 5m OR.
+        # `or_gate` (default True) applies the min/max-OR-width day filters; E1 turns it OFF
+        # because the 5m OR width is not knowable at 09:31.
+        self._flow_px = {str(k): float(v) for k, v in (_fe.get("entry_price") or {}).items()}
+        self._flow_rng = {str(k): (float(v[0]), float(v[1]))
+                          for k, v in (_fe.get("entry_range") or {}).items()}
+        self._flow_or_gate = bool(_fe.get("or_gate", True))
         _tt = self.enh.get("atr_trail_exit", {})
         self._tt_on = bool(_tt.get("enabled", False))
         self._tt_atr_period = int(_tt.get("atr_period", 5))
@@ -728,11 +739,17 @@ class OrbEngine:
             # apply (vol regime, OR-width gates, loss breaker) are re-checked here.
             if self._flow_on and or_completing_now and not st.active and not st.first_taken:
                 fdir = self._flow_sig.get(str(d), 0)
-                if (fdir and not st.skipped_by_regime and not st.skipped_by_vol
-                        and min_ok and max_ok and breaker_ok):
-                    self._enter(st, ts, bar_i, direction=fdir, c=c, reversal=False)
+                px = self._flow_px.get(str(d))
+                rng = self._flow_rng.get(str(d))
+                gate_ok = (min_ok and max_ok) if self._flow_or_gate else True
+                have_px = (not self._flow_px) or (px is not None and rng is not None)
+                if (fdir and have_px and not st.skipped_by_regime and not st.skipped_by_vol
+                        and gate_ok and breaker_ok):
+                    ep = px if px is not None else c
+                    self._enter(st, ts, bar_i, direction=fdir, c=ep, reversal=False,
+                                range_override=rng)
                     self.result.events.append(Event(
-                        ts, EV_PRIMARY_ENTRY, "L" if fdir == 1 else "S", c, st.qty_total,
+                        ts, EV_PRIMARY_ENTRY, "L" if fdir == 1 else "S", ep, st.qty_total,
                         None, "flow entry"))
 
             # ---- PRIMARY ENTRY ----
@@ -876,7 +893,7 @@ class OrbEngine:
 
     # ---- entry helper ---------------------------------------------------
     def _enter(self, st: _DayState, ts, bar_i, direction, c, reversal, reenter=False, qty=None,
-               stop_override=None):
+               stop_override=None, range_override=None):
         p = self.p
         st.active = True
         st.dir = direction
@@ -893,16 +910,24 @@ class OrbEngine:
             if not reenter:
                 st.prim_dir = direction
                 st.first_taken = True
+            # range_override (flow_entry E1): size the stop / BE off the 09:30-09:31 candle,
+            # the only range in existence at that entry. Local to this leg — st.or_* is left
+            # alone so the reversal, runner trail and day filters keep the real 5m OR.
+            if range_override is not None:
+                r_hi, r_lo = range_override
+                or_size = abs(r_hi - r_lo)
+            else:
+                r_hi, r_lo = st.or_high, st.or_low
             if direction == 1:
-                st.stop = self._long_sl(c, st.or_low, st.or_high)
+                st.stop = self._long_sl(c, r_lo, r_hi)
                 tp_dist = self._tp_dist(or_size)
                 st.tp = c + tp_dist
-                st.be_level = st.or_high - (p.be_retrace_trigger * or_size) if or_size else None
+                st.be_level = r_hi - (p.be_retrace_trigger * or_size) if or_size else None
             else:
-                st.stop = self._short_sl(c, st.or_high, st.or_low)
+                st.stop = self._short_sl(c, r_hi, r_lo)
                 tp_dist = self._tp_dist(or_size)
                 st.tp = c - tp_dist
-                st.be_level = st.or_low + (p.be_retrace_trigger * or_size) if or_size else None
+                st.be_level = r_lo + (p.be_retrace_trigger * or_size) if or_size else None
             st.qty_total = qty if qty is not None else p.trade_qty
         else:
             # reversal: TP per _reversal_tp_dist (fixed $5, OR-scaled, or None=trail to EOD),
