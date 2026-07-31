@@ -257,6 +257,22 @@ class OrbEngine:
         self._flow_rng = {str(k): (float(v[0]), float(v[1]))
                           for k, v in (_fe.get("entry_range") or {}).items()}
         self._flow_or_gate = bool(_fe.get("or_gate", True))
+        # ---- IBS / close-location entry gate (enhancement, default OFF) ----
+        # From the ORB+IBS/CLV handover doc (2026-07-30). Each sub-filter is independently
+        # toggleable so the doc's own §13 incremental matrix can be run one layer at a time;
+        # a sub-filter set to None is not applied. Gates the PRIMARY only unless
+        # apply_to_reversal is set — the doc's system has no reversal leg.
+        _ig = self.enh.get("ibs_entry_gate", {})
+        self._ibs_on = bool(_ig.get("enabled", False))
+        self._ibs_atr_bars = int(_ig.get("atr_bars", 14))
+        self._ibs_brk = _ig.get("breakout_ibs")          # min IBS in the trade's direction
+        self._ibs_prev = _ig.get("prev_day_ibs")         # min prior-session IBS, direction-aware
+        self._ibs_body = _ig.get("body_min")             # min |close-open| / range
+        self._ibs_wick = _ig.get("wick_max")             # max adverse wick / range
+        self._ibs_ratr = _ig.get("range_atr")            # [lo, hi] band on range / intraday ATR
+        self._ibs_pcp = bool(_ig.get("prior_close_progress", False))
+        self._ibs_zero = bool(_ig.get("block_zero_range", True))
+        self._ibs_rev = bool(_ig.get("apply_to_reversal", False))
         _tt = self.enh.get("atr_trail_exit", {})
         self._tt_on = bool(_tt.get("enabled", False))
         self._tt_atr_period = int(_tt.get("atr_period", 5))
@@ -543,6 +559,18 @@ class OrbEngine:
                          (_daily["lo"] - _pc).abs()], axis=1).max(axis=1)
         atr_map = _tr.rolling(int(self.p.atr_period)).mean().shift(1).to_dict()
 
+        # ---- IBS / close-location gate inputs (enhancement, default OFF) ----
+        # Prior session's Internal Bar Strength (Close-Low)/(High-Low) and prior close, both
+        # shifted so only completed sessions are visible, plus an intraday ATR shifted one bar
+        # so the breakout candle cannot inflate its own reference range.
+        _rng = (_daily["hi"] - _daily["lo"])
+        _dibs = ((_daily["cl"] - _daily["lo"]) / _rng.where(_rng > 0)).fillna(0.5)
+        pibs_map = _dibs.shift(1).to_dict()
+        pclose_map = _daily["cl"].shift(1).to_dict()
+        _itr = pd.concat([df["high"] - df["low"], (df["high"] - df["close"].shift()).abs(),
+                          (df["low"] - df["close"].shift()).abs()], axis=1).max(axis=1)
+        iatr = _itr.rolling(int(self._ibs_atr_bars)).mean().shift(1)
+
         st = _DayState()
         cur_date = None
         bar_i = -1
@@ -708,13 +736,20 @@ class OrbEngine:
                 if ls is not None and ls.size and short_trig is not None:
                     lq_short_ok = not bool(((ls < short_trig) & (ls >= short_trig - band)).any())
 
+            _pibs, _pcl = pibs_map.get(d), pclose_map.get(d)
+            _ia = iatr.loc[ts] if self._ibs_on else None
+            ibs_long_ok = self._ibs_ok(1, o, h, l, c, _pibs, _pcl, _ia)
+            ibs_short_ok = self._ibs_ok(-1, o, h, l, c, _pibs, _pcl, _ia)
+
             can_long = (
                 p.allow_longs and long_trig is not None and c > long_trig and long_confirm and long_ext_ok
                 and min_ok and max_ok and vwap_long_ok and lq_long_ok and self._rvol_ok(rv)
+                and ibs_long_ok
             )
             can_short = (
                 p.allow_shorts and short_trig is not None and c < short_trig and short_confirm and short_ext_ok
                 and min_ok and max_ok and vwap_short_ok and lq_short_ok and self._rvol_ok(rv)
+                and ibs_short_ok
             )
 
             # HTF trend gate on the primary. strict: a mismatch at the break bar kills that
@@ -774,7 +809,7 @@ class OrbEngine:
                 rev_long_level = rev_short_level = (st.or_high + st.or_low) / 2.0
             if (p.use_reversal and (self._flow_rev_ok or not self._flow_on)
                     and st.prim_stopped and not st.active and entry_ok_common):
-                if st.prim_dir == 1 and rev_short_level is not None and c < rev_short_level and max_ok and vwap_short_ok and self._rvol_ok(rv) and self._htf_ok(ts, -1):
+                if st.prim_dir == 1 and rev_short_level is not None and c < rev_short_level and max_ok and vwap_short_ok and self._rvol_ok(rv) and self._htf_ok(ts, -1) and (ibs_short_ok or not self._ibs_rev):
                     rqty = self._reversal_qty(st, c, -1)
                     if rqty is not None:
                         self._enter(st, ts, bar_i, direction=-1, c=c, reversal=True, qty=rqty)
@@ -782,7 +817,7 @@ class OrbEngine:
                         if self._resume_disarms:
                             st.resume_armed = False   # reversal wins; disarm the resume leg
                         self.result.events.append(Event(ts, EV_REVERSAL_ENTRY, "S (Rev)", c, st.qty_total, None, "reversal entry"))
-                elif st.prim_dir == -1 and rev_long_level is not None and c > rev_long_level and max_ok and vwap_long_ok and self._rvol_ok(rv) and self._htf_ok(ts, 1):
+                elif st.prim_dir == -1 and rev_long_level is not None and c > rev_long_level and max_ok and vwap_long_ok and self._rvol_ok(rv) and self._htf_ok(ts, 1) and (ibs_long_ok or not self._ibs_rev):
                     rqty = self._reversal_qty(st, c, 1)
                     if rqty is not None:
                         self._enter(st, ts, bar_i, direction=1, c=c, reversal=True, qty=rqty)
@@ -957,6 +992,47 @@ class OrbEngine:
         st.suppress_partial = bool(reversal and self._rev_on and self._rev_cfg.get("trail_to_eod", False))
         if st.entry_ts_day is None:
             st.entry_ts_day = ts
+
+    def _ibs_ok(self, direction, o, h, l, c, prev_ibs, prev_close, iatr) -> bool:
+        """ORB+IBS/CLV close-location gate. True = the doc's filters allow this breakout.
+
+        IBS is (close-low)/(high-low), flipped for shorts so it always reads 'closed in the
+        trade's favour'. A zero-range bar scores the neutral 0.50 rather than NaN and, by
+        default, cannot trigger an entry at all (doc §4).
+        """
+        if not self._ibs_on:
+            return True
+        rng = h - l
+        if rng <= 0:
+            return not self._ibs_zero
+        ibs = (c - l) / rng
+        fav = ibs if direction == 1 else 1.0 - ibs
+        if self._ibs_brk is not None and fav < float(self._ibs_brk):
+            return False
+        if self._ibs_body is not None and abs(c - o) / rng < float(self._ibs_body):
+            return False
+        if self._ibs_wick is not None:
+            wick = (h - max(o, c)) / rng if direction == 1 else (min(o, c) - l) / rng
+            if wick > float(self._ibs_wick):
+                return False
+        if self._ibs_ratr is not None:
+            if iatr is None or iatr != iatr or not iatr:   # !=self excludes NaN warmup
+                return False
+            lo_b, hi_b = float(self._ibs_ratr[0]), float(self._ibs_ratr[1])
+            if not (lo_b <= rng / iatr <= hi_b):
+                return False
+        if self._ibs_prev is not None:
+            if prev_ibs is None or prev_ibs != prev_ibs:
+                return False
+            thr = float(self._ibs_prev)
+            if (prev_ibs < thr) if direction == 1 else (prev_ibs > 1.0 - thr):
+                return False
+        if self._ibs_pcp:
+            if prev_close is None or prev_close != prev_close:
+                return False
+            if (c - prev_close) * direction < 0:
+                return False
+        return True
 
     def _tp_dist(self, or_size: float) -> float:
         """Primary TP distance. Fixed (default), Adaptive (OR-scaled), or ATR (volatility-scaled)."""
