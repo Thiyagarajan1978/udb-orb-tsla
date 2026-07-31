@@ -262,6 +262,17 @@ class OrbEngine:
         # toggleable so the doc's own §13 incremental matrix can be run one layer at a time;
         # a sub-filter set to None is not applied. Gates the PRIMARY only unless
         # apply_to_reversal is set — the doc's system has no reversal leg.
+        # ---- PRIMARY risk-parity sizing (enhancement, default OFF) ----
+        # The reversal has had a dollar-risk cap since 2026-07 (+40% return per $1 of worst-day
+        # risk); the primary has not — it takes trade_qty whether its stop is $1.20 or the full
+        # $6 cap away, a ~5x swing in dollar risk. Size instead to a constant risk budget:
+        # qty = budget / |entry - initial stop|, clamped. Compare on risk-adjusted terms, not
+        # raw net: changing size alone moves net without adding edge.
+        _ps = self.enh.get("primary_risk_sizing", {})
+        self._prs_on = bool(_ps.get("enabled", False))
+        self._prs_budget = float(_ps.get("risk_budget", 0.0) or 0.0)
+        self._prs_max = _ps.get("max_qty")
+        self._prs_min = _ps.get("min_qty")
         _ig = self.enh.get("ibs_entry_gate", {})
         self._ibs_on = bool(_ig.get("enabled", False))
         self._ibs_atr_bars = int(_ig.get("atr_bars", 14))
@@ -964,6 +975,16 @@ class OrbEngine:
                 st.tp = c - tp_dist
                 st.be_level = r_lo + (p.be_retrace_trigger * or_size) if or_size else None
             st.qty_total = qty if qty is not None else p.trade_qty
+            if (qty is None and self._prs_on and self._prs_budget > 0
+                    and st.stop is not None):
+                rpu = abs(c - st.stop)
+                if rpu > 0:
+                    q = self._prs_budget / rpu
+                    if self._prs_max is not None:
+                        q = min(q, float(self._prs_max))
+                    if self._prs_min is not None:
+                        q = max(q, float(self._prs_min))
+                    st.qty_total = q
         else:
             # reversal: TP per _reversal_tp_dist (fixed $5, OR-scaled, or None=trail to EOD),
             # SL at the OR boundary opposite the reversal direction.
