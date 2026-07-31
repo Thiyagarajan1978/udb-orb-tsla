@@ -176,6 +176,34 @@ Corollary: **do not backtest through the current session** — the partial day's
 artificial `eod_exit`. Reconciled 2026-07-31 over 07-28..07-30: live and backtest event streams are
 identical (11 events per profile).
 
+## Multi-symbol research — NO-GO for a second symbol (2026-07-31)
+`scripts/multi_symbol_test.py` ran the FROZEN B1/C1 (no per-symbol tuning) over 2024-01-02..2026-07-09
+on TSLA + 9 liquid names, at a fixed **$10k notional** (`trade_qty: 1.0` yields per-SHARE P&L, so raw
+net is not comparable across prices) and **price-scaled slippage** ($0.10 was calibrated on a ~$300
+TSLA). ATR-normalization of the dollar params (`atr_normalize`: stop 0.40 / gate 0.55 / rev 0.40) was
+tested ON and OFF.
+
+**Result: 1 of 9 non-TSLA symbols profitable; mean −15%.** Every non-TSLA symbol lands at PF 0.84-1.04
+(breakeven noise) while TSLA sits at 1.23-1.28, and the two "winners" swap identity between the
+norm-ON and norm-OFF variants — i.e. noise, not a second edge. **Trade TSLA only.** Note the profiles
+still carry dollar params `atr_normalize` does NOT cover (`adaptive_tp_min` $2.14, `reversal_target`
+$5.00, `partial_activation` $1.00, `be_trail_amount` $0.25) — which is why the universe must stay in a
+TSLA-like price band rather than be re-tuned. Re-tuning per symbol is fitting under another name.
+
+**Refuted hypothesis:** "it needs a high-ADR symbol." corr(ADR%, ret%) = **+0.53** full-sample looks
+supportive, but TSLA is the single dominant point — remove it and the correlation collapses to **+0.08**
+(norm ON) / **−0.25 to −0.32** (norm OFF). Not evidence.
+
+**Open, unproven:** `scripts/in_play_test.py` tests the alternative reading — that ORB needs whichever
+symbol is IN PLAY that day, not a fixed second symbol. Selecting the top-1 daily by |gap %| (known at
+the 09:35 OR close, no lookahead) returns **+21.3% (B1) / +25.2% (C1)** vs a mean fixed non-TSLA of
+−19.4%/−22.1% and a 500-draw random-pick null of −9.0%/−11.4%, picking TSLA only 26% of days. But
+**p = 0.116 / 0.072 → fails p<0.05**, 2024 is negative (−20.2%/−17.2%), and the median selected gap is
+only 2.09% — an 8-symbol universe rarely contains a genuinely gapping name. `scripts/fetch_universe.py`
+pulls a 69-symbol character-selected universe to power this properly; as of 2026-07-31 only **15** are
+cached — FMP returned **HTTP 429** on the rest at `--workers 8`. Re-run it (it skips cached files) with
+fewer workers before re-testing.
+
 ## Run
 - Backtest:  `python cli.py backtest --start 2024-01-02 --end 2024-12-31`
 - Live:      `python cli.py live --profiles B1,C1`  (alerts-only; add `--dry-run` to test)
