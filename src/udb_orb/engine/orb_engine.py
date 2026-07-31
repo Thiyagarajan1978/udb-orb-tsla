@@ -15,7 +15,7 @@ matching Pine's `bar_index > entryBarIndex` guard.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import time
+from datetime import date, time
 from typing import Any, Optional
 
 import pandas as pd
@@ -187,6 +187,7 @@ class OrbEngine:
         self.p = params
         self.enh = enhancements or {}
         self.result = Result()
+        self._open_session: Optional[date] = None   # set per-run; see run()
         # ATR normalization: when on, replace the FIXED dollar params (stop cap, OR-width gate,
         # reversal risk cap) with multiples of the current ATR, so the risk profile is constant
         # across volatility regimes and transferable across symbols/prices. Off => fixed dollars.
@@ -518,9 +519,18 @@ class OrbEngine:
         return False
 
     # ---- main -----------------------------------------------------------
-    def run(self, df: pd.DataFrame) -> Result:
+    def run(self, df: pd.DataFrame, open_session: Optional[date] = None) -> Result:
+        """Replay `df`. `open_session` marks a date whose session is still IN PROGRESS.
+
+        Backtests leave it None: every date in the frame is a complete session, so its last bar
+        is a legitimate flatten bar (this is what closes positions on half days). LIVE must set
+        it to today, because there "the last bar" is merely the newest bar that has closed —
+        without it the engine flattens every open position on the newest bar of every poll and
+        emits a fresh, false `eod_exit` alert each time. See `run` -> `last_ts_by_date`.
+        """
         if df.empty:
             return self.result
+        self._open_session = open_session
         df = df.sort_index()
         vwap = indicators.session_vwap(df)
         rvol = indicators.relative_volume(df, int(self.enh.get("rvol_filter", {}).get("lookback_bars", 20)))
@@ -550,6 +560,10 @@ class OrbEngine:
         # a bar at/after eod_exit, so without this a position would be silently dropped at the
         # day rollover instead of being closed.
         last_ts_by_date = {d: g.index.max() for d, g in df.groupby(df.index.date)}
+        # ...but an in-progress session has no last bar yet — only the eod_exit clock may flatten
+        # it. Dropping it here is what stops the live loop re-firing a false EOD exit every poll.
+        if self._open_session is not None:
+            last_ts_by_date.pop(self._open_session, None)
 
         # Prior-day high/low (PDH/PDL) per date, from the RTH session data itself.
         _daily = df.groupby(df.index.date).agg(hi=("high", "max"), lo=("low", "min"),
@@ -1447,6 +1461,10 @@ class OrbEngine:
         return "No Close Break"
 
 
-def run_engine(df: pd.DataFrame, params: Params, enhancements: Optional[dict[str, Any]] = None) -> Result:
-    """Convenience wrapper: build an engine and run it over `df`."""
-    return OrbEngine(params, enhancements).run(df)
+def run_engine(df: pd.DataFrame, params: Params, enhancements: Optional[dict[str, Any]] = None,
+               open_session: Optional[date] = None) -> Result:
+    """Convenience wrapper: build an engine and run it over `df`.
+
+    Pass `open_session=<today>` from the live loop — see `OrbEngine.run`.
+    """
+    return OrbEngine(params, enhancements).run(df, open_session=open_session)

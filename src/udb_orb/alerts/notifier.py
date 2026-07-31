@@ -25,12 +25,15 @@ _EVENT_META = {
 }
 
 
-def format_event(symbol: str, tf_min: int, e) -> str:
+def format_event(symbol: str, tf_min: int, e, label: str | None = None) -> str:
     tag, action = _EVENT_META.get(e.type, ("EVENT", ""))
     ts = e.ts
     when = ts.strftime("%Y-%m-%d %H:%M ET") if hasattr(ts, "strftime") else str(ts)
+    # B1 and C1 trade the same symbol off the same bars at different levels, so the profile
+    # must be on every alert -- otherwise two entries five minutes apart are indistinguishable.
+    who = f"UDB-ORB {label}" if label else "UDB-ORB"
     parts = [
-        f"[{tag}] UDB-ORB | {e.type.replace('_', ' ').upper()}",
+        f"[{tag}] {who} | {e.type.replace('_', ' ').upper()}",
         f"Action: {action}",
         f"{symbol} {tf_min}m",
         f"Price: ${e.price:.2f}",
@@ -45,13 +48,14 @@ def format_event(symbol: str, tf_min: int, e) -> str:
 
 
 class Notifier:
-    def __init__(self, cfg: dict, symbol: str, tf_min: int):
+    def __init__(self, cfg: dict, symbol: str, tf_min: int, label: str | None = None):
         alerts = cfg.get("alerts", {})
         self.enabled = bool(alerts.get("enabled", True))
         self.channels = set(alerts.get("channels", []))
         self.events = set(alerts.get("events", []))
         self.symbol = symbol
         self.tf_min = tf_min
+        self.label = label
         self.resend_key = get_env("RESEND_API_KEY")
         self.alert_from = get_env("ALERT_FROM")
         self.alert_to = get_env("ALERT_TO")
@@ -64,8 +68,9 @@ class Notifier:
         """Send one event across configured channels. Returns True if anything was sent."""
         if not self._wants(event.type):
             return False
-        msg = format_event(self.symbol, self.tf_min, event)
-        subject = f"UDB-ORB {self.symbol}: {event.type.replace('_', ' ')}"
+        msg = format_event(self.symbol, self.tf_min, event, self.label)
+        who = f"UDB-ORB {self.label}" if self.label else "UDB-ORB"
+        subject = f"{who} {self.symbol}: {event.type.replace('_', ' ')}"
         sent = False
         if "email" in self.channels and self._email(subject, msg):
             sent = True
@@ -104,7 +109,7 @@ class Notifier:
                 "event": {
                     "type": event.type, "direction": event.direction, "price": event.price,
                     "qty": event.qty, "pnl": event.pnl, "reason": event.reason,
-                    "ts": str(event.ts),
+                    "ts": str(event.ts), "profile": self.label, "symbol": self.symbol,
                 },
             }
             r = requests.post(self.webhook, json=payload, timeout=20)

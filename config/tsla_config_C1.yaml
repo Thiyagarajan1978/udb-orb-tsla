@@ -17,6 +17,10 @@ session:
   eod_exit: '15:50'
 profile:
   name: Adaptive TP + Reversal (Best Combined)
+  # Short id used to scope live alerts and the DB run record. B1 and C1 share a profile NAME
+  # and a db_path, so without a distinct label they cross-suppress each other's alerts (the
+  # live "seen" set is keyed on symbol+day+label) and their events are indistinguishable.
+  label: C1
   trade_qty: 1.0
   slippage_per_unit: 0.1
   use_breakout_buffer: true

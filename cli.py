@@ -72,9 +72,37 @@ def cmd_backtest(args, cfg):
     _print_summary(run_id, summ)
 
 
+# The profiles cleared for paper trading (CLAUDE.md: close-stop, walk-forward OOS-confirmed
+# on 2022-23, TV-reconciled within 1.3-2.8%). A1/C2 were explicitly dropped -- do not add them
+# here without a fresh validation run.
+TRADED_PROFILES = {
+    "B1": "config/tsla_best_B.yaml",
+    "C1": "config/tsla_config_C1.yaml",
+}
+
+
 def cmd_live(args, cfg):
-    from udb_orb.live.runner import run_live
-    run_live(cfg, once=args.once)
+    from udb_orb.config import load_config
+    from udb_orb.live.runner import run_live_multi
+
+    if args.profiles:
+        names = [n.strip().upper() for n in args.profiles.split(",") if n.strip()]
+        unknown = [n for n in names if n not in TRADED_PROFILES]
+        if unknown:
+            raise SystemExit(f"unknown profile(s) {unknown}; "
+                             f"available: {sorted(TRADED_PROFILES)}")
+        cfgs = [load_config(TRADED_PROFILES[n]) for n in names]
+    else:
+        cfgs = [cfg]          # --config as given (single profile)
+
+    if args.dry_run:
+        # Console-only: verify wiring, plumbing and de-duplication without mailing anyone.
+        # Events are still written to the DB, so a dry run seeds the seen-set exactly as a
+        # real one would -- which is itself part of what we want to test.
+        for c in cfgs:
+            c.setdefault("alerts", {})["channels"] = []
+        print("[live] DRY RUN — alerts to console only, no email/webhook will be sent")
+    run_live_multi(cfgs, once=args.once)
 
 
 def cmd_tune(args, cfg):
@@ -110,6 +138,11 @@ def main(argv=None):
 
     pl = sub.add_parser("live")
     pl.add_argument("--once", action="store_true", help="single poll then exit")
+    pl.add_argument("--profiles", default=None,
+                    help="comma-separated traded profiles to run in one process, "
+                         "e.g. B1,C1 (overrides --config)")
+    pl.add_argument("--dry-run", action="store_true",
+                    help="force console-only alerts (no email/webhook) — use to test wiring")
 
     pt = sub.add_parser("tune")
     pt.add_argument("--start", required=True)

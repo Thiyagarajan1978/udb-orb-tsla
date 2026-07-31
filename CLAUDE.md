@@ -150,9 +150,35 @@ releases T+1 so it prices up to the last fully-available session. Needs `DATABEN
 This validates the SIGNAL edge going forward; it still assumes fills at the quote — TradersPost paper
 trading is the complementary test for real fill quality.
 
+## Paper runner (LIVE, alerts-only) — started 2026-07-31
+`python cli.py live --profiles B1,C1` runs **both traded profiles in one process** (`scripts/run_live.bat`,
+Task Scheduler **"UDB-ORB-TSLA Paper Runner"**, Mon-Fri 9:25 AM ET, `-StartWhenAvailable`). One process =
+one FMP fetch per cycle and no chance of one profile being silently dead. `--dry-run` forces console-only
+alerts (still writes the DB) — always use it when testing. `TRADED_PROFILES` in `cli.py` is the allow-list;
+A1/C2 were dropped and must not be added without a fresh validation run.
+
+Four live-only invariants, none of which a backtest can catch (see `tests/test_live_runner.py`):
+1. **`profile.label` (B1/C1) scopes everything.** The two share a profile NAME and a db_path, so without
+   the label the re-alert guard lets one suppress the other's identical event — you simply never hear
+   about half your trades. It is also on every alert message and in the webhook payload.
+2. **The seen-set seeds over the whole `lookback_days` window, not just today.** The engine replays a
+   multi-day lookback, so its event stream always contains prior sessions; seeding only from today
+   re-appends them to `events` on every restart.
+3. **Prior-session events are persisted but never alerted.** On the first poll under a new label the
+   seen-set is empty; without the same-day guard the runner mails 3 days of history at once.
+4. **`open_session=today` must be passed to `run_engine`.** `last_ts_by_date` comes from the DATA — in a
+   backtest every session is complete so its last bar legitimately flattens (this is the half-day
+   handling), but live "the last bar" is just the newest closed bar. Without the flag the engine closes
+   every open position on every poll and fires a fresh `eod_exit` at a NEW timestamp each time (~30 false
+   "close your position" alerts per trade per day).
+
+Corollary: **do not backtest through the current session** — the partial day's last bar produces an
+artificial `eod_exit`. Reconciled 2026-07-31 over 07-28..07-30: live and backtest event streams are
+identical (11 events per profile).
+
 ## Run
 - Backtest:  `python cli.py backtest --start 2024-01-02 --end 2024-12-31`
-- Live:      `python cli.py live`  (alerts-only loop)
+- Live:      `python cli.py live --profiles B1,C1`  (alerts-only; add `--dry-run` to test)
 - Dashboard: `streamlit run ui/app.py --server.port 8080`  (or `scripts/run_ui.bat`)
 - Tests:     `python -m pytest -q`
 
