@@ -17,6 +17,7 @@ venv/
 data/cache/*.parquet
 data/cache/spx/
 data/cache/opra/
+data/cache/first_minute/
 data/*.db
 data/*.sqlite
 data/results/
