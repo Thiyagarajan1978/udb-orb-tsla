@@ -20,19 +20,45 @@ LEDGER = os.path.join(ROOT, "exports", "forward_spx_ledger.csv")
 BUF=0.0005; L_TGT,L_STP=1.50,0.50; S_OTM=0.0030; S_TGT_FRAC=0.50; S_STP_MULT=2.0
 TS_MAIN=30; W30,W60=5,10
 
-def import_databento(attempts=4, delay=15):
-    """Import databento, retrying transient Windows Application Control DLL blocks
-    ("An Application Control policy has blocked this file") — see forward_test.py."""
+def wait_for_network(timeout=120, host="hist.databento.com"):
+    """Block until DNS resolves, or timeout. Smart App Control's verdict on an unsigned binary
+    comes from a CLOUD reputation lookup, so starting offline is an automatic block — and the
+    9 AM task fires seconds after the machine wakes. See forward_test.py for the full note."""
+    import socket
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            socket.getaddrinfo(host, 443)
+            return True
+        except OSError:
+            time.sleep(5)
+    print(f"network still unreachable after {timeout}s — importing anyway.", flush=True)
+    return False
+
+def import_databento(attempts=20, delay=15, max_delay=60):
+    """Import databento, retrying Windows Smart App Control blocks of the native extension.
+
+    ROOT CAUSE 2026-08-06: databento_dbn's UNSIGNED _lib .pyd is refused by Smart App Control
+    (CodeIntegrity events 3077 + 3118) whenever its cloud reputation lookup doesn't come back
+    clean. Through 07-31 the old 4x15s window cleared it on attempt 2; on 08-04..08-06 it never
+    cleared and three runs died. Now: wait for network, then back off over ~12 min.
+    Full explanation and the durable fallback (drop the SDK for the HTTP API) in forward_test.py.
+    """
+    wait_for_network()
     for i in range(1, attempts + 1):
         try:
             import databento as db
+            if i > 1: print(f"databento imported on attempt {i}.", flush=True)
             return db
         except ImportError as e:
             for mod in [m for m in list(sys.modules) if m.split(".")[0] in ("databento", "databento_dbn")]:
                 del sys.modules[mod]
-            if i == attempts: sys.exit(f"databento import failed after {attempts} attempts: {e}")
-            print(f"databento import blocked (attempt {i}/{attempts}): {e}\n  retrying in {delay}s...", flush=True)
-            time.sleep(delay)
+            if i == attempts:
+                sys.exit(f"databento import failed after {attempts} attempts — likely a Smart App "
+                         f"Control block; check CodeIntegrity/Operational event 3077: {e}")
+            wait = min(delay * (1 + i // 5), max_delay)
+            print(f"databento import blocked (attempt {i}/{attempts}): {e}\n  retrying in {wait}s...", flush=True)
+            time.sleep(wait)
 
 def get_db_key():
     k = os.getenv("DATABENTO_API_KEY")

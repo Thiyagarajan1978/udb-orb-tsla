@@ -39,25 +39,58 @@ PROFILES = [("A1", "config/tsla_best_A.yaml"), ("B1", "config/tsla_best_B.yaml")
 DATASET = "OPRA.PILLAR"
 
 
-def import_databento(attempts=4, delay=15):
-    """Import databento, retrying transient Windows Application Control DLL blocks.
+def wait_for_network(timeout=120, host="hist.databento.com"):
+    """Block until DNS resolves, or `timeout` seconds elapse.
 
-    The native databento_dbn extension is intermittently refused at load time
-    ("An Application Control policy has blocked this file"), which silently killed
-    ~40% of the scheduled runs through 2026-07-28. The block clears by itself, so
-    retry a few times; a genuine failure still exits non-zero for the .bat to see.
+    Smart App Control decides an unsigned binary's fate with a CLOUD reputation lookup, so a
+    start with no network yet is an automatic block. The 9 AM task fires seconds after the
+    machine wakes, which is exactly when that lookup can't complete. Returns True if the
+    network came up; a False just means we try the import anyway.
     """
+    import socket
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            socket.getaddrinfo(host, 443)
+            return True
+        except OSError:
+            time.sleep(5)
+    print(f"network still unreachable after {timeout}s — importing anyway.", flush=True)
+    return False
+
+
+def import_databento(attempts=20, delay=15, max_delay=60):
+    """Import databento, retrying Windows Smart App Control blocks of the native extension.
+
+    ROOT CAUSE (identified 2026-08-06): databento_dbn ships an UNSIGNED native extension
+    (_lib.cp*-win_amd64.pyd). Smart App Control is ON (VerifiedAndReputablePolicyState=1) and
+    refuses to load it whenever its cloud reputation lookup doesn't come back clean, logging
+    CodeIntegrity/Operational events 3077 + 3118 ("Smart App Control Block"). The verdict is NOT
+    stable: the identical file imports fine from an interactive console minutes later.
+
+    Through 07-31 a 4x15s window sufficed — the block cleared on attempt 2. On 08-04 and 08-05
+    it did not: 8-9 attempts across ~95s were all refused and the run died, and 08-06 failed too.
+    So: wait for the network first, then retry with backoff for ~12 min instead of ~1 min.
+    A genuine failure still exits non-zero so run_forward_test.bat records it. If this starts
+    failing again, the durable fix is to drop the SDK and call Databento's HTTP API directly,
+    which never loads the blocked .pyd.
+    """
+    wait_for_network()
     for i in range(1, attempts + 1):
         try:
             import databento as dbnt
+            if i > 1:
+                print(f"databento imported on attempt {i}.", flush=True)
             return dbnt
         except ImportError as e:
             for mod in [m for m in list(sys.modules) if m.split(".")[0] in ("databento", "databento_dbn")]:
                 del sys.modules[mod]          # let the retry re-run the extension load
             if i == attempts:
-                sys.exit(f"databento import failed after {attempts} attempts: {e}")
-            print(f"databento import blocked (attempt {i}/{attempts}): {e}\n  retrying in {delay}s...", flush=True)
-            time.sleep(delay)
+                sys.exit(f"databento import failed after {attempts} attempts — likely a Smart App "
+                         f"Control block; check the CodeIntegrity/Operational log for event 3077: {e}")
+            wait = min(delay * (1 + i // 5), max_delay)
+            print(f"databento import blocked (attempt {i}/{attempts}): {e}\n  retrying in {wait}s...", flush=True)
+            time.sleep(wait)
 
 
 def get_db_key():
