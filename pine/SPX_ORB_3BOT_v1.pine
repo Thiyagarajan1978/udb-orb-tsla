@@ -1,18 +1,22 @@
 //@version=6
 indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", overlay=true, max_labels_count=500, max_lines_count=500)
 
-// STATUS 2026-07-18: SEPARATE indicator for the SPX 0DTE system — deliberately NOT part of the
-// UDB-ORB TSLA suite (different symbol, different concept, different risk). ALERTS-ONLY.
+// STATUS 2026-08-06 (v1.1 — header synced to the 2026-07-24 re-verification; new premium-skip
+// reminder input. No signal logic changed): SEPARATE indicator for the SPX 0DTE system —
+// deliberately NOT part of the UDB-ORB TSLA suite (different symbol, different concept,
+// different risk). ALERTS-ONLY.
 // Chart: SPX (or SPXW-settling index), 5-minute, RTH. Options: SPXW 0DTE, strikes are 5-wide.
 //
-// THE SYSTEM (validated on real OPRA cbbo-1m quotes, FULL 2022-01 -> 2026-07, 1105 days,
+// THE SYSTEM (validated on real OPRA cbbo-1m quotes, FULL 2022-01 -> 2026-07, 1137 sessions,
 // INCLUDING the 2022 bear; see docs/SPX_ANALYSIS.md + scripts/spx/price_hersystem_ts30.py):
 //   BOT1  15m OR break -> BUY ATM 0DTE (CALL on up / PUT on dn). TP +50% of premium,
-//         SL -50%, TIME STOP 30 min (flatten at market if no bracket hit — ADOPTED:
-//         +9% net vs no time stop, kills the 6h theta-bleed tail; median hold 31 min).
+//         SL -50%, TIME STOP 30 min (flatten at market if no bracket hit — ADOPTED, and
+//         re-verified STRONGER on corrected fills: +$205,025 vs +$160,485 with no time stop
+//         = +28% (the old "+9%" was a bar-start figure); ts60/ts90 worse; median hold 28 min).
 //   BOT2  30m OR break -> SELL 5-wide credit spread AGAINST the break-through level
 //         (up-break = PUT spread, dn-break = CALL spread), short leg ~0.30% OTM.
-//         Close at 50% of credit. Stop if buy-back >= 2x credit. NO time stop (tested: hurts).
+//         Close at 50% of credit. Stop if buy-back >= 2x credit. NO time stop (tested: hurts —
+//         all-ts30 COMBO +$626,625 < B1-only-ts30 +$687,671).
 //   BOT3  60m OR break -> same as BOT2 but 10-wide.
 // RESULTS @1ct FULL 2022-2026 — BARCLOSE-CORRECTED 2026-07-24 (the original figures priced
 // entries at the signal bar's START = a 5-min lookahead, the same bug found in the TSLA
@@ -20,9 +24,20 @@ indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", ov
 //   BOT1 ts30 +$205,025 (was +$457,265, -55%; WR 48%, PF 1.50, worst day -$6,980)
 //   BOT2 +$245,665 (-15%, WR 51%) · BOT3 +$236,981 (-31%, WR 57%) · COMBO +$687,671 (was
 //   +$1,088,751, -37%; worst day -$5,880). EVERY bot stays POSITIVE EVERY YEAR 2022-2026
-//   (weakest: BOT1 2024 +$14,715). The old cheap-vs-rich premium tercile finding predates
-//   the correction — re-verify before sizing on it. Quote-level fills remain the caveat —
-//   forward-test before capital (forward_test_spx.py, barclose-corrected same day).
+//   (weakest: BOT1 2024 +$14,715). Losing months 5 of 55, worst -$4,235.
+//
+// SIZE BY DOLLARS, NOT CONTRACTS (re-verified 2026-07-24 — this is the biggest single lever
+// left in the system, and it is a SKIP rule, not a leverage rule):
+//   Premium terciles got SHARPER after the correction, not weaker. Cheap PF 4.20 (+$127,830),
+//   mid PF 2.29 (+$138,505), RICH TERCILE IS NET NEGATIVE -$61,310 (PF 0.77, WR 43%) and it
+//   hosts the -$6,980 worst day. Rich-premium days are where BOT1 loses money.
+//   Capping risk at $1k/day on BOT1 (risk/ct = HALF the premium, so skip when premium >
+//   ~$2,000) auto-skips those days: +$452,985 over 4.5yr (vs +$205,025 @1ct = 2.2x) with the
+//   worst day cut -$6,980 -> -$1,610 (4.3x smaller). Trades 726 of 1107 days.
+//   The chart CANNOT see option premium — set "Fixed-dollar risk budget" below and the BOT1
+//   label prints the skip threshold; the strategy file wires the sizing to TradersPost.
+// Quote-level fills remain the caveat — forward-test before capital (forward_test_spx.py,
+// barclose-corrected same day).
 
 // ==================== INPUTS ====================
 bufPct    = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
@@ -30,6 +45,7 @@ enB1      = input.bool(true,  "Bot1: 15m OR — long ATM 0DTE",        group="Bo
 enB2      = input.bool(true,  "Bot2: 30m OR — 5-wide credit spread", group="Bots")
 enB3      = input.bool(true,  "Bot3: 60m OR — 10-wide credit spread",group="Bots")
 tsMin     = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bots")
+riskBudget= input.float(1000.0, "Bot1 fixed-dollar risk budget ($/day, 0 = off)", minval=0.0, step=100, group="Bots", tooltip="Risk per contract = HALF the premium (the -50% stop), so this budget implies a SKIP THRESHOLD of 2x it: skip the trade when 1ct premium exceeds that. The BOT1 label prints the number — the chart cannot read option prices, so YOU check it against the actual ask before buying. WHY: on corrected bar-close fills the rich-premium tercile is NET NEGATIVE (-$61,310, PF 0.77) and hosts the worst day; $1k/day risk-capping returns +$452,985 over 4.5yr vs +$205,025 at a flat 1 contract, with the worst day 4.3x smaller. Set 0 to hide the reminder.")
 otmPct    = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots") * 0.01
 strikeStep= input.float(5.0, "Strike spacing", group="Bots")
 showOR    = input.bool(true, "Show OR boxes", group="Display")
@@ -92,9 +108,11 @@ psS   = math.floor(close * (1 - otmPct) / strikeStep) * strikeStep   // put-spre
 csS   = math.ceil(close * (1 + otmPct) / strikeStep) * strikeStep    // call-spread short (dn-break)
 f0(x) => str.tostring(x, "#")
 
+// Risk/ct = half the premium (the -50% stop), so the budget implies a premium cap of 2x it.
+skipTxt = riskBudget > 0 ? "\nSKIP if premium > $" + str.tostring(riskBudget * 2, "#") + " (rich tercile is net-negative)" : ""
 if b1Up or b1Dn
     label.new(bar_index, b1Up ? low : high,
-      "BOT1 " + (b1Up ? "▲ BUY ATM CALL " : "▼ BUY ATM PUT ") + f0(atmK) + " 0DTE\nTP +50% · SL -50% · time stop " + str.tostring(tsMin) + "m",
+      "BOT1 " + (b1Up ? "▲ BUY ATM CALL " : "▼ BUY ATM PUT ") + f0(atmK) + " 0DTE\nTP +50% · SL -50% · time stop " + str.tostring(tsMin) + "m" + skipTxt,
       style=b1Up ? label.style_label_up : label.style_label_down, color=b1Up ? color.new(color.teal, 10) : color.new(color.maroon, 10), textcolor=color.white, size=size.small)
 if b2Up or b2Dn
     label.new(bar_index, b2Up ? low : high,

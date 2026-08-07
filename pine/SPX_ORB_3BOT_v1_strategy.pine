@@ -3,8 +3,13 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
      initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1,
      calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
 
-// STATUS 2026-07-19: STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) — SEPARATE
-// from the UDB-ORB TSLA suite. Chart: SPX, 5-minute, RTH.
+// STATUS 2026-08-06 (v1.1): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
+// SEPARATE from the UDB-ORB TSLA suite. Chart: SPX, 5-minute, RTH.
+// v1.1 CHANGES (no signal logic touched): header synced to the 2026-07-24 re-verification;
+//   NEW "Option quantity mode" input (default = unchanged) wiring the fixed-DOLLAR sizing that
+//   was validated on 2026-07-24 but never reached this file; exit JSON no longer hardcodes a
+//   quantity (action=exit closes the whole position — required for sizing mode, and safer in
+//   both modes since the strategy cannot know a broker-sized contract count).
 // WHAT THIS AUTOMATES (via TradersPost webhook, Order asset = Options):
 //   BOT1 15m OR break -> BUY ATM 0DTE (CALL up / PUT dn), and CLOSE at the 30-min TIME STOP
 //   (or EOD failsafe). The +50%/-50% PREMIUM brackets are NOT chart-executable (the chart
@@ -17,12 +22,19 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
 // BARCLOSE-CORRECTED 2026-07-24 (the originals had a 5-min entry lookahead — bar-START quotes):
 // FULL 2022-2026 @1ct: BOT1 ts30 +$205,025 (was +$457,265; WR 48%, PF 1.50, worst -$6,980),
 // COMBO +$687,671 (was +$1,088,751). Every bot positive every year; see docs/SPX_ANALYSIS.md.
+// SIZING (re-verified 2026-07-24): the RICH premium tercile is NET NEGATIVE (-$61,310, PF 0.77)
+// and hosts the -$6,980 worst day. Capping BOT1 risk at $1k/day — risk/ct = HALF the premium,
+// so skip when premium > ~$2,000 — returns +$452,985 / 4.5yr (2.2x the flat-1ct +$205,025) with
+// the worst day cut to -$1,610 (4.3x smaller), trading 726 of 1107 days. Most of that gain is
+// the SKIP of rich days, not the contract count. See "Option quantity mode" below.
 // Forward ledger: forward_test_spx.py (daily, T+1; barclose-corrected + rebuilt same day).
 
 // ==================== INPUTS ====================
 bufPct     = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
 tsMin      = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bot1")
-optContracts = input.int(1, "Option contracts (quantity)", minval=1, group="Bot1 · TradersPost", tooltip="Real backtest figures are PER CONTRACT. Median SPX premium ~$1,220/ct (p90 ~$5,400); risk/ct = half premium. Start with 1 while forward-testing.")
+optQtyMode = input.string("Fixed contracts", "Option quantity mode", options=["Fixed contracts", "TradersPost sizing (omit quantity)"], group="Bot1 · TradersPost", tooltip="Fixed contracts (default) = the webhook sends the 'Option contracts' quantity below, i.e. v1.0 behaviour, unchanged. 'TradersPost sizing' = the entry JSON OMITS the quantity field so TradersPost's strategy-level position sizing decides the contract count — set 'Amount per position' to ~$2,000 there (= the $1k/day risk cap, since risk/ct is HALF the premium). WHY: the 2026-07-24 re-verification found the RICH premium tercile is net NEGATIVE (-$61,310, PF 0.77) and hosts the -$6,980 worst day; a $1k risk cap auto-skips those days for +$452,985 / 4.5yr vs +$205,025 flat-1ct, worst day -$1,610. VERIFY IN PAPER FIRST — two things TradersPost's docs do not settle: (1) whether 'Amount per position' divides by the option PREMIUM (correct) or the INDEX price (very wrong — SPX ~6,000 would size 0 contracts every day), and (2) whether an unaffordable day SKIPS or errors. The skip is where most of the edge lives, so confirm it on a real fill before trusting it.")
+optContracts = input.int(1, "Option contracts (quantity)", minval=1, group="Bot1 · TradersPost", tooltip="Used only in 'Fixed contracts' mode. Real backtest figures are PER CONTRACT. Median SPX premium ~$1,220/ct (p90 ~$5,400); risk/ct = half premium. Start with 1 while forward-testing.")
+optQtyFixed  = str.startswith(optQtyMode, "Fixed")
 otmPct     = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots 2/3 (alerts only)") * 0.01
 strikeStep = input.float(5.0, "Strike spacing", group="Bots 2/3 (alerts only)")
 enB2       = input.bool(true, "Bot2 30m spread alerts", group="Bots 2/3 (alerts only)")
@@ -70,8 +82,12 @@ b3Dn = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close < lo60 * (1 - bufP
 // invert-ON would flip action=buy into SELL-TO-OPEN a short put.
 // "+0 days" is safe to hardcode HERE because SPX lists an expiry EVERY trading day (true 0DTE daily);
 // TSLA does NOT (~Mon/Wed/Fri only) — that's why the TSLA v3 strategy needs its expiration dropdown.
+// v1.1: in "TradersPost sizing" mode the quantity field is OMITTED so TradersPost's own
+// position sizing ("Amount per position") sets the contract count — an explicit quantity in
+// the JSON would override it. Fixed mode is byte-identical to v1.0.
 f_optMsg(action, cp) =>
-    '{"ticker":"SPX", "action":"' + action + '", "quantity":' + str.tostring(optContracts) + ', "expiration":"+0 days", "optionType":"' + cp + '", "strikesAway":0}'
+    qpart = optQtyFixed ? '"quantity":' + str.tostring(optContracts) + ', ' : ''
+    '{"ticker":"SPX", "action":"' + action + '", ' + qpart + '"expiration":"+0 days", "optionType":"' + cp + '", "strikesAway":0}'
 if b1Up or b1Dn
     b1Dir := b1Up ? 1 : -1
     b1Bar := bar_index
@@ -83,8 +99,11 @@ tsBars = math.max(1, math.round(tsMin / 5.0))
 b1TimeStop = strategy.position_size != 0 and not na(b1Bar) and bar_index >= b1Bar + tsBars
 b1EOD      = strategy.position_size != 0 and isRTH and rthIx >= 76      // 15:55 failsafe
 if b1TimeStop or b1EOD
+    // v1.1: no quantity on the exit — action=exit closes the WHOLE position. Required in
+    // TradersPost-sizing mode (the strategy cannot know the broker-chosen contract count) and
+    // safer in fixed mode too, where a stale quantity would leave a partial position open.
     strategy.close("B1", comment=b1TimeStop ? "Time stop " + str.tostring(tsMin) + "m" : "EOD",
-         alert_message='{"ticker":"SPX", "action":"exit", "quantity":' + str.tostring(optContracts) + '}')
+         alert_message='{"ticker":"SPX", "action":"exit"}')
 
 if b2Up or b2Dn
     b2Dir := b2Up ? 1 : -1
