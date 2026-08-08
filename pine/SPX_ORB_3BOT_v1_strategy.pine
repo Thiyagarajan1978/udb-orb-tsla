@@ -3,7 +3,10 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
      initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1,
      calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
 
-// STATUS 2026-08-07 (v1.2): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
+// STATUS 2026-08-08 (v1.2.1): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
+// v1.2.1 (2026-08-08): BOT1 entries blocked on the session's FINAL bar (15:55) — see the
+//   `rthIx < 77` note at the signal block. No other change.
+//
 //
 // *** SECOND AUTOMATED LEG ADDED 2026-08-07: pine/SPX_ORB_BOT3L_60M_v1_strategy.pine ***
 // BOT3's 60m OR now trades as a SINGLE-LEG long ATM option (the 10-wide spread was never
@@ -88,8 +91,12 @@ var int b1Dir = 0, var int b2Dir = 0, var int b3Dir = 0
 var int b1Bar = na
 if newDay
     b1Dir := 0, b2Dir := 0, b3Dir := 0, b1Bar := na
-b1Up = isRTH and rthIx > 2  and b1Dir == 0 and close > hi15 * (1 + bufPct)
-b1Dn = isRTH and rthIx > 2  and b1Dir == 0 and close < lo15 * (1 - bufPct)
+// v1.2.1: `rthIx < 77` blocks an entry on the FINAL bar of the session (15:55) — that entry can
+// never be closed (the EOD failsafe skips the entry bar because position_size is still 0, there is
+// no later RTH bar, and `newDay` nulls b1Bar so the time stop dies too), so it would carry to the
+// next session while the 0DTE option expires. Same guard as SPX_ORB_BOT3L_60M_v1_strategy.pine.
+b1Up = isRTH and rthIx > 2  and rthIx < 77 and b1Dir == 0 and close > hi15 * (1 + bufPct)
+b1Dn = isRTH and rthIx > 2  and rthIx < 77 and b1Dir == 0 and close < lo15 * (1 - bufPct)
 b2Up = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close > hi30 * (1 + bufPct)
 b2Dn = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close < lo30 * (1 - bufPct)
 b3Up = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close > hi60 * (1 + bufPct)
@@ -117,7 +124,7 @@ if b1Up or b1Dn
         strategy.entry("B1", strategy.short, alert_message=f_optMsg("buy", "put"))
 tsBars = math.max(1, math.round(tsMin / 5.0))
 b1TimeStop = strategy.position_size != 0 and not na(b1Bar) and bar_index >= b1Bar + tsBars
-b1EOD      = strategy.position_size != 0 and isRTH and rthIx >= 76      // 15:55 failsafe
+b1EOD      = strategy.position_size != 0 and isRTH and rthIx >= 76      // 15:50 bar onward
 if b1TimeStop or b1EOD
     // v1.1: no quantity on the exit — action=exit closes the WHOLE position. Required in
     // TradersPost-sizing mode (the strategy cannot know the broker-chosen contract count) and

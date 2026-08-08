@@ -3,9 +3,11 @@ strategy("SPX ORB BOT3-LONG 60m STRATEGY — long ATM 0DTE", shorttitle="SPX-ORB
      initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1,
      calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
 
-// STATUS 2026-08-07 (v1.0): NEW production leg — BOT3 traded as a SINGLE-LEG LONG OPTION on the
+// STATUS 2026-08-08 (v1.0.1): NEW production leg — BOT3 traded as a SINGLE-LEG LONG OPTION on the
 // 60-minute opening range, replacing the un-automatable 10-wide credit spread.
 // Companion to pine/SPX_ORB_3BOT_v1_strategy.pine (BOT1). Chart: SPX, 5-minute, RTH.
+// v1.0.1 (2026-08-08): entries blocked on the session's FINAL bar (15:55) — see the `rthIx < 77`
+//   note at the signal block. Found by reading a Strategy Tester export; nothing else changed.
 //
 // *** RUN THIS AS A SEPARATE STRATEGY ON ITS OWN CHART/TAB, WITH ITS OWN ALERT. ***
 // It is deliberately NOT merged into the BOT1 strategy file. TradingView nets positions within
@@ -85,8 +87,15 @@ var int b3Dir = 0
 var int b3Bar = na
 if newDay
     b3Dir := 0, b3Bar := na
-b3Up = isRTH and rthIx > 11 and b3Dir == 0 and close > hi60 * (1 + bufPct)
-b3Dn = isRTH and rthIx > 11 and b3Dir == 0 and close < lo60 * (1 - bufPct)
+// v1.0.1: `rthIx < 77` blocks an entry on the FINAL bar of the session (15:55). Without it that
+// entry can never be closed: the EOD failsafe below skips the entry bar itself (position_size is
+// still 0 when it is evaluated), there is no later RTH bar, and `newDay` nulls b3Bar overnight so
+// the time stop is dead too — the position carries to the next session while the 0DTE option it
+// represents expires. Seen once in a 1-year TSLA-chart sample (2026-01-07 15:55 -> 01-08 11:40,
+// closed only by the next day's reversing entry). Python prices such a day at the last quote of
+// the same session, so this also restores parity with forward_test_spx.py.
+b3Up = isRTH and rthIx > 11 and rthIx < 77 and b3Dir == 0 and close > hi60 * (1 + bufPct)
+b3Dn = isRTH and rthIx > 11 and rthIx < 77 and b3Dir == 0 and close < lo60 * (1 - bufPct)
 
 // ==================== ORDERS (TradersPost options webhook) ====================
 // TradingView alert message must be {{strategy.order.alert_message}}.
@@ -108,7 +117,7 @@ if b3Up or b3Dn
 
 tsBars     = math.max(1, math.round(tsMin / 5.0))
 b3TimeStop = strategy.position_size != 0 and not na(b3Bar) and bar_index >= b3Bar + tsBars
-b3EOD      = strategy.position_size != 0 and isRTH and rthIx >= 76      // 15:55 failsafe
+b3EOD      = strategy.position_size != 0 and isRTH and rthIx >= 76      // 15:50 bar onward
 if b3TimeStop or b3EOD
     // No quantity on the exit — action=exit closes the WHOLE position. Required in TradersPost
     // sizing mode (the strategy cannot know the broker-chosen contract count) and safer in fixed
