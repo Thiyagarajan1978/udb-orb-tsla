@@ -147,3 +147,110 @@ data) confirm the TSLA-spread verdict: B2 negative, B3 ~flat — still skip on T
 TSLA $35.2k, maxDD 1.8% both; 10% fixed $1k → SPX $855k (maxDD 8.2%) / TSLA $239k
 (3.2%); 10% compound cap-10ct → SPX $4.42M (maxDD 24.2%) / TSLA $462k (4.7%).
 Same fill-optimism caveats as ever; forward-test before capital.
+
+---
+
+## Phase 5 — the SECOND AUTOMATED LEG: BOT3-LONG (2026-08-07)
+
+### Why: the spreads were never automatable
+BOT2/BOT3 have existed only as `alertcondition()` + chart labels. Neither ever had a
+`strategy.entry()`, and the TradersPost payload
+(`{"ticker":"SPX","action":"buy","expiration":"+0 days","optionType":"call","strikesAway":0}`)
+is a **single-leg construct with no spread syntax**. To automate a second leg it has to be
+single-leg. Execution study (2026-08-06) quantified the gap: BOT1's ATM option quotes at a
+**1.5%**-of-mid spread vs BOT2's combined 2-leg spread at **26% of the credit received**;
+BOT1 crosses 2 legs, BOT2 crosses 4; breakeven slippage $0.93/leg vs $0.76.
+
+### Which OR to convert — NOT the 30m
+Single-leg candidates paired with BOT1 (15m long), 2022-01..2026-07:
+
+| partner for BOT1 | corr | same-dir | pair net @1ct | worst day | net/stdev |
+|---|---|---|---|---|---|
+| 5m long option | +0.49 | 84% | +322,300 | −10,760 | 131.1 |
+| 30m long option | +0.55 | 87% | +428,230 | −13,960 | 167.9 |
+| **60m long option** | **+0.22** | 75% | +404,795 | −9,400 | **188.6** |
+| 30m SPREAD (shipped, manual) | +0.09 | 87% | +450,980 | −5,600 | 255.8 |
+
+*(all long variants at a common 30-min stop for the comparison — BOT3L's own 50-min tuning below.)*
+
+The 30m long is **near-duplicate BOT1**: 87% same direction, median entry gap **0 min**,
+correlation +0.55, both lose together 40% of shared days. Converting it doubles one bet.
+Waiting the full hour decorrelates it. On identical 30m signals the spread also beats the long
+option by −$98,930 (P(long better) = **3%**) — so the diversification in the original design
+came from the **instrument** (long premium vs short premium), not the OR length.
+
+**We knowingly give up ~10% of paper edge (+450,980 → +404,795 pre-skip) to gain automation.**
+That trade survives fill costs: at $0.10/leg extra, spread-pairing +396,360 vs all-single-leg
++384,370 — closer than the raw numbers suggest, because the spread crosses twice as many legs.
+
+### BOT3-LONG parameters — validated INDEPENDENTLY; they do not match BOT1
+**Time stop 50 min, not BOT1's 30.** Paired on the identical 1,010 trades:
+
+| hold | Δ vs 30m | t | P(better) | 95% CI | years won |
+|---|---|---|---|---|---|
+| 40m | +27,345 | 1.85 | 98% | [+964, +58,138] | 4/5 |
+| **50m** | **+41,970** | **2.48** | **100%** | **[+10,838, +77,780]** | **5/5** |
+| 60m | +40,060 | 2.19 | 99% | [+5,266, +78,042] | 4/5 |
+| 75m | +43,635 | 2.09 | 98% | [+3,440, +86,181] | 4/5 |
+
+Broad plateau (40–75), CI excludes zero, and walk-forward hold selection beat flat-30 in **4/4
+live years**. Mechanism: BOT3 enters ~10:40+, past the opening gamma burst, so the move needs
+longer. **Contrast BOT1, where the same test rejected a longer hold** — that one was an
+in-sample mirage (fitted +24,545 → walk-forward −2,435).
+
+**Premium skip = 0.45% of spot (RELATIVE).** The rich tercile is net negative here exactly as on
+BOT1: −$41,270, PF 0.80, WR 41%, and it hosts the −$5,310 worst day. Skipping: **+$269,330**,
+PF 3.10, worst −$2,150, walk-forward beat no-skip in **3/4 live years**, per-year
++58,860 / +74,195 / +48,750 / +47,700 / +39,825 — stable, no decay.
+
+*(Figures are from the shipped `forward_test_spx.py` code path, which measures the 0.45%
+threshold against the **entry-bar** spot. The exploratory sweep used the session close — a mild
+lookahead — and read +268,550 / PF 3.08. The production number above is the lookahead-free one.)*
+
+### ⚠ WARNING — the FIXED $2,000 skip on BOT1 is drifting
+A fixed dollar threshold on a premium that scales with the index **silently tightens as SPX
+rises**: $2,000 was 0.49% of spot in 2022, only 0.28% in 2026.
+
+| BOT1 rule | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|
+| no skip | +58,425 | +63,415 | +14,775 | +40,945 | +27,755 |
+| skip > $2,000 (live rule) | +113,015 | +124,595 | +22,525 | **+6,425** | **+3,965** |
+| skip > 0.45% of spot | +95,145 | +123,445 | +25,755 | +19,535 | +17,895 |
+
+It nearly doubles the early years and **guts the recent ones**. The headline **+$452,985 is not
+a go-forward expectation.** The relative cap recovers much of it but beat no-skip in only **2/4**
+live years on BOT1 — not clean enough to adopt off a sweep. **BOT1's live rule is left UNCHANGED
+pending forward evidence.** If using TradersPost sizing, revisit "Amount per position" as SPX
+moves rather than leaving it fixed.
+
+### Production portfolio (per 1 contract, 2022-01-04 .. 2026-07-15)
+
+| leg | trades | WR% | net @1ct | PF | worst day | +yrs |
+|---|---|---|---|---|---|---|
+| BOT1 15m long, ts30, skip>$2k (live rule) | 726 | 51.5 | +270,525 | 2.93 | −1,510 | 5/5 |
+| BOT3L 60m long, ts50, skip>0.45% spot | 655 | 53.6 | +269,330 | 3.10 | −2,150 | 5/5 |
+
+| portfolio | net @1ct | stdev/day | worst day | net/stdev |
+|---|---|---|---|---|
+| BOT1 alone, flat 1ct | +205,315 | 1,468 | −6,980 | 139.9 |
+| BOT1 + BOT3L, both flat, no skips | +446,765 | 2,216 | −9,400 | 201.6 |
+| **BOT1 + BOT3L with skips (PRODUCTION)** | **+532,525** | 1,801 | **−2,680** | **295.6** |
+
+Per-year production: 2022 +171,875 · 2023 +198,790 · 2024 +70,075 · 2025 +47,595 · 2026 +44,190.
+Both legs traded on 523 days, BOT1 only 203, BOT3L only 132; both lost on 28% of days;
+leg correlation +0.57 *after* the skips (the skips remove different days from each leg).
+Median premium ~$1,080 (BOT1) + ~$1,070 (BOT3L) ⇒ **~$2,150 committed with both legs open**.
+
+All figures reconciled against the shipped `forward_test_spx.py` module (imported, not retyped):
+BOT1 reproduces +205,315 / 1,105 trades exactly, confirming the shared-loop refactor is neutral.
+Caveat: the +544,495 row inherits BOT1's drifting fixed cap, so treat it as an upper bound —
+BOT3L's leg is the one with the stable per-year profile.
+
+### Files
+- `pine/SPX_ORB_BOT3L_60M_v1_strategy.pine` — NEW, orders + time stop + EOD failsafe.
+  **Separate strategy on its own chart/alert** — TradingView nets positions and the two bots
+  disagree on direction 25% of days, so merging would silently flatten BOT1.
+- `pine/SPX_ORB_3BOT_v1.pine` v1.2 — "Bot3 instrument" mode (Long ATM / legacy spread),
+  50-min stop, relative skip, BOT3-LONG alerts.
+- `forward_test_spx.py` — prices `bot3_long_ts50` daily and flags `SKIPPED` rows. NOTE it prices
+  bot3 BOTH ways (spread and long); only one is production, so summing every row overstates.

@@ -1,0 +1,138 @@
+//@version=6
+strategy("SPX ORB BOT3-LONG 60m STRATEGY — long ATM 0DTE", shorttitle="SPX-ORB B3L S", overlay=true,
+     initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1,
+     calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
+
+// STATUS 2026-08-07 (v1.0): NEW production leg — BOT3 traded as a SINGLE-LEG LONG OPTION on the
+// 60-minute opening range, replacing the un-automatable 10-wide credit spread.
+// Companion to pine/SPX_ORB_3BOT_v1_strategy.pine (BOT1). Chart: SPX, 5-minute, RTH.
+//
+// *** RUN THIS AS A SEPARATE STRATEGY ON ITS OWN CHART/TAB, WITH ITS OWN ALERT. ***
+// It is deliberately NOT merged into the BOT1 strategy file. TradingView nets positions within
+// one strategy, and BOT1 (15m OR) and BOT3 (60m OR) break in OPPOSITE directions on 25% of days
+// (75% same-direction, measured 2022-2026). Merged, an opposite-direction BOT3 entry would net
+// against the open BOT1 position and silently flatten it — you would lose BOT1 trades with no
+// error anywhere. Two strategies, two webhooks, two positions at the broker.
+//
+// WHY THIS EXISTS (analysis 2026-08-07, on cached OPRA cbbo-1m, 2022-01-04..2026-07-15):
+//   The shipped BOT2/BOT3 credit spreads cannot be sent through TradersPost — the webhook JSON is
+//   single-leg only (no spread syntax) and neither bot has ever had a strategy.entry(). They were
+//   chart labels. To automate a second leg it must be single-leg.
+//   Of the single-leg candidates, the 60m OR is the ONLY one worth pairing with BOT1:
+//     partner for BOT1     corr   same-dir   pair net    worst day   net/stdev
+//     5m  long option     +0.49       84%    +322,300     -10,760        131.1
+//     30m long option     +0.55       87%    +428,230     -13,960        167.9
+//     60m long option     +0.22       75%    +404,795      -9,400        188.6   <-- this one
+//   The 30m is near-duplicate BOT1 (87% same direction, median entry gap 0 min). Waiting a full
+//   hour decorrelates the trade. NOTE the shipped BOT2 SPREAD still beats all of these on paper
+//   (+450,980 pair net, -5,600 worst, corr +0.09) — its edge is the SHORT-premium instrument, not
+//   the OR length. We give up ~10% of paper edge to gain automation. That is the trade being made.
+//
+// PARAMETERS — validated independently, do NOT assume BOT1's values transfer:
+//   TIME STOP 50 min (NOT BOT1's 30). Paired on the identical 1,010 trades, 50m beats 30m by
+//     +$41,970, t=2.48, bootstrap P(better)=100%, 95% CI [+10,838, +77,780], and it wins 5/5
+//     YEARS. Walk-forward hold selection (year Y fit on years < Y only) also beat flat-30 in 4/4
+//     live years. This is a broad plateau (40/50/60/75 all +27k..+44k over 30m), not a spike.
+//     Mechanism: BOT3 enters ~10:40+, past the opening gamma burst, so the move needs longer.
+//     Contrast BOT1, where the same test REJECTED a longer hold — that one was an in-sample mirage.
+//   PREMIUM SKIP = 0.45% OF SPOT (relative, not a fixed dollar amount). The rich-premium tercile
+//     is net NEGATIVE here exactly as it is on BOT1 (-$41,270, PF 0.80, WR 41%, and it hosts the
+//     -$5,310 worst day). Skipping it: +$269,330 vs +$241,450 unskipped, PF 3.10, worst day
+//     -$2,150. Walk-forward on the relative cap beat no-skip in 3/4 live years, per-year
+//     +58,860 / +74,195 / +48,750 / +47,700 / +39,825 — stable, no decay.
+//     The threshold is measured against the ENTRY-BAR spot (no lookahead), matching
+//     forward_test_spx.py; these figures come from that shipped code path, not a sweep.
+//   *** WHY RELATIVE AND NOT $2,000 FIXED: a fixed dollar threshold silently tightens as SPX
+//   rises. $2,000 was 0.49% of spot in 2022 (kept 61% of days) but only 0.28% in 2026 (kept 55%,
+//   and the kept set is a different, worse-selected cohort). See the WARNING in docs/SPX_ANALYSIS.md
+//   — this same drift is currently degrading BOT1's live rule. ***
+//
+// EXPECTED, per 1 contract, 2022-01..2026-07 (OPRA quote fills, no extra slippage):
+//   BOT3L alone: +$269,330, PF 3.10, WR 53.6%, worst day -$2,150, POSITIVE ALL 5 YEARS
+//     (655 trades of 1,010 breakouts — the other 355 are premium-skipped).
+//   Paired with BOT1: +$532,525, worst day -$2,680, net/stdev 295.6, positive all 5 years.
+//     ~$2,150 of premium committed when both legs are open at 1 contract each.
+//   Treat the paired figure as an UPPER BOUND: it inherits BOT1's drifting fixed-$ cap (above).
+// Strategy Tester P&L here is INDEX POINTS of the timing only — a proxy. Real option P&L is not
+// backtestable in TV; the real numbers are the OPRA backtest above and forward_test_spx.py.
+
+// ==================== INPUTS ====================
+bufPct      = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
+tsMin       = input.int(50, "Time stop (minutes)", minval=5, step=5, group="BOT3-Long", tooltip="50 minutes — VALIDATED SEPARATELY from BOT1's 30. Beats 30m by +$41,970 on identical trades (t=2.48, P=100%, wins 5/5 years) and survives walk-forward. 40-75 is a flat plateau; 50 sits mid-plateau. Do not copy BOT1's 30 here.")
+capMode     = input.string("Relative (% of spot)", "Premium skip mode", options=["Relative (% of spot)", "Fixed $", "Off"], group="BOT3-Long · Risk", tooltip="RELATIVE is the default and the validated choice. A FIXED dollar cap silently tightens as SPX rises — $2,000 was 0.49% of spot in 2022 but 0.28% in 2026, i.e. a different (worse) filter each year. The rich-premium tercile is net NEGATIVE (-$41,270, PF 0.80) and hosts the worst day, so this skip is where a large part of the edge lives.")
+capPct      = input.float(0.45, "Skip if premium > this % of spot", minval=0.05, step=0.05, group="BOT3-Long · Risk", tooltip="0.45% of spot. Walk-forward validated (beat no-skip 3/4 live years); the 0.35-0.50 band is a plateau. At SPX 7,000 this is ~$3,150 of premium per contract.")
+capFixed    = input.float(3000.0, "Fixed skip threshold ($/ct)", minval=0.0, step=100, group="BOT3-Long · Risk", tooltip="Used only in 'Fixed $' mode. Provided for parity with the BOT1 file; prefer Relative.")
+optQtyMode  = input.string("Fixed contracts", "Option quantity mode", options=["Fixed contracts", "TradersPost sizing (omit quantity)"], group="BOT3-Long · TradersPost", tooltip="Fixed contracts = the webhook carries the quantity below. 'TradersPost sizing' OMITS quantity so TradersPost's 'Amount per position' decides the contract count. CAVEAT: TradersPost's amount is a FIXED DOLLAR setting, so it cannot express the relative cap — if you use it, revisit the amount when SPX moves materially (say every quarter), or the skip drifts exactly the way the fixed-$ cap does. VERIFY IN PAPER: (1) that the amount divides by option PREMIUM not the INDEX price, and (2) that an unaffordable day SKIPS rather than errors — the skip is where the edge is.")
+optContracts= input.int(1, "Option contracts (quantity)", minval=1, group="BOT3-Long · TradersPost")
+optQtyFixed = str.startswith(optQtyMode, "Fixed")
+
+isRTH  = not na(time(timeframe.period, "0930-1600", "America/New_York"))
+newDay = ta.change(time("D")) != 0
+if barstate.isfirst and not (timeframe.isintraday and timeframe.multiplier == 5)
+    runtime.error("SPX-ORB BOT3L requires a 5-minute chart.")
+var int rthIx = na
+rthIx := isRTH ? (na(rthIx[1]) or newDay ? 0 : nz(rthIx[1]) + 1) : na
+
+// ==================== 60-MINUTE OR (bars 0..11) ====================
+var float hi60 = na, var float lo60 = na
+if isRTH and rthIx == 0
+    hi60 := high, lo60 := low
+if isRTH and rthIx > 0 and rthIx <= 11
+    hi60 := math.max(hi60, high), lo60 := math.min(lo60, low)
+
+// ==================== SIGNAL — first break after the 60m OR ====================
+var int b3Dir = 0
+var int b3Bar = na
+if newDay
+    b3Dir := 0, b3Bar := na
+b3Up = isRTH and rthIx > 11 and b3Dir == 0 and close > hi60 * (1 + bufPct)
+b3Dn = isRTH and rthIx > 11 and b3Dir == 0 and close < lo60 * (1 - bufPct)
+
+// ==================== ORDERS (TradersPost options webhook) ====================
+// TradingView alert message must be {{strategy.order.alert_message}}.
+// Entries are action=buy with optionType carrying direction (buy CALL on an up-break, buy PUT on
+// a down-break). Leave TradersPost's "Invert puts" UNCHECKED — with an explicit put contract in
+// the payload, invert-ON would turn action=buy into SELL-TO-OPEN a short put.
+// "+0 days" is safe to hardcode: SPX lists an expiry every trading day (true daily 0DTE).
+f_optMsg(action, cp) =>
+    qpart = optQtyFixed ? '"quantity":' + str.tostring(optContracts) + ', ' : ''
+    '{"ticker":"SPX", "action":"' + action + '", ' + qpart + '"expiration":"+0 days", "optionType":"' + cp + '", "strikesAway":0}'
+
+if b3Up or b3Dn
+    b3Dir := b3Up ? 1 : -1
+    b3Bar := bar_index
+    if b3Up
+        strategy.entry("B3L", strategy.long,  alert_message=f_optMsg("buy", "call"))
+    else
+        strategy.entry("B3L", strategy.short, alert_message=f_optMsg("buy", "put"))
+
+tsBars     = math.max(1, math.round(tsMin / 5.0))
+b3TimeStop = strategy.position_size != 0 and not na(b3Bar) and bar_index >= b3Bar + tsBars
+b3EOD      = strategy.position_size != 0 and isRTH and rthIx >= 76      // 15:55 failsafe
+if b3TimeStop or b3EOD
+    // No quantity on the exit — action=exit closes the WHOLE position. Required in TradersPost
+    // sizing mode (the strategy cannot know the broker-chosen contract count) and safer in fixed
+    // mode too, where a stale quantity would leave a partial position open.
+    strategy.close("B3L", comment = b3TimeStop ? "Time stop " + str.tostring(tsMin) + "m" : "EOD",
+         alert_message='{"ticker":"SPX", "action":"exit"}')
+
+// ==================== VISUALS ====================
+// The chart cannot read option prices, so the skip threshold is printed as a DOLLAR number for
+// you to check against the actual ask before the order goes out (or to configure at the broker).
+skipUsd = capMode == "Relative (% of spot)" ? close * capPct : capMode == "Fixed $" ? capFixed : na
+skipTxt = na(skipUsd) ? "" : "\nSKIP if premium > $" + str.tostring(skipUsd, "#,###") + " (rich tercile is net-negative)"
+atmK    = math.round(close / 5.0) * 5.0
+if b3Up or b3Dn
+    label.new(bar_index, b3Up ? low : high,
+      "BOT3-LONG " + (b3Up ? "▲ BUY ATM CALL " : "▼ BUY ATM PUT ") + str.tostring(atmK, "#") +
+      " 0DTE\nTP +50% · SL -50% · time stop " + str.tostring(tsMin) + "m" + skipTxt,
+      style = b3Up ? label.style_label_up : label.style_label_down,
+      color = b3Up ? color.new(color.purple, 10) : color.new(color.maroon, 10),
+      textcolor = color.white, size = size.small)
+plot(isRTH and rthIx > 11 ? hi60 : na, "OR60 High", color.new(color.purple, 45), 2, plot.style_linebr)
+plot(isRTH and rthIx > 11 ? lo60 : na, "OR60 Low",  color.new(color.purple, 45), 2, plot.style_linebr)
+
+// The +50%/-50% PREMIUM brackets are NOT chart-executable (the chart cannot see option prices).
+// Place them broker-side as an OCO after the fill. The time stop and EOD failsafe ARE automated.
+alertcondition(b3Up, "BOT3L UP — buy ATM CALL", "SPX BOT3-LONG: 60m OR broke UP. BUY ATM 0DTE CALL. TP +50%, SL -50%, time stop 50m. Skip if premium > 0.45% of spot.")
+alertcondition(b3Dn, "BOT3L DN — buy ATM PUT",  "SPX BOT3-LONG: 60m OR broke DOWN. BUY ATM 0DTE PUT. TP +50%, SL -50%, time stop 50m. Skip if premium > 0.45% of spot.")

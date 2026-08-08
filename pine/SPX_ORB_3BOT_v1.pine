@@ -1,8 +1,8 @@
 //@version=6
 indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", overlay=true, max_labels_count=500, max_lines_count=500)
 
-// STATUS 2026-08-06 (v1.1 — header synced to the 2026-07-24 re-verification; new premium-skip
-// reminder input. No signal logic changed): SEPARATE indicator for the SPX 0DTE system —
+// STATUS 2026-08-07 (v1.2 — BOT3-LONG production mode + the fixed-$ skip-drift WARNING below.
+// No signal logic changed): SEPARATE indicator for the SPX 0DTE system —
 // deliberately NOT part of the UDB-ORB TSLA suite (different symbol, different concept,
 // different risk). ALERTS-ONLY.
 // Chart: SPX (or SPXW-settling index), 5-minute, RTH. Options: SPXW 0DTE, strikes are 5-wide.
@@ -38,13 +38,36 @@ indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", ov
 //   label prints the skip threshold; the strategy file wires the sizing to TradersPost.
 // Quote-level fills remain the caveat — forward-test before capital (forward_test_spx.py,
 // barclose-corrected same day).
+//
+// *** WARNING 2026-08-07 — THE FIXED $2,000 SKIP IS DRIFTING. It is a fixed DOLLAR threshold on
+// a premium that scales with the index, so it silently tightens as SPX rises: $2,000 was 0.49%
+// of spot in 2022 but only 0.28% in 2026. The consequence is visible per-year on BOT1 —
+//   no skip      : 2022 +58,425  2023 +63,415  2024 +14,775  2025 +40,945  2026 +27,755
+//   skip > $2,000: 2022 +113,015 2023 +124,595 2024 +22,525  2025  +6,425  2026  +3,965
+// It nearly doubles the early years and GUTS the recent ones. A relative cap (0.45% of spot)
+// recovers much of it (2025 +19,535, 2026 +17,895) but walk-forward only beat no-skip 2/4 live
+// years on BOT1 — not clean enough to adopt on a sweep. BOT1's live rule is therefore UNCHANGED
+// pending forward evidence; do not read the headline +$452,985 as a go-forward expectation.
+// The same test on BOT3-LONG came back CLEAN (3/4 live years, stable per-year), which is why the
+// new leg ships with a relative cap. See docs/SPX_ANALYSIS.md "Phase 5".
+//
+// BOT3-LONG (NEW 2026-08-07): BOT3's 60m OR traded as a SINGLE-LEG long ATM option instead of the
+// 10-wide spread, because the spread cannot be automated (TradersPost JSON is single-leg only).
+// Time stop 50m (NOT BOT1's 30 — validated separately, wins 5/5 years), skip if premium > 0.45%
+// of spot. +$269,330 @1ct, PF 3.10, worst day -$2,150, positive all 5 years. Correlation with
+// BOT1 is only +0.22 (vs +0.55 for a 30m long, which is near-duplicate BOT1). Orders live in
+// pine/SPX_ORB_BOT3L_60M_v1_strategy.pine — a SEPARATE strategy, because TradingView nets
+// positions and the two bots disagree on direction 25% of days.
 
 // ==================== INPUTS ====================
 bufPct    = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
 enB1      = input.bool(true,  "Bot1: 15m OR — long ATM 0DTE",        group="Bots")
 enB2      = input.bool(true,  "Bot2: 30m OR — 5-wide credit spread", group="Bots")
-enB3      = input.bool(true,  "Bot3: 60m OR — 10-wide credit spread",group="Bots")
+enB3      = input.bool(true,  "Bot3: 60m OR",                       group="Bots")
+b3Mode    = input.string("Long ATM (production)", "Bot3 instrument", options=["Long ATM (production)", "10-wide credit spread (legacy)"], group="Bots", tooltip="LONG ATM is the production leg since 2026-08-07: the 10-wide spread cannot be automated (TradersPost webhooks are single-leg only) and BOT3 never had a strategy.entry(). The long version gives up ~10% of paper edge for full automation. Its parameters differ from BOT1's — 50-min time stop, relative premium skip. Legacy mode restores the spread labels/alerts for manual trading.")
 tsMin     = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bots")
+tsMinB3L  = input.int(50, "Bot3-Long time stop (minutes)", minval=5, step=5, group="Bots", tooltip="50, NOT BOT1's 30. Validated independently: beats a 30-min stop by +$41,970 on the identical 1,010 trades (t=2.48, bootstrap P=100%, 95% CI excludes zero) and wins 5/5 YEARS; walk-forward hold selection also beat flat-30 in 4/4 live years. BOT3 enters ~10:40+, past the opening gamma burst, so the move needs longer to develop. The same test REJECTED a longer hold for BOT1.")
+capPctB3L = input.float(0.45, "Bot3-Long skip if premium > % of spot", minval=0.0, step=0.05, group="Bots", tooltip="RELATIVE cap, deliberately not a fixed dollar amount — see the drift warning in the header. 0.45% of spot; walk-forward beat no-skip in 3/4 live years and the 0.35-0.50 band is a plateau. The rich-premium tercile is net NEGATIVE here (-$41,270, PF 0.80) and hosts the worst day. Set 0 to hide.")
 riskBudget= input.float(1000.0, "Bot1 fixed-dollar risk budget ($/day, 0 = off)", minval=0.0, step=100, group="Bots", tooltip="Risk per contract = HALF the premium (the -50% stop), so this budget implies a SKIP THRESHOLD of 2x it: skip the trade when 1ct premium exceeds that. The BOT1 label prints the number — the chart cannot read option prices, so YOU check it against the actual ask before buying. WHY: on corrected bar-close fills the rich-premium tercile is NET NEGATIVE (-$61,310, PF 0.77) and hosts the worst day; $1k/day risk-capping returns +$452,985 over 4.5yr vs +$205,025 at a flat 1 contract, with the worst day 4.3x smaller. Set 0 to hide the reminder.")
 otmPct    = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots") * 0.01
 strikeStep= input.float(5.0, "Strike spacing", group="Bots")
@@ -98,9 +121,17 @@ if b2Up or b2Dn
 if b3Up or b3Dn
     b3Dir := b3Up ? 1 : -1
 
-// Bot1 time stop: tsMin minutes = tsMin/5 bars after the signal bar
-tsBars  = math.max(1, math.round(tsMin / 5.0))
-b1Stop  = enB1 and not na(b1Bar) and bar_index == b1Bar + tsBars
+// Time stops: N minutes = N/5 bars after the signal bar. Bot3-Long uses its OWN value (50).
+tsBars   = math.max(1, math.round(tsMin / 5.0))
+b1Stop   = enB1 and not na(b1Bar) and bar_index == b1Bar + tsBars
+var int b3Bar = na
+if newDay
+    b3Bar := na
+if b3Up or b3Dn
+    b3Bar := bar_index
+b3lLong  = b3Mode == "Long ATM (production)"
+tsBarsB3 = math.max(1, math.round(tsMinB3L / 5.0))
+b3Stop   = enB3 and b3lLong and not na(b3Bar) and bar_index == b3Bar + tsBarsB3
 
 // ==================== SUGGESTED CONTRACTS ====================
 atmK  = math.round(close / strikeStep) * strikeStep
@@ -118,12 +149,19 @@ if b2Up or b2Dn
     label.new(bar_index, b2Up ? low : high,
       "BOT2 SELL 5-wide " + (b2Up ? "PUT spread " + f0(psS) + "/" + f0(psS - 5) : "CALL spread " + f0(csS) + "/" + f0(csS + 5)) + " 0DTE\nclose @50% credit · stop @2x",
       style=b2Up ? label.style_label_up : label.style_label_down, color=color.new(color.blue, 20), textcolor=color.white, size=size.small)
+// Bot3-Long's skip threshold is RELATIVE, so it is recomputed from spot every bar rather than
+// being a constant the way Bot1's reminder is.
+skipB3Txt = capPctB3L > 0 ? "\nSKIP if premium > $" + str.tostring(close * capPctB3L, "#,###") + " (" + str.tostring(capPctB3L) + "% of spot)" : ""
 if b3Up or b3Dn
     label.new(bar_index, b3Up ? low : high,
-      "BOT3 SELL 10-wide " + (b3Up ? "PUT spread " + f0(psS) + "/" + f0(psS - 10) : "CALL spread " + f0(csS) + "/" + f0(csS + 10)) + " 0DTE\nclose @50% credit · stop @2x",
+      b3lLong
+        ? "BOT3-LONG " + (b3Up ? "▲ BUY ATM CALL " : "▼ BUY ATM PUT ") + f0(atmK) + " 0DTE\nTP +50% · SL -50% · time stop " + str.tostring(tsMinB3L) + "m" + skipB3Txt
+        : "BOT3 SELL 10-wide " + (b3Up ? "PUT spread " + f0(psS) + "/" + f0(psS - 10) : "CALL spread " + f0(csS) + "/" + f0(csS + 10)) + " 0DTE\nclose @50% credit · stop @2x",
       style=b3Up ? label.style_label_up : label.style_label_down, color=color.new(color.purple, 20), textcolor=color.white, size=size.small)
 if b1Stop
     label.new(bar_index, high, "BOT1 TIME STOP — flatten if still open", style=label.style_label_down, color=color.new(color.orange, 10), textcolor=color.black, size=size.small)
+if b3Stop
+    label.new(bar_index, high, "BOT3-LONG TIME STOP (" + str.tostring(tsMinB3L) + "m) — flatten if still open", style=label.style_label_down, color=color.new(color.purple, 10), textcolor=color.white, size=size.small)
 
 // ==================== OR VISUALS ====================
 plot(showOR and isRTH and rthIx > 2  ? hi15 : na, "OR15 High", color.new(color.teal, 40),  2, plot.style_linebr)
@@ -143,7 +181,7 @@ if showTbl and barstate.islast
     table.cell(tbl, 1, 1, stat(b1Dir), text_color=color.white, text_size=size.tiny)
     table.cell(tbl, 0, 2, "Bot2 30m 5-wide", text_color=color.blue,  text_size=size.tiny)
     table.cell(tbl, 1, 2, stat(b2Dir), text_color=color.white, text_size=size.tiny)
-    table.cell(tbl, 0, 3, "Bot3 60m 10-wide", text_color=color.purple, text_size=size.tiny)
+    table.cell(tbl, 0, 3, b3lLong ? "Bot3 60m LONG" : "Bot3 60m 10-wide", text_color=color.purple, text_size=size.tiny)
     table.cell(tbl, 1, 3, stat(b3Dir), text_color=color.white, text_size=size.tiny)
 
 // ==================== ALERTS ====================
@@ -154,3 +192,8 @@ alertcondition(b2Dn, "BOT2 DN — sell CALL spread","SPX BOT2: 30m OR broke DOWN
 alertcondition(b3Up, "BOT3 UP — sell PUT spread","SPX BOT3: 60m OR broke UP. SELL 10-wide PUT credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
 alertcondition(b3Dn, "BOT3 DN — sell CALL spread","SPX BOT3: 60m OR broke DOWN. SELL 10-wide CALL credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
 alertcondition(b1Stop, "BOT1 TIME STOP", "SPX BOT1: 30 minutes elapsed — flatten the long option if still open.")
+// BOT3-LONG (production). For ORDERS use pine/SPX_ORB_BOT3L_60M_v1_strategy.pine — these are the
+// indicator-side alerts for manual/paper use.
+alertcondition(b3Up and b3lLong, "BOT3-LONG UP — buy ATM CALL", "SPX BOT3-LONG: 60m OR broke UP. BUY ATM 0DTE CALL. TP +50%, SL -50%, time stop 50m. Skip if premium > 0.45% of spot.")
+alertcondition(b3Dn and b3lLong, "BOT3-LONG DN — buy ATM PUT",  "SPX BOT3-LONG: 60m OR broke DOWN. BUY ATM 0DTE PUT. TP +50%, SL -50%, time stop 50m. Skip if premium > 0.45% of spot.")
+alertcondition(b3Stop, "BOT3-LONG TIME STOP", "SPX BOT3-LONG: 50 minutes elapsed — flatten the long option if still open.")

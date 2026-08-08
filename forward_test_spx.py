@@ -4,7 +4,13 @@ Prices the FROZEN SPX 3-bot system's new-session signals against REAL SPXW 0DTE 
 (OPRA cbbo-1m, buy-ask / sell-bid) and APPENDS to exports/forward_spx_ledger.csv.
 Bot1 = 15m long ATM +50%/-50% with the ADOPTED 30-min time stop; Bot2/3 = 5/10-wide
 credit spreads ~0.30% OTM against the move, close @50% credit, stop @2x.
+Bot3-LONG (added 2026-08-07, the second AUTOMATED leg) = the 60m OR traded as a long ATM
+option with a 50-min time stop; rows carry a SKIPPED flag when the premium exceeds 0.45%
+of spot, so the skip rule stays measurable rather than baked in.
 Idempotent; OPRA releases T+1. Underlying: ^GSPC 5m via FMP.
+
+NOTE the ledger prices bot3 BOTH ways each day — as a spread (bot=bot3) and as a long option
+(bot=bot3_long_ts50). Only ONE of them is the production leg; summing every row overstates.
 
 Usage:
     python forward_test_spx.py                              # new sessions since ledger
@@ -19,6 +25,14 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 LEDGER = os.path.join(ROOT, "exports", "forward_spx_ledger.csv")
 BUF=0.0005; L_TGT,L_STP=1.50,0.50; S_OTM=0.0030; S_TGT_FRAC=0.50; S_STP_MULT=2.0
 TS_MAIN=30; W30,W60=5,10
+# BOT3-LONG (added 2026-08-07): the 60m OR traded as a single-leg long ATM option instead of the
+# un-automatable 10-wide spread. Its two parameters were validated INDEPENDENTLY of BOT1 and do
+# NOT match it — 50-min time stop (beats 30m by +$41,970, t=2.48, wins 5/5 years) and a RELATIVE
+# premium skip at 0.45% of spot (a fixed-$ cap silently tightens as SPX rises). See
+# pine/SPX_ORB_BOT3L_60M_v1_strategy.pine and docs/SPX_ANALYSIS.md.
+# The ledger records the trade EITHER WAY and flags the skip, so the skip rule stays measurable
+# forward instead of being baked in unobservably.
+TS_B3L=50; B3L_CAP_PCT=0.0045
 
 def wait_for_network(timeout=120, host="hist.databento.com"):
     """Block until DNS resolves, or timeout. Smart App Control's verdict on an unsigned binary
@@ -121,9 +135,10 @@ def main():
         ents=day_entries(g)
         if not ents: rows.append({"run_ts":run_ts,"day":day,"bot":"none","dir":"","detail":"no OR break","entry_hm":"","prem":0,"pnl_1ct":0,"note":""}); continue
         exp=dt.date.fromisoformat(day); close=float(g["close"].iloc[-1]); syms=set()
-        if "bot1" in ents:
-            d,_,px=ents["bot1"]; cp="C" if d=="up" else "P"; atm=round(px/5)*5
-            for k in (atm-10,atm-5,atm,atm+5,atm+10): syms.add(osi(exp,cp,k))
+        for _b in ("bot1","bot3"):            # bot3 ATM strikes = the new BOT3-LONG leg
+            if _b in ents:
+                d,_,px=ents[_b]; cp="C" if d=="up" else "P"; atm=round(px/5)*5
+                for k in (atm-10,atm-5,atm,atm+5,atm+10): syms.add(osi(exp,cp,k))
         for name,width in [("bot2",W30),("bot3",W60)]:
             if name in ents:
                 d,_,px=ents[name]
@@ -155,20 +170,30 @@ def main():
             mods,bid,ask=book[(c,k)]; i=np.searchsorted(mods,mod,side="right")-1
             if i<0: return None
             v=(bid if col=="bid" else ask)[i]; return float(v) if v>0 else None
-        if "bot1" in ents:
-            d,mod,px=ents["bot1"]; cp="C" if d=="up" else "P"
+        # ---- long-ATM legs: BOT1 (15m OR, 30-min stop) and BOT3-LONG (60m OR, 50-min stop) ----
+        for name, ts, tag in [("bot1", TS_MAIN, "bot1_ts30"), ("bot3", TS_B3L, "bot3_long_ts50")]:
+            if name not in ents: continue
+            d,mod,px=ents[name]; cp="C" if d=="up" else "P"
             ks=[k for (c,k) in book if c==cp]
-            if ks:
-                k=min(ks,key=lambda x:abs(x-px)); ea=qat(cp,k,mod,"ask")
-                if ea and ea>0.05:
-                    mods,bid,_=book[(cp,k)]; mask=mods>mod; r=None;held=None
-                    for m,b in zip(mods[mask],bid[mask]):
-                        if m-mod>TS_MAIN: r=b-ea; held=int(m-mod); break
-                        if b>=L_TGT*ea or b<=L_STP*ea: r=b-ea; held=int(m-mod); break
-                    if r is None and mask.any(): r=float(bid[-1])-ea; held=int(mods[-1]-mod)
-                    if r is not None:
-                        rows.append({"run_ts":run_ts,"day":day,"bot":"bot1_ts30","dir":d,"detail":osi(exp,cp,k),
-                                     "entry_hm":f"{mod//60:02d}:{mod%60:02d}","prem":round(ea,2),"pnl_1ct":round(r*100,1),"note":f"held {held}m"})
+            if not ks: continue
+            k=min(ks,key=lambda x:abs(x-px)); ea=qat(cp,k,mod,"ask")
+            if not ea or ea<=0.05: continue
+            mods,bid,_=book[(cp,k)]; mask=mods>mod; r=None;held=None
+            for m,b in zip(mods[mask],bid[mask]):
+                if m-mod>ts: r=b-ea; held=int(m-mod); break
+                if b>=L_TGT*ea or b<=L_STP*ea: r=b-ea; held=int(m-mod); break
+            if r is None and mask.any(): r=float(bid[-1])-ea; held=int(mods[-1]-mod)
+            if r is None: continue
+            note=f"held {held}m"
+            if name=="bot3":
+                # Record the trade EITHER WAY and flag it, so the relative premium skip stays
+                # measurable forward. Judge BOT3-LONG on rows WITHOUT "SKIPPED".
+                skip_usd = px * B3L_CAP_PCT * 100
+                if ea*100 > skip_usd:
+                    note += f" | SKIPPED prem ${ea*100:,.0f} > ${skip_usd:,.0f} (0.45% spot)"
+            rows.append({"run_ts":run_ts,"day":day,"bot":tag,"dir":d,"detail":osi(exp,cp,k),
+                         "entry_hm":f"{mod//60:02d}:{mod%60:02d}","prem":round(ea,2),
+                         "pnl_1ct":round(r*100,1),"note":note})
         for name,width in [("bot2",W30),("bot3",W60)]:
             if name not in ents: continue
             d,mod,px=ents[name]
