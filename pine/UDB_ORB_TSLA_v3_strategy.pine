@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.9.2 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.2 S", overlay=true,
+strategy("UDB-ORB TSLA v3.9.3 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.3 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -13,6 +13,22 @@ strategy("UDB-ORB TSLA v3.9.2 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle=
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
      max_labels_count        = 500)
 
+// v3.9.3 2026-08-09 — PRIOR-DAY LEVELS (PDH / PDL / PDC / PDO) ADDED, DIAGNOSTIC ONLY.
+// Four new plots + an input group "Prior-Day Levels". NO order, entry, exit, stop, target, reversal,
+// day-skip or webhook JSON reads them — the Strategy Tester result is byte-identical to v3.9.2.
+// Purpose: eyeball whether ORB failures (BE stops especially — 87% of losses) cluster at a prior-day
+// level, ahead of deciding whether any of them is worth turning into a real filter.
+// LEGEND — four different colours AND four different patterns, so each is identifiable in a screenshot:
+//     PDH = MAGENTA / fuchsia, thick SOLID step line     (prior day HIGH)
+//     PDL = BLUE  #2962FF,     thick SOLID step line     (prior day LOW)
+//     PDC = WHITE,             thin DOTTED (circles)     (prior day CLOSE)
+//     PDO = ORANGE,            thin CROSS / x marks      (prior day OPEN)
+// Right-edge tags re-use 4 label objects (moved, never re-created), so they are safe to leave on even
+// with "Show Labels" OFF for a 365-day run — they cost 4 of the 500-label budget, permanently.
+// PRIOR ART: the Python enhancement `pdh_pdl_filter` is BUILT and default OFF — it barely triggers on
+// TSLA (docs/BE_STOP_ANALYSIS.md sect.6). PDC and PDO have never been tested in any form.
+// Keep this file's version EQUAL to the indicator's — both moved to v3.9.3 together.
+//
 // v3.9.2 2026-08-09 — TWO DEFAULTS CHANGED (no logic change; both are input defaults only):
 //   1. "Option expiration" +0 days -> "Friday (weekly)".  2. "Profile" C1 -> A1.
 // WHY (options expiry audit, 2026-08-09, from the OPRA definition files themselves):
@@ -288,6 +304,14 @@ grpU = "Display"
 showLabels = input.bool(false, "Show Labels", group=grpU, tooltip="Turn OFF for 30/90/365-day runs (TradingView caps labels at 500).")
 showLevels = input.bool(true, "Show Levels", group=grpU)
 
+grpP = "Prior-Day Levels (PDH / PDL / PDC / PDO)"
+showPD    = input.bool(true, "Show prior-day levels", group=grpP, tooltip="DIAGNOSTIC ONLY (v3.9.3): these four lines are DRAWN, never traded — no entry, exit, stop, target, day-skip or webhook rule reads them, so turning them on cannot change a single Strategy Tester trade. They are yesterday's completed RTH daily bar (Open/High/Low/Close) held flat across today. LEGEND: PDH = MAGENTA thick solid, PDL = BLUE thick solid, PDC = WHITE dotted, PDO = ORANGE x-marks.")
+showPDLbl = input.bool(true, "Label each level at the right edge", group=grpP, tooltip="Draws 'PDH 331.20' style tags at the current bar. Uses 4 label objects that are MOVED, never re-created — safe to leave ON even with 'Show Labels' OFF for a 365-day run.")
+showPDH   = input.bool(true, "PDH — prior day HIGH (magenta, solid)", group=grpP)
+showPDL   = input.bool(true, "PDL — prior day LOW (blue, solid)", group=grpP)
+showPDC   = input.bool(true, "PDC — prior day CLOSE (white, dotted)", group=grpP)
+showPDO   = input.bool(true, "PDO — prior day OPEN (orange, x-marks)", group=grpP)
+
 maxCapSL = maxCapOverride > 0 ? maxCapOverride : (isC1 ? 6.0 : 5.0)
 
 // ==================== "TRADE TASTIC" ATR TRAIL (D1 runner exit) ====================
@@ -315,6 +339,14 @@ f_priorATR() =>
     a = ta.sma(ta.tr(true), atrPeriod)
     a[1]
 dailyATR = request.security(syminfo.tickerid, "D", f_priorATR(), lookahead=barmerge.lookahead_on)
+
+// ==================== PRIOR-DAY LEVELS (PDH/PDL/PDC/PDO) — DIAGNOSTIC, NOT TRADED ====================
+// Yesterday's completed daily bar, held flat across today. Taking [1] INSIDE the request and pairing
+// it with lookahead_on is the standard non-repainting idiom (identical to the rvol/ATR calls above):
+// it returns the LAST CLOSED daily bar, so today's still-forming O/H/L/C can never leak in.
+f_pdLevels() =>
+    [open[1], high[1], low[1], close[1]]
+[pdO, pdH, pdL, pdC] = request.security(syminfo.tickerid, "D", f_pdLevels(), lookahead=barmerge.lookahead_on)
 
 // ==================== STATE ====================
 var float orHigh = na
@@ -660,10 +692,44 @@ plot(active and not beTrig and not na(beLevel) ? beLevel : na, "BE Trigger", col
 plot(primStopped and not active ? (primDir == 1 ? orLow : orHigh) : na, "Reversal Trigger", color=color.new(color.purple, 0), linewidth=2, style=plot.style_circles)
 bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol regime / wide OR)")
 
+// ---- PRIOR-DAY LEVELS (v3.9.3) — four distinct COLOURS *and* four distinct PATTERNS ----
+//   PDH magenta thick solid | PDL blue thick solid | PDC white dotted | PDO orange x-marks
+cPDH = color.new(color.fuchsia, 0)
+cPDL = color.new(color.rgb(41, 98, 255), 0)
+cPDC = color.new(color.white, 0)
+cPDO = color.new(color.orange, 0)
+plot(showPD and showPDH and not na(pdH) ? pdH : na, "PDH — prior day High",  color=cPDH, linewidth=2, style=plot.style_stepline)
+plot(showPD and showPDL and not na(pdL) ? pdL : na, "PDL — prior day Low",   color=cPDL, linewidth=2, style=plot.style_stepline)
+plot(showPD and showPDC and not na(pdC) ? pdC : na, "PDC — prior day Close", color=cPDC, linewidth=1, style=plot.style_circles)
+plot(showPD and showPDO and not na(pdO) ? pdO : na, "PDO — prior day Open",  color=cPDO, linewidth=1, style=plot.style_cross)
+
+// right-edge tags: 4 label objects that are MOVED, never re-created (no drain on the 500-label cap)
+f_pdTag(label lb, bool show, float y, string txt, color col, color tcol) =>
+    label r = lb
+    if show and not na(y)
+        if na(r)
+            r := label.new(bar_index, y, txt, style=label.style_label_left, color=col, textcolor=tcol, size=size.tiny)
+        label.set_xy(r, bar_index, y)
+        label.set_text(r, txt)
+    else if not na(r)
+        label.delete(r)
+        r := na
+    r
+var label lbPDH = na
+var label lbPDL = na
+var label lbPDC = na
+var label lbPDO = na
+if barstate.islast
+    pdOn = showPD and showPDLbl
+    lbPDH := f_pdTag(lbPDH, pdOn and showPDH, pdH, "PDH " + str.tostring(pdH, format.mintick), cPDH, color.white)
+    lbPDL := f_pdTag(lbPDL, pdOn and showPDL, pdL, "PDL " + str.tostring(pdL, format.mintick), cPDL, color.white)
+    lbPDC := f_pdTag(lbPDC, pdOn and showPDC, pdC, "PDC " + str.tostring(pdC, format.mintick), cPDC, color.black)
+    lbPDO := f_pdTag(lbPDO, pdOn and showPDO, pdO, "PDO " + str.tostring(pdO, format.mintick), cPDO, color.black)
+
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.9.2", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.9.3", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)

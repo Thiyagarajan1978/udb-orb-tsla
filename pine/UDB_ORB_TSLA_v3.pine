@@ -1,6 +1,23 @@
 //@version=6
-indicator("UDB-ORB TSLA v3.9.2 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.2", overlay=true, max_labels_count=500)
+indicator("UDB-ORB TSLA v3.9.3 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.3", overlay=true, max_labels_count=500)
 
+// v3.9.3 2026-08-09 — PRIOR-DAY LEVELS (PDH / PDL / PDC / PDO) ADDED, DIAGNOSTIC ONLY.
+// Four new plots + an input group "Prior-Day Levels". NOTHING in the trading logic reads them:
+// no entry, exit, stop, target, reversal or day-skip condition changed, no alert text changed,
+// so this version is trade-for-trade IDENTICAL to v3.9.2. Purpose: eyeball on the chart whether
+// ORB failures (BE stops in particular — 87% of losses) cluster at a prior-day level.
+// LEGEND — deliberately four different colours AND four different line patterns so each one is
+// identifiable in a screenshot:
+//     PDH = MAGENTA / fuchsia, thick SOLID step line     (prior day HIGH)
+//     PDL = BLUE  #2962FF,     thick SOLID step line     (prior day LOW)
+//     PDC = WHITE,             thin DOTTED (circles)     (prior day CLOSE)
+//     PDO = ORANGE,            thin CROSS / x marks      (prior day OPEN)
+// Right-edge labels ("PDH 331.20" ...) are on by default and re-use 4 label objects (moved, never
+// re-created), so they cost nothing against TradingView's 500-label cap.
+// PRIOR ART: the Python enhancement `pdh_pdl_filter` (require the break close to be beyond PDH/PDL
+// when the level sits near the trigger) is BUILT and default OFF — it barely triggers on TSLA
+// (docs/BE_STOP_ANALYSIS.md sect.6). PDC and PDO have never been tested in any form.
+//
 // v3.9.2 2026-08-09 — DEFAULT PROFILE C1 -> A1 (input default only; no logic/alert/plot change).
 // Bumped in lockstep with the STRATEGY v3.9.2, which also switches its "Option expiration" default
 // from '+0 days' to 'Friday (weekly)'. THIS INDICATOR HAS NO OPTIONS INPUTS — its alerts are plain
@@ -208,6 +225,14 @@ showLabels = input.bool(true, "Show Entry/Exit Labels", group=grpU)
 showLevels = input.bool(true, "Show OR / Trigger Levels", group=grpU)
 showTable  = input.bool(true, "Show Summary Table", group=grpU)
 
+grpP = "Prior-Day Levels (PDH / PDL / PDC / PDO)"
+showPD    = input.bool(true, "Show prior-day levels", group=grpP, tooltip="DIAGNOSTIC ONLY (v3.9.3): these four lines are DRAWN, never traded — no entry, exit, stop, target or day-skip rule reads them, so turning them on cannot change a single trade. They are yesterday's completed RTH daily bar (Open/High/Low/Close) held flat across today. LEGEND: PDH = MAGENTA thick solid, PDL = BLUE thick solid, PDC = WHITE dotted, PDO = ORANGE x-marks.")
+showPDLbl = input.bool(true, "Label each level at the right edge", group=grpP, tooltip="Draws 'PDH 331.20' style tags at the current bar. Uses 4 label objects that are MOVED, never re-created, so it does not eat into TradingView's 500-label cap the way the trade labels do.")
+showPDH   = input.bool(true, "PDH — prior day HIGH (magenta, solid)", group=grpP)
+showPDL   = input.bool(true, "PDL — prior day LOW (blue, solid)", group=grpP)
+showPDC   = input.bool(true, "PDC — prior day CLOSE (white, dotted)", group=grpP)
+showPDO   = input.bool(true, "PDO — prior day OPEN (orange, x-marks)", group=grpP)
+
 maxCapSL = maxCapOverride > 0 ? maxCapOverride : (isC1 ? 6.0 : 5.0)
 
 // ==================== PRIOR-DAY VOL + DAILY ATR (no repaint) ====================
@@ -220,6 +245,14 @@ f_priorATR() =>
     a = ta.sma(ta.tr(true), atrPeriod)
     a[1]
 dailyATR = request.security(syminfo.tickerid, "D", f_priorATR(), lookahead=barmerge.lookahead_on)
+
+// ==================== PRIOR-DAY LEVELS (PDH/PDL/PDC/PDO) — DIAGNOSTIC, NOT TRADED ====================
+// Yesterday's completed daily bar, held flat across today. Taking [1] INSIDE the request and pairing
+// it with lookahead_on is the standard non-repainting idiom (identical to the rvol/ATR calls above):
+// it returns the LAST CLOSED daily bar, so today's still-forming O/H/L/C can never leak in.
+f_pdLevels() =>
+    [open[1], high[1], low[1], close[1]]
+[pdO, pdH, pdL, pdC] = request.security(syminfo.tickerid, "D", f_pdLevels(), lookahead=barmerge.lookahead_on)
 
 // ==================== "TRADE TASTIC" ATR TRAIL (D1 runner exit) ====================
 // ONE line for BOTH directions, exactly the original script: TS = HHV(high - mult*ATR, hhv);
@@ -630,6 +663,40 @@ plot(primStopped and not active ? (primDir == 1 ? orLow : orHigh) : na, "Reversa
 plot(isD1 and active and part1 ? ttTS : na, "ATR Trail (D1 runner)", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_linebr)
 bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped")
 
+// ---- PRIOR-DAY LEVELS (v3.9.3) — four distinct COLOURS *and* four distinct PATTERNS ----
+//   PDH magenta thick solid | PDL blue thick solid | PDC white dotted | PDO orange x-marks
+cPDH = color.new(color.fuchsia, 0)
+cPDL = color.new(color.rgb(41, 98, 255), 0)
+cPDC = color.new(color.white, 0)
+cPDO = color.new(color.orange, 0)
+plot(showPD and showPDH and not na(pdH) ? pdH : na, "PDH — prior day High",  color=cPDH, linewidth=2, style=plot.style_stepline)
+plot(showPD and showPDL and not na(pdL) ? pdL : na, "PDL — prior day Low",   color=cPDL, linewidth=2, style=plot.style_stepline)
+plot(showPD and showPDC and not na(pdC) ? pdC : na, "PDC — prior day Close", color=cPDC, linewidth=1, style=plot.style_circles)
+plot(showPD and showPDO and not na(pdO) ? pdO : na, "PDO — prior day Open",  color=cPDO, linewidth=1, style=plot.style_cross)
+
+// right-edge tags: 4 label objects that are MOVED, never re-created (no drain on the 500-label cap)
+f_pdTag(label lb, bool show, float y, string txt, color col, color tcol) =>
+    label r = lb
+    if show and not na(y)
+        if na(r)
+            r := label.new(bar_index, y, txt, style=label.style_label_left, color=col, textcolor=tcol, size=size.tiny)
+        label.set_xy(r, bar_index, y)
+        label.set_text(r, txt)
+    else if not na(r)
+        label.delete(r)
+        r := na
+    r
+var label lbPDH = na
+var label lbPDL = na
+var label lbPDC = na
+var label lbPDO = na
+if barstate.islast
+    pdOn = showPD and showPDLbl
+    lbPDH := f_pdTag(lbPDH, pdOn and showPDH, pdH, "PDH " + str.tostring(pdH, format.mintick), cPDH, color.white)
+    lbPDL := f_pdTag(lbPDL, pdOn and showPDL, pdL, "PDL " + str.tostring(pdL, format.mintick), cPDL, color.white)
+    lbPDC := f_pdTag(lbPDC, pdOn and showPDC, pdC, "PDC " + str.tostring(pdC, format.mintick), cPDC, color.black)
+    lbPDO := f_pdTag(lbPDO, pdOn and showPDO, pdO, "PDO " + str.tostring(pdO, format.mintick), cPDO, color.black)
+
 // ==================== ALERTS ====================
 if barstate.isconfirmed
     base = " | " + str.substring(profile, 0, 2) + " | " + syminfo.ticker + " " + timeframe.period + "m | Px $" + str.tostring(close, "#.##") + " | " + str.format_time(time, "yyyy-MM-dd HH:mm", "America/New_York") + " ET"
@@ -721,7 +788,7 @@ if barstate.islast and showTable
     wr = nTrades > 0 ? nSucc * 100.0 / nTrades : 0.0
     pf = grossL > 0 ? grossP / grossL : na
     exp = nTrades > 0 ? netPnl / nTrades : 0.0
-    table.cell(tbl, 0, 0, "UDB-ORB v3.9.2", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(tbl, 0, 0, "UDB-ORB v3.9.3", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(tbl, 1, 0, str.substring(profile, 0, 2) + " · " + tpModeSel, text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     f_row(1, "Trades", str.tostring(nTrades), color.yellow)
     f_row(2, "Win Rate", str.tostring(wr, "#.#") + "%", color.orange)
