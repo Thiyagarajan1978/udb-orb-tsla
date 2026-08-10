@@ -140,8 +140,8 @@ long-history options numbers below come from separate analysis scripts, NOT this
 `--profiles X` prices a subset with per-profile idempotency (how D1 was aligned to 2026-07-10). **Judge it on the
 `*_opt_1ct_bc` columns** (bar-CLOSE fills = when the alert actually fires). The legacy `*_opt_1ct` columns
 price at the bar-START quote — a 5-min lookahead found 2026-07-20 that inflated the published options
-figures ~6x (corrected: A1 +$12.9k / B1 +$11.2k / C1 +$10.1k / C2 −$1k @1ct 2025-01→2026-07; the
-"weekly beats 0DTE" claim was also an artifact — they're now within noise). SPY cross-check: NO edge
+figures ~6x (corrected: A1 +$12.9k / B1 +$11.2k / C1 +$10.1k @1ct 2025-01→2026-07; C2 −$1k pre-v3.5,
++$4.2k under the OR-width TP). SPY cross-check: NO edge
 (shares and options both negative) — the ORB edge is TSLA-specific. Idempotent; OPRA
 releases T+1 so it prices up to the last fully-available session. Needs `DATABENTO_API_KEY` (env or .env).
 - Run:      `python forward_test.py`                 (prices new sessions since the ledger)
@@ -149,6 +149,21 @@ releases T+1 so it prices up to the last fully-available session. Needs `DATABEN
 - Schedule: `run_forward_test.bat` via Task Scheduler ~9:00 AM ET (T+1 after close). ~$0.05/day.
 This validates the SIGNAL edge going forward; it still assumes fills at the quote — TradersPost paper
 trading is the complementary test for real fill quality.
+
+**EXPIRY — settled 2026-08-09, `Friday (weekly)` ADOPTED (Pine v3.9.2, options profile A1).**
+`TSLA listed FRIDAY-ONLY expiries until 2026-02-02` (first Mon/Wed contract in the 2026-01-26 OPRA
+definition snapshot; cached defs: 2025 = 49 Fri + 2 Thu, ZERO Mon/Wed; 2026 = 24 Mon / 23 Wed / 36 Fri).
+So **every options figure published for 2025-01→2026-07 is really a WEEKLY (1-4 DTE) number** — the
+"0DTE" label is a misnomer, and both prior expiry verdicts compared a contract to ITSELF (tell-tale:
+D1 2025 dte0 +$3,560 vs wk +$3,570). On 2026 data, where the legs finally differ, **weekly beats
+true-0DTE on 5 of 5 profiles across 3 independent windows**, at ~22% more premium.
+**The options edge is REGIME-CONCENTRATED, not a steady drip:** weekly @1ct, Jan 2-May 31 2026
+(109 trades, 5 months) = A1 **+$785** / D1 +$462 / C1 −$316 / C2 −$387 / B1 −$1,116, vs Jun 1-Jul 17
+(34 trades) = A1 **+$7,743**. **91% of 2026's options P&L is 34 of 143 trades.** Size for five flat
+months. NOTE the options ranking ≠ the shares ranking — A1 leads on options, **B1 is the worst**
+despite being a traded shares profile. Harness: `weekly_2026_jan_may.py` (scratchpad, argv start/end);
+it cross-validates to the cent against `forward_test.py` — mismatches are pre-noon-cutoff ledger rows
+(16 of 26 forward reversals entered after 12:00, priced before the cutoff was adopted 2026-07-26).
 
 ## Paper runner (LIVE, alerts-only) — started 2026-07-31
 `python cli.py live --profiles B1,C1` runs **both traded profiles in one process** (`scripts/run_live.bat`,
