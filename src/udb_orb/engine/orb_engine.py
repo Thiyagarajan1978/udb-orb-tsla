@@ -35,6 +35,7 @@ EV_VWAP_CROSS_EXIT = "vwap_cross_exit"
 EV_TRAIL_EXIT = "runner_trail_exit"
 EV_BASE_SL_EXIT = "base_sl_exit"
 EV_EOD_EXIT = "eod_exit"
+EV_PD_LEVEL_EXIT = "pd_level_exit"
 
 _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -170,6 +171,9 @@ class _DayState:
         self.or_too_wide = False
         self.vwap_blocked = False
         self.pdhpdl_blocked = False
+
+        # prior-day levels (pdO, pdH, pdL, pdC) for the pd_level_exit enhancement; None = unknown
+        self.pd_levels: Optional[tuple] = None
 
         # day review accumulation
         self.has_trades = False
@@ -376,6 +380,64 @@ class OrbEngine:
     def _pdhpdl_on(self) -> bool:
         return bool(self._pdhpdl_cfg.get("enabled", False))
 
+    # ---- PD-LEVEL TAG-AND-REJECT EXIT (default OFF) ---------------------
+    # "price REVERSES at one of the 4 prior-day areas -> get out there instead of riding to the
+    # BE stop." A bar that TAGS a prior-day level (within `zone` x TP distance) and CLOSES back
+    # REJECTED off it exits the remaining position at that close. Distinct from pdh_pdl_filter
+    # (an entry gate) and from a plain take-profit-at-the-level (no reversal required).
+    #   levels: which of pdO/pdH/pdL/pdC may trigger it   (default all four)
+    #   ahead_only: only levels the trade is moving TOWARD (default true)
+    #   zone: tag tolerance as a fraction of the adaptive TP distance (0 = must touch)
+    #   require_reject_candle: the bar must also close against the trade direction
+    #   in_profit_only: arm only once the bar closes in profit (otherwise the stop owns it)
+    # Measured 2026-08-10 over 5 years x 24 configs: EVERY config loses (-$1,193 .. -$6,661/unit-
+    # scaled). It fires on 29% of trades and is right 31% of the time — a tag-and-reject at a
+    # prior-day level is followed by CONTINUATION ~69% of the time. Kept OFF, and kept only so the
+    # result is reproducible from the real engine. See docs/BE_STOP_ANALYSIS.md.
+    @property
+    def _pdx_cfg(self) -> dict[str, Any]:
+        return self.enh.get("pd_level_exit", {})
+
+    @property
+    def _pdx_on(self) -> bool:
+        return bool(self._pdx_cfg.get("enabled", False))
+
+    def _pd_tag_reject(self, st: _DayState, direction: int, o: float, c: float,
+                       h: float, l: float) -> bool:
+        """True when this bar tags a prior-day level and closes rejected off it."""
+        cfg = self._pdx_cfg
+        if not self._pdx_on or st.pd_levels is None or st.entry_price is None:
+            return False
+        if cfg.get("in_profit_only", False) and (c - st.entry_price) * direction <= 0:
+            return False
+        if cfg.get("require_reject_candle", True) and (c - o) * direction >= 0:
+            return False
+        # max_body_frac: only fire on a SMALL-bodied rejection (a doji/pin at the level). The
+        # post-hoc split found this is the only fire-bar feature that grades monotonically — but
+        # see §32c: it is as likely to be exit-PRICE quality (a big-body bar exits at the bottom
+        # of its own move) as it is signal quality.
+        mbf = float(cfg.get("max_body_frac", 1.0) or 1.0)
+        if mbf < 1.0:
+            rng = max(h - l, 1e-9)
+            if abs(c - o) / rng >= mbf:
+                return False
+        names = cfg.get("levels", ["pdO", "pdH", "pdL", "pdC"])
+        tp_dist = max(self.p.adaptive_tp_min, (st.or_width or 0.0) * self.p.adaptive_tp_scale)
+        tol = float(cfg.get("zone", 0.05)) * tp_dist
+        ahead_only = bool(cfg.get("ahead_only", True))
+        for name, lvl in zip(("pdO", "pdH", "pdL", "pdC"), st.pd_levels):
+            if lvl is None or name not in names:
+                continue
+            if ahead_only and (lvl - st.entry_price) * direction <= 0:
+                continue
+            if direction == 1:
+                if h >= lvl - tol and c < lvl:      # tagged resistance, closed back under it
+                    return True
+            else:
+                if l <= lvl + tol and c > lvl:      # tagged support, closed back over it
+                    return True
+        return False
+
     # ---- HTF trend-direction gate (default OFF; concept D) --------------
     # enhancements["htf_trend_filter"] = {"enabled": True, "series": <pd.Series>, "mode": "strict"}
     # series: +1/-1 per 5m bar index = the direction of the last COMPLETED higher-TF bar at
@@ -567,9 +629,10 @@ class OrbEngine:
 
         # Prior-day high/low (PDH/PDL) per date, from the RTH session data itself.
         _daily = df.groupby(df.index.date).agg(hi=("high", "max"), lo=("low", "min"),
-                                               cl=("close", "last"))
+                                               cl=("close", "last"), op=("open", "first"))
         pdh_map = _daily["hi"].shift(1).to_dict()
         pdl_map = _daily["lo"].shift(1).to_dict()
+        pdo_map = _daily["op"].shift(1).to_dict()
 
         # Prior-N-day realised daily volatility (%) — known at the open, so usable pre-entry.
         _vcfg = self.enh.get("volatility_regime", {})
@@ -660,6 +723,12 @@ class OrbEngine:
             pdh = None if _pdh is None or pd.isna(_pdh) else float(_pdh)
             pdl = None if _pdl is None or pd.isna(_pdl) else float(_pdl)
             long_trig, short_trig = self._effective_triggers(st, long_brk, short_brk, pdh, pdl)
+
+            # prior-day levels for the pd_level_exit enhancement (inert unless enabled)
+            if self._pdx_on and st.pd_levels is None:
+                def _f(v):
+                    return None if v is None or pd.isna(v) else float(v)
+                st.pd_levels = (_f(pdo_map.get(d)), pdh, pdl, _f(pclose_map.get(d)))
 
             # ---- no-trade reason tracking (bars after OR bar) ----
             if t > p.market_open and st.has_or:
@@ -1217,6 +1286,8 @@ class OrbEngine:
             self._close_leg(st, ts, bar_i, runner_trail_px, "Trail", long=True)
         elif long_vwap_cross:
             self._close_leg(st, ts, bar_i, c, "VWAP Cross", long=True)
+        elif self._pd_tag_reject(st, 1, o, c, h, l):
+            self._close_leg(st, ts, bar_i, c, "PD Level", long=True)
 
     # ---- SHORT exit engine ---------------------------------------------
     def _exit_short(self, st: _DayState, ts, bar_i, o, h, l, c, vw):
@@ -1301,6 +1372,8 @@ class OrbEngine:
             self._close_leg(st, ts, bar_i, runner_trail_px, "Trail", long=False)
         elif short_vwap_cross:
             self._close_leg(st, ts, bar_i, c, "VWAP Cross", long=False)
+        elif self._pd_tag_reject(st, -1, o, c, h, l):
+            self._close_leg(st, ts, bar_i, c, "PD Level", long=False)
 
     # ---- partial close --------------------------------------------------
     def _partial(self, st: _DayState, ts, long: bool):
@@ -1343,7 +1416,7 @@ class OrbEngine:
         ev_type = {
             "TP": EV_TP_FULL, "BE Trail": EV_BE_TRAIL_EXIT, "BE Stop": EV_BE_STOP_EXIT,
             "Base SL": EV_BASE_SL_EXIT, "VWAP Cross": EV_VWAP_CROSS_EXIT, "EOD": EV_EOD_EXIT,
-            "Trail": EV_TRAIL_EXIT,
+            "Trail": EV_TRAIL_EXIT, "PD Level": EV_PD_LEVEL_EXIT,
         }[reason]
         self.result.events.append(Event(ts, ev_type, dir_label, exit_px, st.eff_qty, pnl_total, reason_out))
 

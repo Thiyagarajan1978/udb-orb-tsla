@@ -319,6 +319,32 @@ enhancements:
     enabled: false
     proximity_pct: 14.0   # PDH/PDL is "near" if within this % of OR width of the break level
 
+  # 6) PD-LEVEL TAG-AND-REJECT EXIT — **ADOPTED 2026-08-10 (user call), DEFAULT ON @ max_body_frac 0.25.**
+  #    Idea: "price reverses at one of the 4 prior-day areas (PDO/PDH/PDL/PDC) -> exit there
+  #    instead of riding to the BE stop." A bar that tags a level (within `zone` x the adaptive TP
+  #    distance) and CLOSES rejected off it flattens the remaining position at that close.
+  #    ON here and in tsla_best_B.yaml / tsla_config_C1.yaml (the two the live runner loads), matching
+  #    the Pine v3.9.6 `pdxOn` default — chart and runner cannot diverge. TV A/B on C1 over 365 days:
+  #    $17,554 ON vs $13,623 OFF = +$3,932 (+29%), PF 1.76 vs 1.52, worst trade unchanged.
+  #    ⚠ HISTORY — THE BODY FILTER IS THE WHOLE RULE. Unfiltered (max_body_frac 1.0) this LOSES on
+  #    every profile: 0 of 28 A1/B1/C1/D1 x config cells improve all 5 years. It fires on ~29% of
+  #    trades and is right only 31% of the time — saves ~$9.5k on the BE-stop cohort, gives back
+  #    ~$13.8k of Trail/EOD winners, because a tag-and-reject at a prior-day level is followed by
+  #    CONTINUATION ~69% of the time (same law as the rejected liquidity-sweep gate). Only a SMALL
+  #    rejection body flips it positive. Do not widen max_body_frac. See docs/BE_STOP_ANALYSIS.md §32c.
+  pd_level_exit:
+    enabled: true
+    levels: [pdO, pdH, pdL, pdC]   # which prior-day areas may trigger the exit
+    ahead_only: true               # only levels the trade is moving toward
+    zone: 0.05                     # tag tolerance as a fraction of the adaptive TP distance
+    require_reject_candle: true    # the bar must also close against the trade direction
+    max_body_frac: 0.25            # |close-open| / (high-low) must be BELOW this; 1.0 = no filter.
+                                   # THE KNOB THAT MATTERS (§32c): only a SMALL body — a doji/pin that
+                                   # runs into the level and cannot close through it — predicts a real
+                                   # rejection. A big decisive bar at the level is just a trend bar.
+                                   # 0.25 is the plateau centre; it breaks by 0.35-0.40.
+    in_profit_only: false          # arm only once the bar closes in profit
+
 # ---- Data / storage ------------------------------------------------
 data:
   provider: fmp              # fmp | local_parquet

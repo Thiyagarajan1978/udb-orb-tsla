@@ -91,6 +91,17 @@ enhancements:
   pdh_pdl_filter:
     enabled: false
     proximity_pct: 14.0
+  pd_level_exit:            # ADOPTED 2026-08-10 (user call) — same block as tsla_config_C1.yaml and the
+    enabled: true           # Pine v3.9.6 default, so the chart and the live runner agree.
+    levels: [pdO, pdH, pdL, pdC]
+    ahead_only: true
+    zone: 0.05
+    require_reject_candle: true
+    max_body_frac: 0.25     # engine sweep on B1: +$2,983 over 5 years, up in 5 of 5. 1.0 = no filter
+                            # loses on every profile; 0.10-0.25 is the plateau; 0.35+ breaks.
+    in_profit_only: false
+                            # ⚠ 0.25 was fitted in-sample with NO holdout. The TV A/B that decided this
+                            # was run on C1, not B1: $17,554 vs $13,623 = +$3,932 (+29%) over 365 days.
 data:
   provider: fmp
   cache_dir: data/cache

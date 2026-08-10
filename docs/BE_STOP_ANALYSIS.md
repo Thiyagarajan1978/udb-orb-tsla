@@ -982,3 +982,183 @@ and bleed in trending ones; the profile you pick does not change that, because a
 share one entry engine and only differ in how the runner exits. Every attempt to make the reversal
 enter *earlier and more often* has now cost money on TSLA: midline trigger, mid-price entry limits,
 immediate flip. **The OR-break wait stays.**
+
+## 32. Prior-day levels (PDH/PDL/PDC/PDO) — BUILT, MEASURED, REJECTED (2026-08-10)
+
+Triggered by 7 losing-trade screenshots that visually looked "blocked by a prior-day line" after
+Pine v3.9.3 put the levels on the chart. Trade table with all four levels + 20 derived features:
+`exports/trades_with_pd_levels_3yr.csv` (710 trades, 2023-08-01..2026-07-30). Engine run ONCE, sliced
+by `exit_ts.year` throughout.
+
+**The screenshots do not survive measurement.** 3 of the 4 matched BE-stop failures had CLEAR headroom
+(no level between entry and target); the 4th had no level ahead at all. With four lines drawn, price is
+always near one.
+
+**"It died at the line" is a confound.** Losers peak a mean 0.84x TP from the nearest level, winners
+1.63x — but only because winners TRAVEL further (mean MFE 1.84x TP vs 0.43x). Control for distance run
+and peaking ON a level is equal or BETTER than peaking nowhere near one, in all five MFE bands.
+
+**Loss anatomy (3yr):** BE Stop 73.6% + Rev BE Stop 16.0% = **89.6% of all loss dollars**. BE-stop
+losers peak a median **5 minutes** after entry at 0.30x TP; winners peak at a median 105 minutes. The
+loser is dead on the entry bar, before any level is in play.
+
+Rejected, all per-year:
+- **9 entry filters** (inside-PDR, headroom <0.75/<1.0, level density >=3, OR-straddles-pdC / ->=2,
+  thin base, gap -1..-0.3%, obstacle=pdC). Only "skip obstacle=pdC" is positive over the window (+500)
+  and it loses $1,398 in 2026 — the live regime.
+- **OR straddles the prior-day OPEN** looks clean (43.1% win vs 49.1%) but runs +999/+680/-129/-686/+841
+  over five years and is net POSITIVE — skipping it costs money.
+- **Cap the TP at the level**: -$5,769, negative all 5 years. **Bank the 25% partial there**: -$1,479,
+  negative all 4 years (50%: -$2,958). **Bail when a bar closes back through the level**: -$1,182..-$2,498
+  at every threshold.
+- **No-progress TIME-STOP** (the level-free version of the same instinct — the losers are visibly dead
+  in one bar), 18 settings (exit at bar 2/3/4/6/9/12 if MFE < 0.20/0.35/0.50 x TP): all 18 lose,
+  -$460 to -$8,933, negative in 2023 + 2024 + 2025 + 2026.
+
+### 32b. `pd_level_exit` — the tag-and-reject exit, wired into the engine
+
+User's framing: not "the level predicts failure" but "a REVERSAL happens at one of the 4 areas — exit
+there instead of riding to the BE stop." Distinct from `pdh_pdl_filter` (an entry gate) and from a plain
+take-profit-at-the-level (no reversal required). Built as enhancement **`pd_level_exit`, default OFF**:
+a bar that tags a level (within `zone` x the adaptive TP distance) and CLOSES rejected off it flattens
+the remaining position at that close. Last in the exit precedence chain, so stop / TP / runner-trail /
+VWAP-cross still own the bar. Verified inert when off (A1/B1/C1/D1 byte-identical, 44 tests pass).
+
+**Real-engine sweep, 4 profiles x 7 configs x 2022-2026: 0 of 28 cells improve all five years, and
+every single cell is net NEGATIVE.**
+
+| profile | best config | n fired | baseline | net | delta | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| C1 | PDC only, ahead, zone 0.05 | 125 | 13,219 | 12,607 | **-612** | +622 | -1,263 | +1,154 | 0 | -1,125 |
+| A1 | PDC only, ahead, zone 0.05 | 117 | 13,517 | 12,537 | -980 | +428 | -1,349 | +1,011 | +256 | -1,326 |
+| D1 | PDC only, ahead, zone 0.05 | 111 | 12,641 | 11,313 | -1,328 | +112 | -1,485 | +969 | +337 | -1,261 |
+| B1 | PDC only, ahead, zone 0.05 | 122 | 13,897 | 12,369 | -1,528 | +185 | -1,311 | +1,154 | -239 | -1,317 |
+
+Widening it makes it worse monotonically: all-4-levels/ahead/zone 0.05 = -3,796..-5,466; any-direction
+= -4,455..-6,138. The PDC-only variant wins 2024 on all four profiles and loses 2023 AND 2026 on all
+four — a regime, not an edge.
+
+**Mechanism (A1, zone 0.05, ahead, reject candle):** fires on 321 of 1,122 trades (29%) and is right
+100 times (31%). It saves **+$9,546** on the losing cohort (BE Stop +5,792 / Rev BE Stop +3,425 /
+Base SL +329) and gives back **-$13,824** of winners (Trail -5,298 / EOD -4,509 / Rev EOD -3,355).
+
+**A tag-and-reject at a prior-day level is followed by CONTINUATION ~69% of the time** — the same law
+as the rejected liquidity-sweep gate (sweeps fuel continuation). The levels genuinely mark where price
+hesitates; hesitation carries no information about which way the day resolves.
+
+**Durable rule:** the losing trade is identifiable within 5 minutes but **not separable** — flat-at-5-min
+is equally the opening of a winner. Every rule that acts on the observation, at any threshold, has now
+lost money. Keep the v3.9.3 lines as chart context only.
+
+> **Superseded in part — see §32c.** One filter on the tag-and-reject exit does survive: a *small-bodied*
+> rejection candle (`max_body_frac` < 0.25). It flips the rule positive on all four profiles and passes a
+> 30-shift placebo test at p = 0.032. Still default OFF pending out-of-sample validation.
+
+---
+
+## §32c — Separating the good fires: `max_body_frac`, the one survivor (2026-08-10)
+
+§32b closed the tag-and-reject exit as a net loser. But the mechanism line hid a question nobody had
+asked: the rule fires on 321 trades and is **right 165 times (51%)** — it saves $12,367 on the trades
+that were going to lose and gives back $16,645 on the trades that were going to win. If anything
+observable **at the fire bar** separates those two halves, the rule flips positive.
+
+`pd_exit_separate.py` (scratchpad) measured every candidate. Open P&L at the fire, minutes since entry,
+clock time, which level, VWAP side, MFE-so-far, bar range, direction, primary-vs-reversal — **all of them
+sit at 43-57% good.** Nothing.
+
+**One feature grades monotonically: the body of the rejection candle** (`|close-open| / (high-low)`).
+
+| body / range | n | good % | delta | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|---|---|---|
+| **< 0.25** | 78 | **62%** | **+1,660** | +286 | +191 | +211 | +403 | +570 |
+| 0.25-0.50 | 89 | 43% | -3,643 | -347 | -690 | -465 | -1,136 | -1,005 |
+| 0.50-0.75 | 102 | 54% | -1,109 | +21 | -216 | +146 | +34 | -1,094 |
+| > 0.75 | 52 | 46% | -1,186 | -494 | -430 | -153 | +342 | -452 |
+
+**This is the opposite of the intuitive read.** A large decisive bar closing back off the level is
+worthless — it is a trend bar that happens to touch a line, and price continues (the same continuation
+law as the liquidity-sweep and tag-and-reject results). What predicts a genuine rejection is a **small
+body: a doji or pin that runs into the level and cannot close through it.**
+
+Wired into the engine as `pd_level_exit.max_body_frac` (default **1.0 = no filter**, so the shipped
+behaviour is unchanged). Real engine, ONE run per profile sliced by `exit_ts.year`, at `max_body_frac:
+0.25` with `levels: all 4 | ahead_only | zone 0.05 | require_reject_candle`:
+
+| profile | baseline | delta | yrs up |
+|---|---|---|---|
+| A1 | 13,517 | **+1,248** | 4/5 |
+| B1 | 13,897 | **+2,983** | **5/5** |
+| C1 | 13,219 | **+3,487** | **5/5** |
+| D1 | 12,641 | **+755** | 4/5 |
+
++21% (B1) / +26% (C1) of net on the two traded profiles. **4 of 24 configs improve all five years**,
+against 0 of 28 for the unfiltered rule in §32b.
+
+Threshold shape is a **plateau, not a spike** — the failure mode that killed the R-multiple TP work:
+`<0.10` +825 (5/5), `<0.15` +1,302 (5/5), `<0.25` +1,660 (5/5), then it breaks — `<0.35` +207,
+`<0.40` -874, `<0.50` -1,888.
+
+### Placebo test — PASSES (p = 0.032)
+
+The attribution worry: is this the **prior-day levels**, or merely "exit on any small-bodied bar"?
+Re-ran the identical rule with the levels taken from session **t-2 … t-31** instead of t-1 (30 placebos):
+
+```
+REAL (t-1)      : +1,338    (2022 +86, 2023 +109, 2024 -50, 2025 +945, 2026 +247)
+placebo mean    : -1,128    sd 1,037
+placebo min/max : -3,426 / +938     positive: 6 of 30
+z-score of real : 2.38
+rank of real    : 1 of 31   ->  empirical p = 0.032
+```
+
+No placebo beat the real levels. This clears the p<0.05 bar the in-play scanner failed at p=0.116.
+
+### Caveats — why it stays OFF for now
+
+1. **The 0.25 threshold was chosen in-sample over all 5 years. There is no holdout.** This is exactly
+   the sin that produced the retracted R-multiple result.
+2. The optimum is **profile-dependent** (B1/C1 favour 0.25, D1 favours 0.15) — one shared number is
+   already a compromise.
+3. Adjacent thresholds swing ~2x and the effect is dead by 0.35-0.40. The plateau is narrow.
+4. A1 is negative in 2023 (-151); D1 is negative in 2023 (-578) at 0.25.
+5. 71% of A1's post-hoc gain is 2025 alone (less concentrated in the engine runs — 2025 is 46% of B1's).
+
+**Disposition: default OFF. Validate forward in the options/shares forward test alongside the frozen
+strategy; revisit for adoption only if it holds on unseen sessions.** §32's "not separable" conclusion
+stands for every feature except this one — the losing trade is still not identifiable at entry, but the
+*fire* is gradeable after the fact by the shape of the bar that triggers it.
+
+### Cross-market check: SPX says NO (2026-08-10)
+
+The same protocol was re-run on the SPX system — real 5m SPX bars 2022-01-03..2026-07-16, real OPRA
+quotes, both automated legs (BOT1 15m-OR ts30, BOT3-LONG 60m-OR ts50) — with the exit priced at the bid
+on the fire bar's close minute. Harness `spx_pd_body_test.py` (scratchpad); it reconciles **exactly** to
+the documented baselines (BOT1 +$205,025 / 1,107 trades / WR 48%; BOT3L +$269,300 / 656 / WR 54%), so
+the trade stream is right and only the exit rule is under test.
+
+```
+BOT1  (base +205,025)        fires  delta   2022  2023  2024  2025  2026  yrs_up
+  body<0.15                     16  -2,350  +850  -800  -270 -1,940  -190     1
+  body<0.25                     27  -3,610   +80  -940  -100 -2,120  -530     1
+  body<0.35                     41  -7,950   +80  -400  -100 -2,530 -5,000    1
+  no body filter               110 -23,790 -3,185  -210 -8,825 -4,900 -6,670   0
+
+BOT3L (base +269,300)        fires  delta   2022  2023  2024  2025  2026  yrs_up
+  body<0.15                     17  -4,350  +260 -1,420  +870 -4,190  +130    3
+  body<0.25                     22  -4,140  +260 -1,420 +1,170 -3,250  -900   2
+  no body filter                63 -18,785 -1,670 -1,690 -5,040 -9,735  -650   0
+
+PLACEBO (levels from t-2..t-31, body<0.25)
+  BOT1 : REAL -3,610 | placebo mean  -495 sd 1,595 | pos 12/30 | z -1.95 | rank 30/31 -> p=0.968
+  BOT3L: REAL -4,140 | placebo mean -2,181 sd 3,732 | pos 10/30 | z -0.52 | rank 24/31 -> p=0.774
+```
+
+Every threshold is negative on both legs, and the placebo verdict is the **mirror image** of TSLA's: on
+TSLA the real levels ranked 1st of 31 (p=0.032, better than every shuffle); on SPX they rank 30th and
+24th — the *real* prior-day levels are worse than most random ones. The body filter still orders the
+damage correctly (tighter = less bad, -2,350 vs -23,790), i.e. the "small body = real rejection" reading
+of the candle is not wrong; there is simply no exit edge at prior-day levels on the index to harvest.
+
+**Conclusion: `max_body_frac` is TSLA-specific.** Consistent with the standing finding that the ORB edge
+itself is TSLA-specific (SPY: no edge; 8 of 9 liquid names: no edge). Do not port it to the SPX bots.

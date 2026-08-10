@@ -93,6 +93,20 @@ enhancements:
   pdh_pdl_filter:
     enabled: false
     proximity_pct: 14.0
+  pd_level_exit:            # ADOPTED 2026-08-10 (user call). Flatten on a bar that tags a prior-day
+    enabled: true           # level AHEAD of the trade, closes rejected off it, and has a SMALL body.
+    levels: [pdO, pdH, pdL, pdC]
+    ahead_only: true
+    zone: 0.05
+    require_reject_candle: true
+    max_body_frac: 0.25     # THE knob: only a doji/pin that cannot close through the level predicts a
+                            # real rejection. 1.0 (no filter) loses on every profile; 0.10-0.25 is the
+                            # plateau; 0.35+ breaks. Engine sweep: C1 +$3,487 over 5 years, 5/5 years up.
+    in_profit_only: false
+                            # TV-measured on C1 2025-08-11..2026-08-10 (same script exported ticked and
+                            # unticked, 260/260 entries identical): $17,554 vs $13,623 = +$3,932 (+29%),
+                            # PF 1.76 vs 1.52, WR 55.2% vs 50.4%, worst trade unchanged.
+                            # ⚠ 0.25 was fitted in-sample with NO holdout — matches Pine v3.9.6 default.
 data:
   provider: fmp
   cache_dir: data/cache

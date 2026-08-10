@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.9.3 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.3 S", overlay=true,
+strategy("UDB-ORB TSLA v3.9.6 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.6 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -11,8 +11,72 @@ strategy("UDB-ORB TSLA v3.9.3 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle=
      commission_type         = strategy.commission.cash_per_contract,
      commission_value        = 0,
      slippage                = 0,          // Python charges $0.10/unit on exits; set TV ~10 ticks to match
-     max_labels_count        = 500)
+     max_labels_count        = 500,
+     max_lines_count         = 500)
 
+// v3.9.6 2026-08-10 — THE PD-LEVEL TAG-AND-REJECT EXIT IS NOW ON BY DEFAULT (`pdxOn` false -> true).
+//     ONE INPUT DEFAULT CHANGED, no logic edited. The rule itself, its ranking below the stop / target /
+//     partial / runner, and its refusal to arm the reversal are all exactly as shipped in v3.9.4.
+//     WHY: measured here, on C1, over 2025-08-11..2026-08-10, by exporting the SAME script twice — once
+//     with the box ticked and once without. The two exports are otherwise trade-for-trade identical
+//     (260 of 260 entries match to the cent), so the delta IS the rule and nothing else:
+//         ON  $17,554   PF 1.76   win rate 55.2%   (361 legs / 260 trades)
+//         OFF $13,623   PF 1.52   win rate 50.4%   (372 legs / 261 trades)
+//     = +$3,932 (+29%), worst single trade unchanged, positive in both year-cells (2025 +$1,786 /
+//     2026 +$2,145). The 54 fires are right 38 times (70%): they save $6,195 and give up $2,530, and one
+//     of them pays twice — 2025-09-10 cut a primary at -$18 instead of a -$154 BE Stop, and because a
+//     PD-Level exit does NOT arm the reversal it also skipped the -$266 reversal that followed. That is
+//     also why the OFF run has MORE trades: turning the rule off lets a suppressed reversal back in.
+//     CAVEAT, unchanged: the 0.25 body threshold was fitted in-sample on this same span with NO holdout,
+//     the optimum is profile-dependent (D1 prefers 0.15), and the Strategy Tester charges zero commission
+//     and zero slippage (haircut ~12-15%). Untick the input to get the v3.9.3 baseline back.
+//
+// v3.9.5 2026-08-10 — THE OR / TRIGGER LINES NOW BEHAVE LIKE THE PD LINES. DRAWING ONLY: no entry, exit,
+//     stop, target, reversal, day-skip, order or webhook rule changed, so the Strategy Tester result is
+//     trade-for-trade IDENTICAL to v3.9.4 (itself identical to v3.9.3 with the experimental exit left OFF).
+//     OR High / OR Low / Long Trigger / Short Trigger were plot(style_linebr) — one continuous series that
+//     TradingView joins from the last bar of one session to the first bar of the next, so on a multi-day
+//     chart yesterday's aqua/lime/red levels ran on into today. They are now four LINE OBJECTS per session:
+//     opened on that day's OR bar, extended only to that day's own bars, then never touched again. Each
+//     carries a small right-end tag ("OR H 331.20", "OR L 328.40", "LONG > 331.55", "SHORT < 328.05") so
+//     no legend is needed. Triggers are DASHED to separate them from the solid OR boundaries at a glance.
+//     History is bounded by "Days of OR / trigger segments to keep" (default 10), the same guard the PD
+//     segments use, so the 500-line / 500-label caps stay safe on a 365-day run. Skipped days (vol /
+//     wide-OR) draw nothing, exactly as before.
+//
+//     ALSO IN v3.9.5 — THE CHART STATUS LINE IS NOW READABLE. TradingView echoes every input value after
+//     the script name, which on this script was a ~40-number wall ("... 15 50 09:30 12 0 8 20 4.92 10 1 60
+//     0 1 2.14 0.25 1 14 2 0.55 ..." running off the right edge). Every input now carries
+//     `display=display.none` EXCEPT `profile`, so the status line reads just
+//         UDB-ORB v3.9.6 S   A1 - Adaptive + Peak-Trail
+//     The inputs themselves are UNCHANGED — same names, defaults, groups and tooltips in the settings
+//     dialog; only their on-chart echo is suppressed. Nothing an order or an `alert_message` reads is
+//     touched, so the Strategy Tester and every webhook payload are byte-identical. The stats table stays
+//     the place to read live values. Zero-code equivalent if you ever want them back on one chart: Chart
+//     settings -> Status line -> "Indicator arguments".
+//
+// v3.9.4 2026-08-10 — TWO CHANGES, both to the prior-day-level feature added in v3.9.3.
+//
+// (1) THE LINES ARE NOW ONE SEGMENT PER DAY. v3.9.3 drew them with plot(style_stepline), which runs the
+//     full chart width and puts a vertical riser at every session boundary, so yesterday's level bled
+//     into today. Each session now gets its own four line objects, opened on its first RTH bar and
+//     extended only to its own last bar. A small self-identifying tag ("PDH 331.20") rides just ABOVE
+//     the RIGHT END of each segment. History is bounded by "Days of prior-day segments to keep"
+//     (default 10); older sessions are deleted, so the trade labels keep their share of the 500-object
+//     caps. PURELY COSMETIC — no order, entry, exit or webhook JSON is touched by it.
+//
+// (2) NEW OPTIONAL EXIT: "PD-level tag-and-reject" — DEFAULT OFF, so out of the box the Strategy Tester
+//     result is byte-identical to v3.9.3. When enabled, the position is flattened at the close of a bar
+//     that (a) tags a prior-day level lying AHEAD of the trade, (b) closes rejected back off it, and
+//     (c) has a SMALL BODY (|close-open| / (high-low) < the threshold). It is ranked BELOW the stop, the
+//     target/partial and the runner exits, and it does NOT arm the reversal — matching orb_engine.py.
+//     The body filter is the entire result: unfiltered the rule loses $3,796-$5,466 over 5 years on
+//     every profile; at body<0.25 it is +$1,248 A1 / +$2,983 B1 (5/5 years) / +$3,487 C1 (5/5 years) /
+//     +$755 D1. A doji or pin that cannot close through the level is the signal; a big decisive candle
+//     at the level is a trend bar and price continues.
+//     NOT ADOPTED — threshold picked in-sample over all 5 years with no holdout, optimum is
+//     profile-dependent, effect dead by 0.35. Forward-validate first. See docs/BE_STOP_ANALYSIS.md S32c.
+//
 // v3.9.3 2026-08-09 — PRIOR-DAY LEVELS (PDH / PDL / PDC / PDO) ADDED, DIAGNOSTIC ONLY.
 // Four new plots + an input group "Prior-Day Levels". NO order, entry, exit, stop, target, reversal,
 // day-skip or webhook JSON reads them — the Strategy Tester result is byte-identical to v3.9.2.
@@ -187,8 +251,8 @@ strategy("UDB-ORB TSLA v3.9.3 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle=
 profile = input.string("A1 · Adaptive + Peak-Trail", "Profile",
      options=["A1 · Adaptive + Peak-Trail", "B1 · Adaptive + VWAP", "C1 · ATR 0.25 + 25% Partial + VWAP", "C2 · OR-Width Full-Exit", "D1 · Adaptive + ATR-Trail (exp)"],
      group="Profile", tooltip="A1/B1 = adaptive OR-scaled target + 25% partial + runner (peak-trail vs VWAP). C1 = ATR-sized target + 25% partial + VWAP (best PF). C2 = full exit at OR-WIDTH target (open bar H-L; was fixed $2 pre-v3.5), no partial/runner. D1 (EXPERIMENTAL, not adopted) = B1 with the TRADE TASTIC ATR trail as the runner exit.")
-c2TPFormula = input.string("OR width (open bar High-Low)", "C2 Take-Profit formula", options=["OR width (open bar High-Low)", "Fixed $"], group="Profile", tooltip="ADOPTED v3.5 (default): C2's target = the OPEN BAR's High - Low (= OR width, no floor). vs the old fixed $2 (per unit, close-stop): 2024 +36.6 vs -23.1, 2025 +38.3 vs -0.3, 2026YTD +111.7 vs +49.0; 2022/23 slightly behind; 5yr ~2x and positive every year. 'Fixed $' = the pre-v3.5 C2 (uses the Fixed TP $ input).")
-d1ExitMode = input.string("Full exit at ATR Trail", "D1 Exit mode", options=["Full exit at ATR Trail", "Partial TP + ATR Trail"], group="Profile", tooltip="D1 only. 'Full exit at ATR Trail' (DEFAULT since 2026-07-23; the Python forward test tracks it) = NOTHING is taken at the TP — its touch only ARMS the trail; 100% exits on the flip (ONE exit alert/order — also suits platforms that cannot split exits). 'Partial TP + ATR Trail' = the original D1: 25% off at the adaptive TP, 75% rides the flip. v3.6 test (per unit, fixed trail): full-trail beats the partial in all of 2024/25/26 (+39.7/+85.2/+179.0 vs +38.4/+72.2/+162.3) at a slightly deeper 2025 worst day (-13.6 vs -12.0).")
+c2TPFormula = input.string("OR width (open bar High-Low)", "C2 Take-Profit formula", options=["OR width (open bar High-Low)", "Fixed $"], group="Profile", tooltip="ADOPTED v3.5 (default): C2's target = the OPEN BAR's High - Low (= OR width, no floor). vs the old fixed $2 (per unit, close-stop): 2024 +36.6 vs -23.1, 2025 +38.3 vs -0.3, 2026YTD +111.7 vs +49.0; 2022/23 slightly behind; 5yr ~2x and positive every year. 'Fixed $' = the pre-v3.5 C2 (uses the Fixed TP $ input).", display=display.none)
+d1ExitMode = input.string("Full exit at ATR Trail", "D1 Exit mode", options=["Full exit at ATR Trail", "Partial TP + ATR Trail"], group="Profile", tooltip="D1 only. 'Full exit at ATR Trail' (DEFAULT since 2026-07-23; the Python forward test tracks it) = NOTHING is taken at the TP — its touch only ARMS the trail; 100% exits on the flip (ONE exit alert/order — also suits platforms that cannot split exits). 'Partial TP + ATR Trail' = the original D1: 25% off at the adaptive TP, 75% rides the flip. v3.6 test (per unit, fixed trail): full-trail beats the partial in all of 2024/25/26 (+39.7/+85.2/+179.0 vs +38.4/+72.2/+162.3) at a slightly deeper 2025 worst day (-13.6 vs -12.0).", display=display.none)
 isA1 = str.startswith(profile, "A1")
 isB1 = str.startswith(profile, "B1")
 isC1 = str.startswith(profile, "C1")
@@ -201,59 +265,59 @@ runnerVWAP = isB1 or isC1             // true = VWAP-cross runner ; false = peak
 
 // ==================== INPUTS ====================
 grpS = "Session"
-eodHour = input.int(15, "EOD Exit Hour", minval=0, maxval=23, group=grpS)
-eodMin  = input.int(50, "EOD Exit Minute", minval=0, maxval=59, group=grpS)
-orStart = input.string("09:30", "Opening Range start bar", options=["09:30", "09:45"], group=grpS, tooltip="09:30 = classic first-bar OR. 09:45 = skip the noisy opening 15 min (better 2024/25 backtest, WORSE 2026).")
-entryCutOn = input.bool(true, "Entry cutoff — no NEW entries after the time below", group=grpS, tooltip="ADOPTED 2026-07-26 (default ON, 12:00): entries after noon were a net-NEGATIVE cohort in 5 years of trade data — the damage concentrates in the 12:00-13:00 lunch hour. Blocking NEW entries (primary AND reversal; open positions still manage to their normal exits) after 12:00: WR up in all 7 tested year-cells on B1/D1 (+A1/C1 confirmed), net +3-4% (B1 5yr +463 vs +451/unit), worst day never worse, 2025's improves. OFF = trade all day (pre-cutoff behavior).")
-entryCutH  = input.int(12, "Entry Cutoff Hour", minval=9, maxval=15, group=grpS)
-entryCutM  = input.int(0,  "Entry Cutoff Minute", minval=0, maxval=59, group=grpS)
+eodHour = input.int(15, "EOD Exit Hour", minval=0, maxval=23, group=grpS, display=display.none)
+eodMin  = input.int(50, "EOD Exit Minute", minval=0, maxval=59, group=grpS, display=display.none)
+orStart = input.string("09:30", "Opening Range start bar", options=["09:30", "09:45"], group=grpS, tooltip="09:30 = classic first-bar OR. 09:45 = skip the noisy opening 15 min (better 2024/25 backtest, WORSE 2026).", display=display.none)
+entryCutOn = input.bool(true, "Entry cutoff — no NEW entries after the time below", group=grpS, tooltip="ADOPTED 2026-07-26 (default ON, 12:00): entries after noon were a net-NEGATIVE cohort in 5 years of trade data — the damage concentrates in the 12:00-13:00 lunch hour. Blocking NEW entries (primary AND reversal; open positions still manage to their normal exits) after 12:00: WR up in all 7 tested year-cells on B1/D1 (+A1/C1 confirmed), net +3-4% (B1 5yr +463 vs +451/unit), worst day never worse, 2025's improves. OFF = trade all day (pre-cutoff behavior).", display=display.none)
+entryCutH  = input.int(12, "Entry Cutoff Hour", minval=9, maxval=15, group=grpS, display=display.none)
+entryCutM  = input.int(0,  "Entry Cutoff Minute", minval=0, maxval=59, group=grpS, display=display.none)
 
 grpR = "Risk / Regime Gates"
-maxORWidth  = input.float(8.0,  "Max OR Width ($) — skip wider days", step=0.5, group=grpR)
-volLookback = input.int(20,     "Volatility Lookback (days)", minval=2, group=grpR)
-maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, group=grpR)
+maxORWidth  = input.float(8.0,  "Max OR Width ($) — skip wider days", step=0.5, group=grpR, display=display.none)
+volLookback = input.int(20,     "Volatility Lookback (days)", minval=2, group=grpR, display=display.none)
+maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, group=grpR, display=display.none)
 
 grpE = "Entry"
-bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE)
-tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE)
-shareQty    = input.int(25,     "Share quantity (Shares mode, per 1.0-unit trade)", minval=1, group=grpE, tooltip="v3.7 (was 'Shares per unit'): your FIXED share size, configured here like the Option-contracts input. Every order and webhook JSON quantity = Units Per Trade x this (default 1.0 x 25 = 25 sh, ~$10k unleveraged on TSLA); the risk-parity REVERSAL scales off it (can exceed it up to ~2x before the $-risk cap; margin_long/short are 0 so it isn't rejected). Strategy Tester P&L = this x the Python per-unit figures. Keep EQUAL to the indicator's 'Share quantity' input.")
+bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE, display=display.none)
+tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE, display=display.none)
+shareQty    = input.int(25,     "Share quantity (Shares mode, per 1.0-unit trade)", minval=1, group=grpE, tooltip="v3.7 (was 'Shares per unit'): your FIXED share size, configured here like the Option-contracts input. Every order and webhook JSON quantity = Units Per Trade x this (default 1.0 x 25 = 25 sh, ~$10k unleveraged on TSLA); the risk-parity REVERSAL scales off it (can exceed it up to ~2x before the $-risk cap; margin_long/short are 0 so it isn't rejected). Strategy Tester P&L = this x the Python per-unit figures. Keep EQUAL to the indicator's 'Share quantity' input.", display=display.none)
 
 grpX = "Exit tuning (which apply depends on the Profile)"
-maxCapOverride  = input.float(0.0,  "Max Stop override ($, 0 = use profile: C1=6 else 5)", step=0.5, group=grpX)
-adaptiveTPScale = input.float(1.0,  "Adaptive TP — OR Width Multiplier (A1/B1)", step=0.05, group=grpX)
-adaptiveTPMin   = input.float(2.14, "Adaptive TP — Minimum Floor $ (A1/B1)", step=0.01, group=grpX)
-atrTPMult       = input.float(0.25, "ATR TP Multiplier x 14d ATR (C1)", step=0.01, group=grpX)
-atrTPMin        = input.float(1.0,  "ATR TP Floor $ (C1)", step=0.25, group=grpX)
-atrPeriod       = input.int(14,     "ATR Period (daily bars, C1)", minval=2, group=grpX)
-fixedTP         = input.float(2.0,  "Fixed TP $ (C2)", step=0.25, group=grpX)
-beTrigger       = input.float(0.55, "BE Retrace Trigger (% of OR width)", step=0.05, group=grpX)
-beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX)
-beRealistic     = input.bool(true,  "Realistic resting stop: a BE-retrace can't protect its own firing bar (Wick mode only)", group=grpX, tooltip="Only matters in Wick stop mode. ON = the stop moved to break-even rests from the NEXT bar (a bar firing BE-retrace AND hitting base SL fills at base SL). OFF = old optimistic look-ahead.")
-stopTrigger     = input.string("Close (bar closes beyond)", "Stop trigger", options=["Close (bar closes beyond)", "Wick (any touch)"], group=grpX, tooltip="ADOPTED 2026-07-14 (default Close): the STOP fires only when the bar CLOSES beyond the level and flattens at the close — skips wick fakeouts (+42-46% net / DD -40% over 2022-26, flips 2024 positive; walk-forward OOS-confirmed). The TP stays a resting limit (favorable wick fill). Wick = the old resting stop (any touch fills at the level; beRealistic then applies).")
+maxCapOverride  = input.float(0.0,  "Max Stop override ($, 0 = use profile: C1=6 else 5)", step=0.5, group=grpX, display=display.none)
+adaptiveTPScale = input.float(1.0,  "Adaptive TP — OR Width Multiplier (A1/B1)", step=0.05, group=grpX, display=display.none)
+adaptiveTPMin   = input.float(2.14, "Adaptive TP — Minimum Floor $ (A1/B1)", step=0.01, group=grpX, display=display.none)
+atrTPMult       = input.float(0.25, "ATR TP Multiplier x 14d ATR (C1)", step=0.01, group=grpX, display=display.none)
+atrTPMin        = input.float(1.0,  "ATR TP Floor $ (C1)", step=0.25, group=grpX, display=display.none)
+atrPeriod       = input.int(14,     "ATR Period (daily bars, C1)", minval=2, group=grpX, display=display.none)
+fixedTP         = input.float(2.0,  "Fixed TP $ (C2)", step=0.25, group=grpX, display=display.none)
+beTrigger       = input.float(0.55, "BE Retrace Trigger (% of OR width)", step=0.05, group=grpX, display=display.none)
+beTrailAmt      = input.float(0.25, "BE Trail Amount ($)", step=0.01, group=grpX, display=display.none)
+beRealistic     = input.bool(true,  "Realistic resting stop: a BE-retrace can't protect its own firing bar (Wick mode only)", group=grpX, tooltip="Only matters in Wick stop mode. ON = the stop moved to break-even rests from the NEXT bar (a bar firing BE-retrace AND hitting base SL fills at base SL). OFF = old optimistic look-ahead.", display=display.none)
+stopTrigger     = input.string("Close (bar closes beyond)", "Stop trigger", options=["Close (bar closes beyond)", "Wick (any touch)"], group=grpX, tooltip="ADOPTED 2026-07-14 (default Close): the STOP fires only when the bar CLOSES beyond the level and flattens at the close — skips wick fakeouts (+42-46% net / DD -40% over 2022-26, flips 2024 positive; walk-forward OOS-confirmed). The TP stays a resting limit (favorable wick fill). Wick = the old resting stop (any touch fills at the level; beRealistic then applies).", display=display.none)
 stopClose = str.startswith(stopTrigger, "Close")
-partialPct      = input.float(25.0, "Partial Exit Quantity % (A1/B1/C1)", step=1.0, group=grpX)
-runnerMult      = input.float(0.75, "Runner Peak-Trail x OR width (A1)", step=0.05, group=grpX)
-vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit $ (B1/C1)", step=0.25, group=grpX)
-ttAtrPeriod     = input.int(5,      "ATR Trail — ATR Period (D1)", minval=1, group=grpX)
-ttHhvPeriod     = input.int(10,     "ATR Trail — HHV/LLV Period (D1)", minval=1, group=grpX)
-ttMult          = input.float(2.5,  "ATR Trail — ATR Multiplier (D1)", step=0.1, group=grpX, tooltip="D1 runner exit = the 'TRADE TASTIC' chandelier: line = HHV(high - mult*ATR(period), hhv) for longs (mirrored for shorts); moves only on a bar that CLOSES beyond it AND extends (close > prev close); the runner flattens when a bar CLOSES across the line. Mult sweep 1.5-3.5 tested 2026-07-23: no setting wins 2024+2025+2026 together.")
+partialPct      = input.float(25.0, "Partial Exit Quantity % (A1/B1/C1)", step=1.0, group=grpX, display=display.none)
+runnerMult      = input.float(0.75, "Runner Peak-Trail x OR width (A1)", step=0.05, group=grpX, display=display.none)
+vwapArmProfit   = input.float(1.0,  "VWAP Cross — arm after profit $ (B1/C1)", step=0.25, group=grpX, display=display.none)
+ttAtrPeriod     = input.int(5,      "ATR Trail — ATR Period (D1)", minval=1, group=grpX, display=display.none)
+ttHhvPeriod     = input.int(10,     "ATR Trail — HHV/LLV Period (D1)", minval=1, group=grpX, display=display.none)
+ttMult          = input.float(2.5,  "ATR Trail — ATR Multiplier (D1)", step=0.1, group=grpX, tooltip="D1 runner exit = the 'TRADE TASTIC' chandelier: line = HHV(high - mult*ATR(period), hhv) for longs (mirrored for shorts); moves only on a bar that CLOSES beyond it AND extends (close > prev close); the runner flattens when a bar CLOSES across the line. Mult sweep 1.5-3.5 tested 2026-07-23: no setting wins 2024+2025+2026 together.", display=display.none)
 
 grpC = "Entry Confirmation"
-confirmBreakout    = input.bool(false, "Require confirmation candle (2-candle break)", group=grpC, tooltip="DEFAULT OFF: net-negative under the resting stop.")
-requireTrendCandle = input.bool(true,  "Confirmation candle must be with-trend", group=grpC)
+confirmBreakout    = input.bool(false, "Require confirmation candle (2-candle break)", group=grpC, tooltip="DEFAULT OFF: net-negative under the resting stop.", display=display.none)
+requireTrendCandle = input.bool(true,  "Confirmation candle must be with-trend", group=grpC, display=display.none)
 
 grpV = "Reversal"
-revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step=0.5, group=grpV)
-revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, group=grpV)
+revQtyMult = input.float(2.0, "Reversal Size Multiplier (before risk cap)", step=0.5, group=grpV, display=display.none)
+revRiskCap = input.float(6.0, "Reversal Dollar-Risk Cap ($, 0=off)", step=0.5, group=grpV, display=display.none)
 
 grpO = "Options via TradersPost (webhook)"
-orderAsset     = input.string("Shares", "Order asset", options=["Shares", "Options"], group=grpO, tooltip="Shares = the stock JSON (Buy/Sell/Exit, rounded shares). Options = TradersPost options JSON: a LONG signal buys a CALL, a SHORT signal buys a PUT, any full exit closes. WORKS ON ALL PROFILES incl A1/B1/C1: in Options mode the 25% partial's webhook is SUPPRESSED, so the single contract HOLDS through the partial and closes only at the runner's final exit (VWAP / trail / BE / close-stop / EOD) — matching the real 0DTE option backtest (A1/B1/C1 >> C2 on options). The Strategy Tester still shows the SHARE-signal P&L; real option P&L (delta/theta/IV) is NOT backtestable here. The suppressed partial fires an informational text alert ('NO OPTIONS ACTION ... contract holds') that TradersPost ignores (harmless).")
-optContracts   = input.int(2,        "Option contracts (quantity)", minval=1, group=grpO, tooltip="DEFAULT 2. The real 0DTE backtest figures are PER CONTRACT, so 2 contracts = 2x P&L AND 2x premium at risk (~$465/ct -> ~$930/trade on TSLA, ~9% of a $10k account). Losses are capped small (~-$97/ct). Raise/lower to your risk tolerance.")
-optExpiration  = input.string("Friday (weekly)", "Option expiration", options=["Friday (weekly)", "+0 days", "+1 days", "+2 days", "+3 days", "+7 days"], group=grpO, tooltip="DEFAULT since v3.9.2 (2026-08-09) = 'Friday (weekly)': computes days-to-Friday DYNAMICALLY each day (Mon +4 .. Fri +0), so it ALWAYS resolves to a listed contract on any weekday, and it is the leg the whole published options history was actually priced on. WHY IT CHANGED: TSLA listed FRIDAY-ONLY expiries until 2026-02-02, so the 2025-01..2026-07 '0DTE' figures were ~85% Friday contracts at 1-4 DTE — the old 'weekly beats 0DTE by 3-5%' claim compared a contract to itself. On 2026 data, where the two legs are finally distinct, WEEKLY wins on 5 of 5 profiles in 3 independent windows (Jan-May, Jun-Jul, and the forward ledger's 70 true-0DTE trades ~30% less loss). COST: ~22% more premium per contract. '+0 days' = nearest listed on/after today: true 0DTE on Mon/Wed/Fri but it silently rolls to 1DTE on Tue/Thu because TSLA has NO daily expiries (unlike SPX). The fixed '+2'/'+3 days' hit Friday only early in the week and roll into NEXT week from Wed on — manual experiments only.")
-optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0, group=grpO)
-optQtyMode     = input.string("Fixed contracts", "Option quantity mode", options=["Fixed contracts", "TradersPost sizing (omit quantity)"], group=grpO, tooltip="Fixed contracts (default) = the webhook sends the 'Option contracts' quantity. 'TradersPost sizing' = the entry JSON OMITS the quantity field so TradersPost's strategy-level position sizing decides the contract count — set 'Amount per position' ~$1,100 there (+ a max-quantity cap ~4 if available). WHY: the 2026-07 analysis found fixed-DOLLAR sizing (contracts = floor($1,100/premium), cap 4, skip if unaffordable) beats fixed 2ct by +49-63% with LOWER premium at risk — cheap-premium days carry the edge. VERIFY IN PAPER FIRST: TradersPost's docs don't state whether 'Amount per position' divides by the option PREMIUM (correct) or the underlying price (wrong) for options — watch one fill's contract count before trusting it. Exits are unaffected (action=exit closes the whole position).")
+orderAsset     = input.string("Shares", "Order asset", options=["Shares", "Options"], group=grpO, tooltip="Shares = the stock JSON (Buy/Sell/Exit, rounded shares). Options = TradersPost options JSON: a LONG signal buys a CALL, a SHORT signal buys a PUT, any full exit closes. WORKS ON ALL PROFILES incl A1/B1/C1: in Options mode the 25% partial's webhook is SUPPRESSED, so the single contract HOLDS through the partial and closes only at the runner's final exit (VWAP / trail / BE / close-stop / EOD) — matching the real 0DTE option backtest (A1/B1/C1 >> C2 on options). The Strategy Tester still shows the SHARE-signal P&L; real option P&L (delta/theta/IV) is NOT backtestable here. The suppressed partial fires an informational text alert ('NO OPTIONS ACTION ... contract holds') that TradersPost ignores (harmless).", display=display.none)
+optContracts   = input.int(2,        "Option contracts (quantity)", minval=1, group=grpO, tooltip="DEFAULT 2. The real 0DTE backtest figures are PER CONTRACT, so 2 contracts = 2x P&L AND 2x premium at risk (~$465/ct -> ~$930/trade on TSLA, ~9% of a $10k account). Losses are capped small (~-$97/ct). Raise/lower to your risk tolerance.", display=display.none)
+optExpiration  = input.string("Friday (weekly)", "Option expiration", options=["Friday (weekly)", "+0 days", "+1 days", "+2 days", "+3 days", "+7 days"], group=grpO, tooltip="DEFAULT since v3.9.2 (2026-08-09) = 'Friday (weekly)': computes days-to-Friday DYNAMICALLY each day (Mon +4 .. Fri +0), so it ALWAYS resolves to a listed contract on any weekday, and it is the leg the whole published options history was actually priced on. WHY IT CHANGED: TSLA listed FRIDAY-ONLY expiries until 2026-02-02, so the 2025-01..2026-07 '0DTE' figures were ~85% Friday contracts at 1-4 DTE — the old 'weekly beats 0DTE by 3-5%' claim compared a contract to itself. On 2026 data, where the two legs are finally distinct, WEEKLY wins on 5 of 5 profiles in 3 independent windows (Jan-May, Jun-Jul, and the forward ledger's 70 true-0DTE trades ~30% less loss). COST: ~22% more premium per contract. '+0 days' = nearest listed on/after today: true 0DTE on Mon/Wed/Fri but it silently rolls to 1DTE on Tue/Thu because TSLA has NO daily expiries (unlike SPX). The fixed '+2'/'+3 days' hit Friday only early in the week and roll into NEXT week from Wed on — manual experiments only.", display=display.none)
+optStrikesAway = input.int(0,        "Strikes away from ATM (0 = ATM)", minval=0, group=grpO, display=display.none)
+optQtyMode     = input.string("Fixed contracts", "Option quantity mode", options=["Fixed contracts", "TradersPost sizing (omit quantity)"], group=grpO, tooltip="Fixed contracts (default) = the webhook sends the 'Option contracts' quantity. 'TradersPost sizing' = the entry JSON OMITS the quantity field so TradersPost's strategy-level position sizing decides the contract count — set 'Amount per position' ~$1,100 there (+ a max-quantity cap ~4 if available). WHY: the 2026-07 analysis found fixed-DOLLAR sizing (contracts = floor($1,100/premium), cap 4, skip if unaffordable) beats fixed 2ct by +49-63% with LOWER premium at risk — cheap-premium days carry the edge. VERIFY IN PAPER FIRST: TradersPost's docs don't state whether 'Amount per position' divides by the option PREMIUM (correct) or the underlying price (wrong) for options — watch one fill's contract count before trusting it. Exits are unaffected (action=exit closes the whole position).", display=display.none)
 optQtyFixed    = str.startswith(optQtyMode, "Fixed")
-partialAsOrder = input.bool(false,   "Partial exit as opposite-side order (Shares mode)", group=grpO, tooltip="For platforms where action=exit ALWAYS flattens the whole position and ignores the quantity (cannot split). ON: the 25% partial fires as a plain opposite-side order — long -> action=Sell qty N, short -> action=Buy qty N — so a NETTING platform reduces the position by N and the 75% runner keeps riding. The runner/stop/VWAP/EOD exits still send the normal full 'Exit'. WARNING: only works if your platform NETS an opposite-side order against the open position; if it REVERSES (flatten + open opposite), leave OFF. Designed for the default Close stop mode; in Wick mode a stop-out day sends Sell-partial + Exit back-to-back (still ends flat). Test one partial fill in paper first. OFF = the original Exit-with-quantity JSON (TradersPost honors it).")
+partialAsOrder = input.bool(false,   "Partial exit as opposite-side order (Shares mode)", group=grpO, tooltip="For platforms where action=exit ALWAYS flattens the whole position and ignores the quantity (cannot split). ON: the 25% partial fires as a plain opposite-side order — long -> action=Sell qty N, short -> action=Buy qty N — so a NETTING platform reduces the position by N and the 75% runner keeps riding. The runner/stop/VWAP/EOD exits still send the normal full 'Exit'. WARNING: only works if your platform NETS an opposite-side order against the open position; if it REVERSES (flatten + open opposite), leave OFF. Designed for the default Close stop mode; in Wick mode a stop-out day sends Sell-partial + Exit back-to-back (still ends flat). Test one partial fill in paper first. OFF = the original Exit-with-quantity JSON (TradersPost honors it).", display=display.none)
 
 // ---- WEBHOOK ALERTS: per-order JSON via alert_message. In TradingView set the alert message to
 // {{strategy.order.alert_message}} (NOT {{strategy.order.action}} — that only outputs buy/sell, never "Exit").
@@ -301,16 +365,26 @@ f_msg(act, q) =>
     out
 
 grpU = "Display"
-showLabels = input.bool(false, "Show Labels", group=grpU, tooltip="Turn OFF for 30/90/365-day runs (TradingView caps labels at 500).")
-showLevels = input.bool(true, "Show Levels", group=grpU)
+showLabels = input.bool(false, "Show Labels", group=grpU, tooltip="Turn OFF for 30/90/365-day runs (TradingView caps labels at 500).", display=display.none)
+showLevels = input.bool(true, "Show Levels", group=grpU, display=display.none)
+showLvlLbl = input.bool(true, "Tag the OR / trigger lines", group=grpU, tooltip="v3.9.5: draws a small 'OR H 331.20' / 'LONG > 331.55' tag at the RIGHT END of each day's segment. The two OR tags sit INSIDE the opening range and the two trigger tags OUTSIDE it, so the ORH/long pair and the ORL/short pair never overlap even when the buffer is a few cents.", display=display.none)
+orKeep     = input.int(10, "Days of OR / trigger segments to keep", minval=1, maxval=60, group=grpU, tooltip="v3.9.5: the OR High / OR Low / Long / Short levels are now drawn as one SEGMENT PER DAY instead of one continuous plot, so they stop at that session's last bar. Each session costs 4 line + 4 label objects; older sessions are DELETED once this many days are on screen. Keep it modest (10-20) for a 365-day Strategy Tester run — TradingView caps lines and labels at 500 each and the prior-day segments plus the trade labels share the same budget.", display=display.none)
 
 grpP = "Prior-Day Levels (PDH / PDL / PDC / PDO)"
-showPD    = input.bool(true, "Show prior-day levels", group=grpP, tooltip="DIAGNOSTIC ONLY (v3.9.3): these four lines are DRAWN, never traded — no entry, exit, stop, target, day-skip or webhook rule reads them, so turning them on cannot change a single Strategy Tester trade. They are yesterday's completed RTH daily bar (Open/High/Low/Close) held flat across today. LEGEND: PDH = MAGENTA thick solid, PDL = BLUE thick solid, PDC = WHITE dotted, PDO = ORANGE x-marks.")
-showPDLbl = input.bool(true, "Label each level at the right edge", group=grpP, tooltip="Draws 'PDH 331.20' style tags at the current bar. Uses 4 label objects that are MOVED, never re-created — safe to leave ON even with 'Show Labels' OFF for a 365-day run.")
-showPDH   = input.bool(true, "PDH — prior day HIGH (magenta, solid)", group=grpP)
-showPDL   = input.bool(true, "PDL — prior day LOW (blue, solid)", group=grpP)
-showPDC   = input.bool(true, "PDC — prior day CLOSE (white, dotted)", group=grpP)
-showPDO   = input.bool(true, "PDO — prior day OPEN (orange, x-marks)", group=grpP)
+showPD    = input.bool(true, "Show prior-day levels", group=grpP, tooltip="DIAGNOSTIC ONLY (v3.9.3): these four lines are DRAWN, never traded — no entry, exit, stop, target, day-skip or webhook rule reads them, so turning them on cannot change a single Strategy Tester trade. They are yesterday's completed RTH daily bar (Open/High/Low/Close) held flat across today. LEGEND: PDH = MAGENTA thick solid, PDL = BLUE thick solid, PDC = WHITE dotted, PDO = ORANGE dashed.", display=display.none)
+showPDLbl = input.bool(true, "Tag the end of each day's line", group=grpP, tooltip="v3.9.4: draws a small 'PDH 331.20' tag just ABOVE the RIGHT END of each day's segment, so every line identifies itself without the legend. 4 tags per session, bounded by the 'days to keep' setting below.", display=display.none)
+pdKeep    = input.int(10, "Days of prior-day segments to keep", minval=1, maxval=60, group=grpP, tooltip="v3.9.4: the lines are now one SEGMENT PER DAY instead of a chart-wide stepline. Each session costs 4 line + 4 label objects and older sessions are DELETED once this many are on screen. Keep it modest (10-20) for a 365-day Strategy Tester run — TradingView caps lines and labels at 500 each and the trade labels compete for the same budget.", display=display.none)
+showPDH   = input.bool(true, "PDH — prior day HIGH (magenta, solid)", group=grpP, display=display.none)
+showPDL   = input.bool(true, "PDL — prior day LOW (blue, solid)", group=grpP, display=display.none)
+showPDC   = input.bool(true, "PDC — prior day CLOSE (white, dotted)", group=grpP, display=display.none)
+showPDO   = input.bool(true, "PDO — prior day OPEN (orange, dashed)", group=grpP, display=display.none)
+
+// ---- PD-LEVEL TAG-AND-REJECT EXIT (v3.9.4) — EXPERIMENTAL, DEFAULT OFF ----
+grpPX = "PD-Level Exit (tag-and-reject)"
+pdxOn      = input.bool(true, "Enable PD-level tag-and-reject exit", group=grpPX, tooltip="DEFAULT ON since v3.9.6 (it was OFF in v3.9.4-v3.9.5). Measured right here on C1 over 2025-08-11..2026-08-10 by exporting this script twice, ticked and unticked: $17,554 vs $13,623 = +$3,932 (+29%), PF 1.76 vs 1.52, win rate 55.2% vs 50.4%, worst trade unchanged, positive in both year-cells. The 54 fires are right 70% of the time. CAVEAT: the body threshold below was fitted in-sample on that same span with no holdout, and the Strategy Tester charges no commission or slippage. Untick to get the v3.9.3 baseline back. ON: the position is flattened at the close of a bar that tags a prior-day level lying AHEAD of the trade, closes rejected back off it, AND has a small body. Ranked BELOW the stop, the target/partial and the runner exits — it can only claim a bar none of them wanted — and it does NOT arm the reversal (only Base SL / BE Stop / BE Trail do), matching orb_engine.py. Sends a normal full-flatten webhook.", display=display.none)
+pdxMaxBody = input.float(0.25, "Max rejection-candle body (|C-O| / (H-L))", minval=0.01, maxval=1.0, step=0.05, group=grpPX, tooltip="THE KNOB THAT MATTERS, and it runs OPPOSITE to intuition. A big decisive candle closing back off the level is worthless — it is a trend bar that happens to touch a line, and price continues. What predicts a real rejection is a SMALL body: a doji or pin that runs into the level and cannot close through it. 5-year deltas: no filter (1.0) = -$3,796 to -$5,466 on every profile; 0.25 = +$1,248 A1 / +$2,983 B1 / +$3,487 C1 / +$755 D1. The 0.10-0.25 band is a plateau; 0.35 is +$207 and 0.40-0.50 are negative. D1 prefers 0.15.", display=display.none)
+pdxZone    = input.float(0.05, "Tag zone (x today's TP distance)", minval=0.0, maxval=0.50, step=0.01, group=grpPX, tooltip="How close the bar's extreme must come to the level to count as a tag, as a fraction of the adaptive TP distance. 0.05 of a $3.74 TP distance = about 19 cents.", display=display.none)
+pdxLevels  = input.string("All four (PDO/PDH/PDL/PDC)", "Which levels may trigger it", options=["All four (PDO/PDH/PDL/PDC)", "PDH + PDL only", "PDC only"], group=grpPX, tooltip="All four is the validated default. PDC-only and PDH/PDL-only were swept WITHOUT the body filter and lost on every profile; they have not been re-swept with it.", display=display.none)
 
 maxCapSL = maxCapOverride > 0 ? maxCapOverride : (isC1 ? 6.0 : 5.0)
 
@@ -559,6 +633,8 @@ if active and not na(stop) and bar_index >= entryBar
     vwapExited = false
     stopBarStart = stop        // the stop actually RESTING coming into this bar (pre BE-retrace)
     beFiredNow = false
+    bool pdxHit = false         // v3.9.4 PD-level tag-and-reject (default OFF)
+    bool partFilledNow = false  // the 25% partial mirrored THIS bar -> PD-level exit must yield to it
     if bar_index > entryBar
         // Step 1: BE Retrace (WICK trigger)
         if not beTrig and not na(beLevel)
@@ -569,9 +645,28 @@ if active and not na(stop) and bar_index >= entryBar
         // Step 2: BE Trail
         if beTrig and beTrailAmt > 0
             stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
+        // Step 2b: PD-LEVEL TAG-AND-REJECT (v3.9.4, default OFF) — mirrors orb_engine.py `_pd_tag_reject`.
+        // Only EVALUATED here; it is applied further down, after the stop/partial/runner have had their
+        // chance, so the precedence matches the indicator's elif chain exactly.
+        if pdxOn and not na(entry) and not na(tpDist)
+            rngBar = math.max(high - low, syminfo.mintick)
+            if (math.abs(close - open) / rngBar) < pdxMaxBody and (tdir == 1 ? close < open : close > open)
+                tolPD = pdxZone * tpDist
+                usePDO = pdxLevels == "All four (PDO/PDH/PDL/PDC)"
+                usePDC = pdxLevels != "PDH + PDL only"
+                usePDHL = pdxLevels != "PDC only"
+                if usePDO and not na(pdO) and (pdO - entry) * tdir > 0
+                    pdxHit := pdxHit or (tdir == 1 ? (high >= pdO - tolPD and close < pdO) : (low <= pdO + tolPD and close > pdO))
+                if usePDHL and not na(pdH) and (pdH - entry) * tdir > 0
+                    pdxHit := pdxHit or (tdir == 1 ? (high >= pdH - tolPD and close < pdH) : (low <= pdH + tolPD and close > pdH))
+                if usePDHL and not na(pdL) and (pdL - entry) * tdir > 0
+                    pdxHit := pdxHit or (tdir == 1 ? (high >= pdL - tolPD and close < pdL) : (low <= pdL + tolPD and close > pdL))
+                if usePDC and not na(pdC) and (pdC - entry) * tdir > 0
+                    pdxHit := pdxHit or (tdir == 1 ? (high >= pdC - tolPD and close < pdC) : (low <= pdC + tolPD and close > pdC))
         if usePartial
             // Step 3: mirror the 25% partial fill (P1 limit does the actual fill)
             if not suppressPartial and not part1 and not na(tp) and (tdir == 1 ? high >= tp : low <= tp)
+                partFilledNow := true
                 part1 := true
                 tp := na
                 if showLabels
@@ -635,6 +730,22 @@ if active and not na(stop) and bar_index >= entryBar
             strategy.cancel("RUN")
             strategy.cancel("X")
             strategy.close(entryId, comment=(inRev ? "REV " : "") + (isTrail ? "Trail" : beReason), alert_message=f_msg("Exit", math.round(math.abs(strategy.position_size))))
+        else if pdxHit and not partFilledNow and not tpWasHit
+            // v3.9.4 PD-level tag-and-reject. Reached only when the stop did NOT fire this bar and the
+            // target/partial did not claim it (the runner exits already returned via vwapExited), which
+            // reproduces the indicator's slHit > TP/partial > runner > pdxHit ordering. Deliberately does
+            // NOT set primStopped: this is not a stop-type exit, so it must not arm the reversal.
+            strategy.cancel("P1")
+            strategy.cancel("RUN")
+            strategy.cancel("X")
+            strategy.close(entryId, comment=(inRev ? "REV PD Level" : "PD Level"), alert_message=f_msg("Exit", math.round(math.abs(strategy.position_size))))
+            if showLabels
+                label.new(bar_index, tdir == 1 ? high : low, (inRev ? "REV " : "") + "PD LEVEL " + str.tostring(close, format.mintick), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.purple, 0), textcolor=color.white, size=size.small)
+            active := false
+            tdir := 0
+            inRev := false
+            tp := na
+            stop := na
         else
             // Close mode: rest the TP limits only (stops are close-triggered above). Wick mode: OCO w/ resting stops.
             if not usePartial
@@ -682,54 +793,174 @@ if strategy.position_size != 0 and isFlattenBar and not active
     strategy.close_all(comment="EOD flat", alert_message=f_msg("Exit", math.round(math.abs(strategy.position_size))))
 
 // ==================== VISUALS ====================
-plot(showLevels and not daySkipped and not na(orHigh) ? orHigh : na, "OR High", color=color.new(color.aqua, 0), style=plot.style_linebr)
-plot(showLevels and not daySkipped and not na(orLow) ? orLow : na, "OR Low", color=color.new(color.aqua, 0), style=plot.style_linebr)
-plot(showLevels and not daySkipped and not na(longBrk) ? longBrk : na, "Long Trigger", color=color.new(color.lime, 0), style=plot.style_linebr)
-plot(showLevels and not daySkipped and not na(shortBrk) ? shortBrk : na, "Short Trigger", color=color.new(color.red, 0), style=plot.style_linebr)
+// ---- OR / TRIGGER LEVELS (v3.9.5) — one segment per day + a right-end tag, same pattern as the PD lines ----
+// v3.9.4 drew these with plot(style_linebr). Even though orHigh/orLow reset to na overnight, a plot is one
+// continuous series: TradingView joins the last bar of one session to the first bar of the next, so on a
+// multi-day chart the aqua/lime/red levels visibly ran on into the following day. They are now four line
+// objects per session, opened on that session's OR bar, extended only to its own bars, and never touched
+// again. A small tag ("OR H 331.20", "LONG > 331.55") rides the right end so each line names itself.
+// DRAWING ONLY — nothing here feeds an order, so the Strategy Tester result is unchanged.
+cORH = color.new(color.aqua, 0)
+cLBK = color.new(color.lime, 0)
+cSBK = color.new(color.red, 0)
+var line  lnORH = na
+var line  lnORL = na
+var line  lnLBK = na
+var line  lnSBK = na
+var label tgORH = na
+var label tgORL = na
+var label tgLBK = na
+var label tgSBK = na
+var line[]  orLineHist = array.new_line()
+var label[] orTagHist  = array.new_label()
+
+// retire yesterday's four segments on the FIRST bar of the new session, so nothing extends across the gap
+// (this must happen at isNewDay, not at the OR bar — with orStart 09:45 the OR bar is three bars late)
+if showLevels and isNewDay
+    if not na(lnORH)
+        array.push(orLineHist, lnORH)
+    if not na(lnORL)
+        array.push(orLineHist, lnORL)
+    if not na(lnLBK)
+        array.push(orLineHist, lnLBK)
+    if not na(lnSBK)
+        array.push(orLineHist, lnSBK)
+    if not na(tgORH)
+        array.push(orTagHist, tgORH)
+    if not na(tgORL)
+        array.push(orTagHist, tgORL)
+    if not na(tgLBK)
+        array.push(orTagHist, tgLBK)
+    if not na(tgSBK)
+        array.push(orTagHist, tgSBK)
+    while array.size(orLineHist) > orKeep * 4
+        line.delete(array.shift(orLineHist))
+    while array.size(orTagHist) > orKeep * 4
+        label.delete(array.shift(orTagHist))
+    lnORH := na
+    lnORL := na
+    lnLBK := na
+    lnSBK := na
+    tgORH := na
+    tgORL := na
+    tgLBK := na
+    tgSBK := na
+
+// open today's four segments on the OR bar, once the range and the skip decision are both known
+if showLevels and isORbar and not daySkipped and not na(orHigh)
+    lnORH := line.new(bar_index, orHigh,   bar_index, orHigh,   color=cORH, width=2, style=line.style_solid)
+    lnORL := line.new(bar_index, orLow,    bar_index, orLow,    color=cORH, width=2, style=line.style_solid)
+    lnLBK := line.new(bar_index, longBrk,  bar_index, longBrk,  color=cLBK, width=1, style=line.style_dashed)
+    lnSBK := line.new(bar_index, shortBrk, bar_index, shortBrk, color=cSBK, width=1, style=line.style_dashed)
+    if showLvlLbl
+        // the two trigger tags sit OUTSIDE the range and the two OR tags INSIDE it, so the pairs never collide
+        tgORH := label.new(bar_index, orHigh,   "OR H " + str.tostring(orHigh, format.mintick),   style=label.style_label_up,   color=cORH, textcolor=color.black, size=size.tiny)
+        tgORL := label.new(bar_index, orLow,    "OR L " + str.tostring(orLow, format.mintick),    style=label.style_label_down, color=cORH, textcolor=color.black, size=size.tiny)
+        tgLBK := label.new(bar_index, longBrk,  "LONG > " + str.tostring(longBrk, format.mintick), style=label.style_label_down, color=cLBK, textcolor=color.black, size=size.tiny)
+        tgSBK := label.new(bar_index, shortBrk, "SHORT < " + str.tostring(shortBrk, format.mintick), style=label.style_label_up, color=cSBK, textcolor=color.white, size=size.tiny)
+
+// extend today's segments (and drag their tags) to the newest bar of THIS session only
+if showLevels and session.ismarket
+    if not na(lnORH)
+        line.set_x2(lnORH, bar_index)
+    if not na(lnORL)
+        line.set_x2(lnORL, bar_index)
+    if not na(lnLBK)
+        line.set_x2(lnLBK, bar_index)
+    if not na(lnSBK)
+        line.set_x2(lnSBK, bar_index)
+    if not na(tgORH)
+        label.set_x(tgORH, bar_index)
+    if not na(tgORL)
+        label.set_x(tgORL, bar_index)
+    if not na(tgLBK)
+        label.set_x(tgLBK, bar_index)
+    if not na(tgSBK)
+        label.set_x(tgSBK, bar_index)
 plot(active ? stop : na, "Active Stop", color=color.red, linewidth=2, style=plot.style_linebr)
 plot(active and not na(tp) ? tp : na, "Active TP", color=color.lime, linewidth=2, style=plot.style_linebr)
 plot(active and not beTrig and not na(beLevel) ? beLevel : na, "BE Trigger", color=color.new(color.yellow, 0), style=plot.style_circles)
 plot(primStopped and not active ? (primDir == 1 ? orLow : orHigh) : na, "Reversal Trigger", color=color.new(color.purple, 0), linewidth=2, style=plot.style_circles)
 bgcolor(daySkipped ? color.new(color.gray, 90) : na, title="Day skipped (vol regime / wide OR)")
 
-// ---- PRIOR-DAY LEVELS (v3.9.3) — four distinct COLOURS *and* four distinct PATTERNS ----
-//   PDH magenta thick solid | PDL blue thick solid | PDC white dotted | PDO orange x-marks
+// ---- PRIOR-DAY LEVELS (v3.9.4) — four distinct COLOURS *and* four distinct PATTERNS, per-day segments ----
+//   PDH magenta thick solid | PDL blue thick solid | PDC white dotted | PDO orange dashed
 cPDH = color.new(color.fuchsia, 0)
 cPDL = color.new(color.rgb(41, 98, 255), 0)
 cPDC = color.new(color.white, 0)
 cPDO = color.new(color.orange, 0)
-plot(showPD and showPDH and not na(pdH) ? pdH : na, "PDH — prior day High",  color=cPDH, linewidth=2, style=plot.style_stepline)
-plot(showPD and showPDL and not na(pdL) ? pdL : na, "PDL — prior day Low",   color=cPDL, linewidth=2, style=plot.style_stepline)
-plot(showPD and showPDC and not na(pdC) ? pdC : na, "PDC — prior day Close", color=cPDC, linewidth=1, style=plot.style_circles)
-plot(showPD and showPDO and not na(pdO) ? pdO : na, "PDO — prior day Open",  color=cPDO, linewidth=1, style=plot.style_cross)
+// v3.9.4: ONE SEGMENT PER DAY. The old plot(style_stepline) ran the whole chart width and drew a
+// vertical riser at every session boundary, so yesterday's level bled into today. Now each session opens
+// its own four lines on its first RTH bar, extends them only to its own last bar, and never touches the
+// next day. Older sessions are deleted once `pdKeep` days are on screen so the 500-object caps are safe.
+var line  lnPDH = na
+var line  lnPDL = na
+var line  lnPDC = na
+var line  lnPDO = na
+var label tgPDH = na
+var label tgPDL = na
+var label tgPDC = na
+var label tgPDO = na
+var line[]  pdLineHist = array.new_line()
+var label[] pdTagHist  = array.new_label()
 
-// right-edge tags: 4 label objects that are MOVED, never re-created (no drain on the 500-label cap)
-f_pdTag(label lb, bool show, float y, string txt, color col, color tcol) =>
-    label r = lb
-    if show and not na(y)
-        if na(r)
-            r := label.new(bar_index, y, txt, style=label.style_label_left, color=col, textcolor=tcol, size=size.tiny)
-        label.set_xy(r, bar_index, y)
-        label.set_text(r, txt)
-    else if not na(r)
-        label.delete(r)
-        r := na
-    r
-var label lbPDH = na
-var label lbPDL = na
-var label lbPDC = na
-var label lbPDO = na
-if barstate.islast
-    pdOn = showPD and showPDLbl
-    lbPDH := f_pdTag(lbPDH, pdOn and showPDH, pdH, "PDH " + str.tostring(pdH, format.mintick), cPDH, color.white)
-    lbPDL := f_pdTag(lbPDL, pdOn and showPDL, pdL, "PDL " + str.tostring(pdL, format.mintick), cPDL, color.white)
-    lbPDC := f_pdTag(lbPDC, pdOn and showPDC, pdC, "PDC " + str.tostring(pdC, format.mintick), cPDC, color.black)
-    lbPDO := f_pdTag(lbPDO, pdOn and showPDO, pdO, "PDO " + str.tostring(pdO, format.mintick), cPDO, color.black)
+if showPD and isNewDay
+    // retire yesterday's four segments (and their tags) into the bounded history ring
+    if not na(lnPDH)
+        array.push(pdLineHist, lnPDH)
+    if not na(lnPDL)
+        array.push(pdLineHist, lnPDL)
+    if not na(lnPDC)
+        array.push(pdLineHist, lnPDC)
+    if not na(lnPDO)
+        array.push(pdLineHist, lnPDO)
+    if not na(tgPDH)
+        array.push(pdTagHist, tgPDH)
+    if not na(tgPDL)
+        array.push(pdTagHist, tgPDL)
+    if not na(tgPDC)
+        array.push(pdTagHist, tgPDC)
+    if not na(tgPDO)
+        array.push(pdTagHist, tgPDO)
+    while array.size(pdLineHist) > pdKeep * 4
+        line.delete(array.shift(pdLineHist))
+    while array.size(pdTagHist) > pdKeep * 4
+        label.delete(array.shift(pdTagHist))
+    // open today's four segments (zero length for now; extended bar by bar below)
+    lnPDH := showPDH and not na(pdH) ? line.new(bar_index, pdH, bar_index, pdH, color=cPDH, width=2, style=line.style_solid) : na
+    lnPDL := showPDL and not na(pdL) ? line.new(bar_index, pdL, bar_index, pdL, color=cPDL, width=2, style=line.style_solid) : na
+    lnPDC := showPDC and not na(pdC) ? line.new(bar_index, pdC, bar_index, pdC, color=cPDC, width=1, style=line.style_dotted) : na
+    lnPDO := showPDO and not na(pdO) ? line.new(bar_index, pdO, bar_index, pdO, color=cPDO, width=1, style=line.style_dashed) : na
+    // small self-identifying tag, drawn ABOVE the line and carried along to its right end
+    tgOn = showPDLbl
+    tgPDH := tgOn and showPDH and not na(pdH) ? label.new(bar_index, pdH, "PDH " + str.tostring(pdH, format.mintick), style=label.style_label_down, color=cPDH, textcolor=color.white, size=size.tiny) : na
+    tgPDL := tgOn and showPDL and not na(pdL) ? label.new(bar_index, pdL, "PDL " + str.tostring(pdL, format.mintick), style=label.style_label_down, color=cPDL, textcolor=color.white, size=size.tiny) : na
+    tgPDC := tgOn and showPDC and not na(pdC) ? label.new(bar_index, pdC, "PDC " + str.tostring(pdC, format.mintick), style=label.style_label_down, color=cPDC, textcolor=color.black, size=size.tiny) : na
+    tgPDO := tgOn and showPDO and not na(pdO) ? label.new(bar_index, pdO, "PDO " + str.tostring(pdO, format.mintick), style=label.style_label_down, color=cPDO, textcolor=color.black, size=size.tiny) : na
+
+// extend today's segments (and drag their tags) to the newest bar of THIS session only
+if showPD
+    if not na(lnPDH)
+        line.set_x2(lnPDH, bar_index)
+    if not na(lnPDL)
+        line.set_x2(lnPDL, bar_index)
+    if not na(lnPDC)
+        line.set_x2(lnPDC, bar_index)
+    if not na(lnPDO)
+        line.set_x2(lnPDO, bar_index)
+    if not na(tgPDH)
+        label.set_x(tgPDH, bar_index)
+    if not na(tgPDL)
+        label.set_x(tgPDL, bar_index)
+    if not na(tgPDC)
+        label.set_x(tgPDC, bar_index)
+    if not na(tgPDO)
+        label.set_x(tgPDO, bar_index)
 
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.9.3", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.9.6", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
