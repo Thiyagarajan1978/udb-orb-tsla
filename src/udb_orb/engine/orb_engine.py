@@ -390,10 +390,19 @@ class OrbEngine:
     #   zone: tag tolerance as a fraction of the adaptive TP distance (0 = must touch)
     #   require_reject_candle: the bar must also close against the trade direction
     #   in_profit_only: arm only once the bar closes in profit (otherwise the stop owns it)
-    # Measured 2026-08-10 over 5 years x 24 configs: EVERY config loses (-$1,193 .. -$6,661/unit-
-    # scaled). It fires on 29% of trades and is right 31% of the time — a tag-and-reject at a
-    # prior-day level is followed by CONTINUATION ~69% of the time. Kept OFF, and kept only so the
-    # result is reproducible from the real engine. See docs/BE_STOP_ANALYSIS.md.
+    #   max_body_frac: the tag bar's |close-open| / (high-low) ceiling  (THE knob — see below)
+    # History, because the first verdict here was wrong and the comment outlived it: measured
+    # 2026-08-10 over 5 years x 24 configs WITHOUT `max_body_frac`, every config lost (it fired on
+    # 29% of trades and was right 31% of the time — a tag-and-reject is followed by CONTINUATION
+    # ~69% of the time). Adding the small-body requirement (0.25) is what separated a genuine
+    # rejection wick from a bar that merely closed the wrong colour on its way through: it cuts the
+    # fire rate to ~13% of trades at a ~70% win rate. That version is ADOPTED and DEFAULT ON
+    # (Pine v3.9.6, commit 09a8a7f). 2022-2026 D1, per unit: all four levels 498.4 vs 466.7 off.
+    # Do not re-derive the "every config loses" claim without the body filter. Level attribution
+    # (149 fires): pdO +107.2 / pdH +75.8 / pdL +54.7 / pdC +30.1 — pdC is the weak one, but a
+    # 2026-08-11 subset sweep showed dropping ANY single level is worse than keeping all four
+    # (drop_pdH 493.8, drop_pdC 488.2, drop_pdO 487.3, drop_pdL 480.4, all < all4 498.4), and no
+    # single level alone beats the baseline. See docs/BE_STOP_ANALYSIS.md.
     @property
     def _pdx_cfg(self) -> dict[str, Any]:
         return self.enh.get("pd_level_exit", {})
