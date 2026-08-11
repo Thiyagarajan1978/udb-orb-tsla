@@ -55,6 +55,14 @@ def _closed_bars(df: pd.DataFrame, tf_min: int, now: pd.Timestamp,
     318.00. It also produced phantom signals that a later poll silently replaced — three
     `primary_entry` alerts on 2026-08-10 when only the 10:00 one was real.
 
+    The worst case is a partial **OPENING RANGE** bar, because that moves the trigger LEVEL and
+    so invents trades that never had a signal. 2026-08-11 (the last session before this fix
+    shipped) mailed a `reversal_entry` long at 09:55 @ 333.83 with the final OR high at 333.80 —
+    a buffered break needs a close above 334.034, so 333.83 cannot break anything. Solving
+    ``or_high + 0.1*(or_high - 331.46) <= 333.83`` puts the OR high the runner was holding at
+    <= 333.61, i.e. the 09:30 bar was still ~0.20 short of its final high. That one phantom leg
+    plus two mispriced fills turned a real -5.31/unit day into -9.06/unit as alerted.
+
     So a bar is usable only once ``close_time + settle_s <= now``. The cost is alert
     latency: at the 300s default a 09:35 signal is mailed at ~09:40:30 rather than
     09:35:30. That is the price of the alert being TRUE, and it is a live-only concern —

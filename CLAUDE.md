@@ -199,6 +199,10 @@ Five live-only invariants, none of which a backtest can catch (see `tests/test_l
    4 of 11 sessions). `_superseded_by` now tags any same-session repeat of a (type, direction) as
    `*** CORRECTION` in the alert and logs `!! SUPERSEDED`. Cost: a 09:35 signal mails ~09:40:30.
    Live-only — historical bars are final, so backtests and the TV reconciliation are unaffected.
+   **The worst case is a partial OPENING-RANGE bar**, which moves the trigger LEVEL and so invents
+   a trade that never had a signal: 2026-08-11 (last session before the fix) mailed a reversal long
+   at 09:55 @333.83 when the buffered break needs a close >334.034 — the OR high was still ~0.20
+   short of final. That phantom leg + 2 mispriced fills made a real −5.31/unit day read −9.06.
 
 Corollary: **do not backtest through the current session** — the partial day's last bar produces an
 artificial `eod_exit`. Reconciled 2026-07-31 over 07-28..07-30: live and backtest event streams are
