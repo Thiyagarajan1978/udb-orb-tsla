@@ -101,6 +101,18 @@ enhancements:
   pdh_pdl_filter:
     enabled: false
     proximity_pct: 14.0
+  pd_level_exit:            # ADOPTED 2026-08-10; added to D1 2026-08-11 after the v3.9.6 TV validation
+    enabled: true           # found this file was the odd one out — the TV chart runs D1 with the rule
+    levels: [pdO, pdH, pdL, pdC]   # ON while forward_test.py loaded this yaml with it silently OFF.
+    ahead_only: true
+    zone: 0.05
+    require_reject_candle: true
+    max_body_frac: 0.25     # Engine sweep on D1 2022-2026 (per unit): off 450.5 -> 0.10 +4.9% /
+                            # 0.15 +7.2% / 0.20 +7.0% / 0.25 +7.8% / 0.30 +0.6%. Flat plateau with
+                            # 0.25 at the top, so D1 keeps the shipped knob (an earlier note claiming
+                            # D1 wanted 0.15 does not survive the sweep). Weakest of the four profiles
+                            # (+7.8% vs C1 +25.0 / B1 +21.1 / A1 +10.6), up in 3 of 5 years.
+    in_profit_only: false
 data:
   provider: fmp
   cache_dir: data/cache
