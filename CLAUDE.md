@@ -172,7 +172,7 @@ one FMP fetch per cycle and no chance of one profile being silently dead. `--dry
 alerts (still writes the DB) — always use it when testing. `TRADED_PROFILES` in `cli.py` is the allow-list;
 A1/C2 were dropped and must not be added without a fresh validation run.
 
-Four live-only invariants, none of which a backtest can catch (see `tests/test_live_runner.py`):
+Five live-only invariants, none of which a backtest can catch (see `tests/test_live_runner.py`):
 1. **`profile.label` (B1/C1) scopes everything.** The two share a profile NAME and a db_path, so without
    the label the re-alert guard lets one suppress the other's identical event — you simply never hear
    about half your trades. It is also on every alert message and in the webhook payload.
@@ -186,6 +186,19 @@ Four live-only invariants, none of which a backtest can catch (see `tests/test_l
    handling), but live "the last bar" is just the newest closed bar. Without the flag the engine closes
    every open position on every poll and fires a fresh `eod_exit` at a NEW timestamp each time (~30 false
    "close your position" alerts per trade per day).
+5. **A bar is not usable the moment it closes — FMP is still aggregating it** (fixed 2026-08-11,
+   `live.bar_settle_seconds`, default **300s** = one full bar). FMP serves the PARTIAL 5m bar for
+   ~2-3 minutes past its nominal close; measured by polling every 10s, three bars settled at close
+   **+168s / +192s / +214s** (the 14:50 bar read `c=331.89 v=90,790` at +137s vs a final
+   `c=331.85 v=115,049`). The old `close_time <= now` test therefore fed the engine half-formed bars:
+   an audit of the first 11 live sessions found **52 of 87 events priced off a non-final close**, every
+   one inside the final bar's H/L range (the partial-snapshot signature), worst 2026-08-03
+   `primary_entry` logged 314.81 vs a real 318.00. Worse, a later poll's corrected bar moves the
+   event's TIMESTAMP, and the re-alert guard keys on exact (ts, type, direction) — so the correction
+   mails as a brand-new signal (three `primary_entry` alerts on 2026-08-10 for one trade; duplicates on
+   4 of 11 sessions). `_superseded_by` now tags any same-session repeat of a (type, direction) as
+   `*** CORRECTION` in the alert and logs `!! SUPERSEDED`. Cost: a 09:35 signal mails ~09:40:30.
+   Live-only — historical bars are final, so backtests and the TV reconciliation are unaffected.
 
 Corollary: **do not backtest through the current session** — the partial day's last bar produces an
 artificial `eod_exit`. Reconciled 2026-07-31 over 07-28..07-30: live and backtest event streams are

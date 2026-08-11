@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.9.6 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.6 S", overlay=true,
+strategy("UDB-ORB TSLA v3.9.7 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.7 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -14,6 +14,19 @@ strategy("UDB-ORB TSLA v3.9.6 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle=
      max_labels_count        = 500,
      max_lines_count         = 500)
 
+// v3.9.7 2026-08-11 — HALF-DAY SESSIONS NOW FLATTEN ON THEIR OWN LAST BAR. One line of session logic;
+//     no profile, entry, exit or PD-level behaviour touched. Found by reading the v3.9.6 trade list
+//     rather than the summary numbers: `session.islastbar_regular` was meant to cover the early close
+//     and does not fire on TSLA's 12:55 final bar, so the day-after-Thanksgiving sessions issued no
+//     EOD close, `isNewDay` then reset `active`, and the orphaned position was flattened a full
+//     session later by the "EOD flat" safety net — 2012-11-23 and 2018-11-23 on all four profiles,
+//     2017-11-24 on C1. The 2018 one is a -$121.20 short carried through a three-day weekend.
+//     The session end now comes from the daily bar (`time_close("D")` = 13:00 on an early close,
+//     16:00 otherwise), so the flatten lands on the genuine last bar and, with
+//     process_orders_on_close, fills at that bar's close — exactly orb_engine.py's `last_ts_by_date`.
+//     FULL SESSIONS ARE TRADE-FOR-TRADE UNCHANGED: on a normal day the new condition is the 15:55
+//     bar, which the 15:50 EOD rule had already claimed. Only ~3 sessions in 14 years differ.
+//
 // v3.9.6 2026-08-10 — THE PD-LEVEL TAG-AND-REJECT EXIT IS NOW ON BY DEFAULT (`pdxOn` false -> true).
 //     ONE INPUT DEFAULT CHANGED, no logic edited. The rule itself, its ranking below the stop / target /
 //     partial / runner, and its refusal to arm the reversal are all exactly as shipped in v3.9.4.
@@ -28,7 +41,8 @@ strategy("UDB-ORB TSLA v3.9.6 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle=
 //     PD-Level exit does NOT arm the reversal it also skipped the -$266 reversal that followed. That is
 //     also why the OFF run has MORE trades: turning the rule off lets a suppressed reversal back in.
 //     CAVEAT, unchanged: the 0.25 body threshold was fitted in-sample on this same span with NO holdout,
-//     the optimum is profile-dependent (D1 prefers 0.15), and the Strategy Tester charges zero commission
+//     the plateau is flat rather than peaked (the old note that D1 preferred 0.15 did not survive a full
+//     sweep — see the knob's tooltip), and the Strategy Tester charges zero commission
 //     and zero slippage (haircut ~12-15%). Untick the input to get the v3.9.3 baseline back.
 //
 // v3.9.5 2026-08-10 — THE OR / TRIGGER LINES NOW BEHAVE LIKE THE PD LINES. DRAWING ONLY: no entry, exit,
@@ -48,7 +62,7 @@ strategy("UDB-ORB TSLA v3.9.6 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle=
 //     the script name, which on this script was a ~40-number wall ("... 15 50 09:30 12 0 8 20 4.92 10 1 60
 //     0 1 2.14 0.25 1 14 2 0.55 ..." running off the right edge). Every input now carries
 //     `display=display.none` EXCEPT `profile`, so the status line reads just
-//         UDB-ORB v3.9.6 S   A1 - Adaptive + Peak-Trail
+//         UDB-ORB v3.9.7 S   A1 - Adaptive + Peak-Trail
 //     The inputs themselves are UNCHANGED — same names, defaults, groups and tooltips in the settings
 //     dialog; only their on-chart echo is suppressed. Nothing an order or an `alert_message` reads is
 //     touched, so the Strategy Tester and every webhook payload are byte-identical. The stats table stays
@@ -382,7 +396,7 @@ showPDO   = input.bool(true, "PDO — prior day OPEN (orange, dashed)", group=gr
 // ---- PD-LEVEL TAG-AND-REJECT EXIT (v3.9.4) — EXPERIMENTAL, DEFAULT OFF ----
 grpPX = "PD-Level Exit (tag-and-reject)"
 pdxOn      = input.bool(true, "Enable PD-level tag-and-reject exit", group=grpPX, tooltip="DEFAULT ON since v3.9.6 (it was OFF in v3.9.4-v3.9.5). Measured right here on C1 over 2025-08-11..2026-08-10 by exporting this script twice, ticked and unticked: $17,554 vs $13,623 = +$3,932 (+29%), PF 1.76 vs 1.52, win rate 55.2% vs 50.4%, worst trade unchanged, positive in both year-cells. The 54 fires are right 70% of the time. CAVEAT: the body threshold below was fitted in-sample on that same span with no holdout, and the Strategy Tester charges no commission or slippage. Untick to get the v3.9.3 baseline back. ON: the position is flattened at the close of a bar that tags a prior-day level lying AHEAD of the trade, closes rejected back off it, AND has a small body. Ranked BELOW the stop, the target/partial and the runner exits — it can only claim a bar none of them wanted — and it does NOT arm the reversal (only Base SL / BE Stop / BE Trail do), matching orb_engine.py. Sends a normal full-flatten webhook.", display=display.none)
-pdxMaxBody = input.float(0.25, "Max rejection-candle body (|C-O| / (H-L))", minval=0.01, maxval=1.0, step=0.05, group=grpPX, tooltip="THE KNOB THAT MATTERS, and it runs OPPOSITE to intuition. A big decisive candle closing back off the level is worthless — it is a trend bar that happens to touch a line, and price continues. What predicts a real rejection is a SMALL body: a doji or pin that runs into the level and cannot close through it. 5-year deltas: no filter (1.0) = -$3,796 to -$5,466 on every profile; 0.25 = +$1,248 A1 / +$2,983 B1 / +$3,487 C1 / +$755 D1. The 0.10-0.25 band is a plateau; 0.35 is +$207 and 0.40-0.50 are negative. D1 prefers 0.15.", display=display.none)
+pdxMaxBody = input.float(0.25, "Max rejection-candle body (|C-O| / (H-L))", minval=0.01, maxval=1.0, step=0.05, group=grpPX, tooltip="THE KNOB THAT MATTERS, and it runs OPPOSITE to intuition. A big decisive candle closing back off the level is worthless — it is a trend bar that happens to touch a line, and price continues. What predicts a real rejection is a SMALL body: a doji or pin that runs into the level and cannot close through it. 5-year deltas: no filter (1.0) = -$3,796 to -$5,466 on every profile; 0.25 = +$1,248 A1 / +$2,983 B1 / +$3,487 C1 / +$755 D1. The 0.10-0.25 band is a flat plateau; 0.35 is +$207 and 0.40-0.50 are negative. A full D1 sweep (2022-2026, per unit, baseline 450.5) put 0.25 at the TOP of that plateau — 0.10 +4.9% / 0.15 +7.2% / 0.20 +7.0% / 0.25 +7.8% / 0.30 +0.6% — so 0.25 is right for all four profiles and the earlier note that D1 preferred 0.15 is withdrawn. D1 is simply the weakest beneficiary (+7.8% vs C1 +25.0 / B1 +21.1 / A1 +10.6).", display=display.none)
 pdxZone    = input.float(0.05, "Tag zone (x today's TP distance)", minval=0.0, maxval=0.50, step=0.01, group=grpPX, tooltip="How close the bar's extreme must come to the level to count as a tag, as a fraction of the adaptive TP distance. 0.05 of a $3.74 TP distance = about 19 cents.", display=display.none)
 pdxLevels  = input.string("All four (PDO/PDH/PDL/PDC)", "Which levels may trigger it", options=["All four (PDO/PDH/PDL/PDC)", "PDH + PDL only", "PDC only"], group=grpPX, tooltip="All four is the validated default. PDC-only and PDH/PDL-only were swept WITHOUT the body filter and lost on every profile; they have not been re-swept with it.", display=display.none)
 
@@ -457,7 +471,19 @@ isNewDay = session.isfirstbar_regular
 isORbar = orStart == "09:45" ? (hour == 9 and minute == 45) : isNewDay
 sessVwap = ta.vwap(hlc3, isNewDay)
 isEODbar = (hour * 60 + minute) >= (eodHour * 60 + eodMin)
-isLastBar = session.islastbar_regular
+// v3.9.7 HALF-DAY FLATTEN FIX. `session.islastbar_regular` does NOT fire on TSLA's early-close final
+// bar (12:55 on the day after Thanksgiving), so on those sessions nothing flattened at all: the next
+// bar was a new day, `isNewDay` reset `active`, and the orphaned position sat until the FOLLOWING
+// session's 15:50 "EOD flat" safety net. Visible in the v3.9.6 exports as overnight carries on
+// 2012-11-23, 2017-11-24 (C1 only) and 2018-11-23 — the last a -$121.20 short held through a
+// three-day weekend, and the tell was the fill comment reading "EOD flat" (the safety net) instead
+// of "EOD". Derive the session's real end from the daily bar's close time instead: time_close("D")
+// is 13:00 on an early close and 16:00 otherwise, so this fires on the session's genuine last bar
+// and — with process_orders_on_close — flattens at that bar's close, which is exactly what
+// orb_engine.py's `last_ts_by_date` does. On a full session it lands on the 15:55 bar, which
+// isEODbar already claimed, so normal days are trade-for-trade unchanged.
+isSessLastBar = not na(time_close("D")) and time_close >= time_close("D")
+isLastBar = session.islastbar_regular or isSessLastBar
 isFlattenBar = isEODbar or isLastBar
 
 if isNewDay
@@ -960,7 +986,7 @@ if showPD
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 5, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.9.6", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.9.7", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSL, "#"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
