@@ -371,3 +371,13 @@ alerts:
 live:
   poll_seconds: 30           # how often to poll FMP for the latest closed bar
   lookback_days: 3           # history to pull on each live refresh (for VWAP/RVOL)
+  bar_settle_seconds: 300    # DO NOT LOWER without re-measuring. FMP keeps aggregating a 5m
+                             # bar for ~2-3 min AFTER its nominal close and serves the PARTIAL
+                             # meanwhile (measured 2026-08-11: the 14:50 bar still read
+                             # c=331.89 v=90,790 at close+137s, final c=331.85 v=115,049 by
+                             # close+168s; three bars settled at +168s/+192s/+214s). Acting on
+                             # the partial priced 52 of the first 87 live events off a bar that
+                             # never existed and produced phantom entry alerts a later poll
+                             # silently replaced. 300s = one full bar, so the newest usable bar
+                             # is always exactly one behind: a 09:35 signal mails ~09:40:30.
+                             # Live-only — backtests are unaffected.

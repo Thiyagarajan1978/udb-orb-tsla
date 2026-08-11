@@ -125,3 +125,5 @@ alerts:
 live:
   poll_seconds: 30
   lookback_days: 3
+  bar_settle_seconds: 300    # see config.yaml — FMP serves a PARTIAL 5m bar for ~2-3 min after
+                             # its close; this waits it out. Do not lower without re-measuring.

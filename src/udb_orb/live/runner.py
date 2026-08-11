@@ -25,17 +25,64 @@ from ..engine.params import Params
 
 _TZ = "America/New_York"
 
+# Seconds a bar must age PAST its close before FMP has finished aggregating it. Measured
+# lags were 168 / 192 / 214s (2026-08-11), so this is one full 5m bar — the newest usable
+# bar is always exactly one behind, which is both safe and easy to reason about. See
+# _closed_bars for the measurement. Override with `live.bar_settle_seconds`.
+DEFAULT_SETTLE_S = 300
+
 
 def _event_key(e) -> str:
     return f"{pd.Timestamp(e.ts).isoformat()}|{e.type}|{e.direction}"
 
 
-def _closed_bars(df: pd.DataFrame, tf_min: int, now: pd.Timestamp) -> pd.DataFrame:
-    """Keep only bars whose close time (ts + tf) has passed — drop the forming bar."""
+def _closed_bars(df: pd.DataFrame, tf_min: int, now: pd.Timestamp,
+                 settle_s: int = DEFAULT_SETTLE_S) -> pd.DataFrame:
+    """Keep only bars that are closed AND settled — drop the forming and the fresh ones.
+
+    `close_time <= now` alone is NOT enough, and getting this wrong is silent and expensive.
+    FMP keeps aggregating a 5m bar for a couple of minutes AFTER its nominal close, and
+    serves the partial in the meantime. Measured live on 2026-08-11 by polling
+    `/stable/historical-chart/5min` every 10s: the 14:50 bar (close 14:55:00) still read
+    ``c=331.89 v=90,790`` at close+137s and only reached its final ``c=331.85 v=115,049``
+    by close+168s. Three bars watched from forming settled at close **+168s, +192s and
+    +214s** — hence a one-full-bar (300s) default rather than a tight fit to the maximum.
+
+    Acting on the partial made the runner alert on prices that never existed: an audit of
+    the first 11 live sessions found **52 of 87 events priced off a non-final bar close**,
+    every one of them inside the final bar's high/low range (the partial-snapshot
+    signature), worst case 2026-08-03 primary_entry logged 314.81 against a real close of
+    318.00. It also produced phantom signals that a later poll silently replaced — three
+    `primary_entry` alerts on 2026-08-10 when only the 10:00 one was real.
+
+    So a bar is usable only once ``close_time + settle_s <= now``. The cost is alert
+    latency: at the 300s default a 09:35 signal is mailed at ~09:40:30 rather than
+    09:35:30. That is the price of the alert being TRUE, and it is a live-only concern —
+    historical bars are already final, so backtests are unaffected either way.
+    """
     if df.empty:
         return df
-    close_time = df.index + pd.Timedelta(minutes=tf_min)
+    close_time = df.index + pd.Timedelta(minutes=tf_min) + pd.Timedelta(seconds=max(settle_s, 0))
     return df[close_time <= now]
+
+
+def _superseded_by(seen: set[str], e) -> str | None:
+    """If this event replaces one already alerted for the same session, return its timestamp.
+
+    Belt-and-braces behind the settle margin. Should FMP ever revise a bar beyond
+    `bar_settle_seconds`, the engine's replay can move an event's timestamp — and because
+    the re-alert guard keys on the exact (ts, type, direction), a moved timestamp reads as
+    a brand-new signal and gets mailed as one. That is how 2026-08-10 produced three
+    "enter now" alerts for a single trade. Same session + same event type + same direction
+    is not a legitimate repeat for any event this system emits, so flag it loudly rather
+    than letting the correction masquerade as a fresh signal.
+    """
+    day = pd.Timestamp(e.ts).date()
+    for key in seen:
+        ts_s, typ, direction = key.split("|", 2)
+        if typ == e.type and direction == e.direction and pd.Timestamp(ts_s).date() == day:
+            return ts_s
+    return None
 
 
 def profile_label(cfg: dict[str, Any]) -> str:
@@ -80,6 +127,7 @@ def poll_once(cfg: dict[str, Any], db: Database, run_id: int, notifier: Notifier
     params = Params.from_config(cfg)
     enh = cfg.get("enhancements", {})
     lookback = int(cfg.get("live", {}).get("lookback_days", 3))
+    settle_s = int(cfg.get("live", {}).get("bar_settle_seconds", DEFAULT_SETTLE_S))
 
     now = pd.Timestamp.now(tz=_TZ)
     start = (now - pd.Timedelta(days=lookback)).date()
@@ -87,7 +135,7 @@ def poll_once(cfg: dict[str, Any], db: Database, run_id: int, notifier: Notifier
 
     bars = fetch_5min(symbol, start, end, cache_dir=cache_dir(cfg), use_cache=False)
     bars = rth_only(bars)
-    bars = _closed_bars(bars, tf, now)
+    bars = _closed_bars(bars, tf, now, settle_s)
     if bars.empty:
         if verbose:
             print(f"[{tag}] {now:%H:%M:%S} no closed bars yet")
@@ -112,9 +160,19 @@ def poll_once(cfg: dict[str, Any], db: Database, run_id: int, notifier: Notifier
     ids = db.append_events(run_id, symbol, new_events)
     n_alerted = n_backfill = 0
     for e, eid in zip(new_events, ids):
-        seen.add(_event_key(e))
         is_today = pd.Timestamp(e.ts).date() == today
+        prior = _superseded_by(seen, e) if is_today else None
+        seen.add(_event_key(e))
         if is_today:
+            if prior:
+                # Never let a correction go out looking like a second trade.
+                was = pd.Timestamp(prior).strftime("%H:%M")
+                e.note = (f"{e.note} " if e.note else "") + (
+                    f"*** CORRECTION: replaces the {e.type} alerted at {was} ET — "
+                    f"that one came off a bar FMP had not finished aggregating. "
+                    f"This supersedes it; do not treat it as a second signal.")
+                print(f"[{tag}] !! SUPERSEDED {e.type} {was} -> {pd.Timestamp(e.ts):%H:%M} "
+                      f"@ {e.price:.2f} (raise live.bar_settle_seconds if this recurs)")
             if notifier.notify(e):
                 alerted_ids.append(eid)
             n_alerted += 1

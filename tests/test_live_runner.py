@@ -1,6 +1,6 @@
 """Live-runner safety tests.
 
-These cover the two failure modes that are invisible until they hit production:
+These cover the failure modes that are invisible until they hit production:
 
 1. B1 and C1 share a profile NAME and a db_path. If the re-alert guard is not scoped by
    profile label, one silently suppresses the other's alerts and you simply never hear about
@@ -9,7 +9,13 @@ These cover the two failure modes that are invisible until they hit production:
    prior sessions. On the first poll under a new label the seen-set is empty -- without a
    same-day guard the runner mails every event from the last `lookback_days` days at once.
 
-Both are alert-path bugs: the numbers stay right and nothing raises, so only a test catches them.
+3. FMP keeps aggregating a 5m bar for ~2-3 minutes past its nominal close and serves the
+   PARTIAL in the meantime, so `close_time <= now` hands the engine a bar whose OHLC is
+   still moving. Measured 2026-08-11; it had priced 52 of the first 87 live events off a
+   bar that never existed and fired phantom entry alerts a later poll silently replaced.
+
+These are alert-path bugs: the numbers stay right and nothing raises, so only a test catches
+them. A backtest cannot catch #3 at all -- historical bars are already final.
 """
 from __future__ import annotations
 
@@ -25,7 +31,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from udb_orb.alerts.notifier import format_event                      # noqa: E402
 from udb_orb.db.database import Database                              # noqa: E402
-from udb_orb.live.runner import _seed_seen, profile_label             # noqa: E402
+from udb_orb.live.runner import (                                     # noqa: E402
+    DEFAULT_SETTLE_S, _closed_bars, _event_key, _seed_seen, _superseded_by, profile_label,
+)
 
 _TZ = "America/New_York"
 
@@ -152,7 +160,7 @@ def test_only_same_day_events_are_alerted(monkeypatch, db, tmp_path):
                          "volume": [1.0]}, index=[today + pd.Timedelta(hours=9, minutes=35)])
     monkeypatch.setattr(R, "fetch_5min", lambda *a, **k: bars)
     monkeypatch.setattr(R, "rth_only", lambda d: d)
-    monkeypatch.setattr(R, "_closed_bars", lambda d, tf, now: d)
+    monkeypatch.setattr(R, "_closed_bars", lambda d, tf, now, settle=0: d)
     monkeypatch.setattr(R, "run_engine", lambda *a, **k: SimpleNamespace(events=events))
     monkeypatch.setattr(R.Params, "from_config", staticmethod(lambda cfg: None))
 
@@ -168,3 +176,98 @@ def test_only_same_day_events_are_alerted(monkeypatch, db, tmp_path):
     stored = db.conn.execute("SELECT COUNT(*) c FROM events WHERE run_id=?",
                              (run_id,)).fetchone()["c"]
     assert stored == 2, "but BOTH events must still be persisted"
+
+
+# --------------------------------------------------------------------------------------
+# 3. FMP serves a PARTIAL 5m bar for minutes after its nominal close
+# --------------------------------------------------------------------------------------
+
+def _bars(*ts):
+    idx = [pd.Timestamp(t).tz_localize(_TZ) for t in ts]
+    return pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0},
+                        index=idx)
+
+
+def test_closed_bars_waits_out_the_settle_window():
+    """A bar is usable only once close_time + settle has passed, not at close_time.
+
+    This is THE fix for the 2026-08-11 partial-bar defect. Without the margin the runner
+    reads a bar FMP is still aggregating: measured, the 14:50 bar was still moving at
+    close+137s and only settled by close+168s.
+    """
+    bars = _bars("2026-08-11 09:30", "2026-08-11 09:35", "2026-08-11 09:40")
+    now = pd.Timestamp("2026-08-11 09:45:30").tz_localize(_TZ)   # 09:40 bar closed 30s ago
+
+    naive = _closed_bars(bars, 5, now, settle_s=0)
+    assert list(naive.index) == list(bars.index), "sanity: no margin admits the fresh bar"
+
+    safe = _closed_bars(bars, 5, now, settle_s=DEFAULT_SETTLE_S)
+    assert pd.Timestamp("2026-08-11 09:40").tz_localize(_TZ) not in safe.index, (
+        "the just-closed bar is still being aggregated by FMP and must be held back")
+    assert pd.Timestamp("2026-08-11 09:35").tz_localize(_TZ) in safe.index, (
+        "a bar older than the settle window is final and must be used")
+
+
+def test_settle_window_releases_the_bar_once_it_is_old_enough():
+    bars = _bars("2026-08-11 09:35", "2026-08-11 09:40")
+    close_t = pd.Timestamp("2026-08-11 09:45").tz_localize(_TZ)     # 09:40 bar's close
+    just_before = _closed_bars(bars, 5, close_t + pd.Timedelta(seconds=DEFAULT_SETTLE_S - 1),
+                               settle_s=DEFAULT_SETTLE_S)
+    just_after = _closed_bars(bars, 5, close_t + pd.Timedelta(seconds=DEFAULT_SETTLE_S),
+                              settle_s=DEFAULT_SETTLE_S)
+    assert len(just_before) == 1 and len(just_after) == 2
+
+
+def test_default_settle_clears_the_measured_worst_case():
+    """168s was the observed settle lag on 2026-08-11; the default must clear it with room."""
+    assert DEFAULT_SETTLE_S >= 200, (
+        "measured settle lag was 137-201s -- a default below ~200s reintroduces the defect")
+
+
+def test_superseded_event_is_flagged_not_mailed_as_a_new_signal():
+    """A moved timestamp is a CORRECTION, not a second trade.
+
+    On 2026-08-10 the runner mailed three `primary_entry` alerts for one trade because the
+    re-alert guard keys on the exact (ts, type, direction) and a revision moves the ts.
+    """
+    seen = {_event_key(ev("2026-08-10 09:45"))}
+    later = ev("2026-08-10 10:00")
+    assert _superseded_by(seen, later) == pd.Timestamp("2026-08-10 09:45").tz_localize(_TZ).isoformat()
+
+    # different direction, different type and different session are all legitimate
+    assert _superseded_by(seen, ev("2026-08-10 10:00", direction="S")) is None
+    assert _superseded_by(seen, ev("2026-08-10 10:00", type_="partial_exit")) is None
+    assert _superseded_by(seen, ev("2026-08-11 10:00")) is None
+
+
+def test_poll_once_marks_a_superseded_alert(db, monkeypatch):
+    """End-to-end: the replacement alert must carry a CORRECTION note."""
+    from udb_orb.live import runner as R
+
+    today = pd.Timestamp.now(tz=_TZ).normalize()
+    first = ev(today + pd.Timedelta(hours=9, minutes=45), price=329.61)
+    second = ev(today + pd.Timedelta(hours=10), price=330.16)
+
+    bars = _bars("2026-08-11 09:30")
+    monkeypatch.setattr(R, "fetch_5min", lambda *a, **k: bars)
+    monkeypatch.setattr(R, "rth_only", lambda d: d)
+    monkeypatch.setattr(R, "_closed_bars", lambda d, tf, now, settle=0: d)
+    monkeypatch.setattr(R.Params, "from_config", staticmethod(lambda cfg: None))
+
+    sent: list = []
+    notifier = SimpleNamespace(notify=lambda e: (sent.append(e), True)[1], channels=set())
+    run_id = _run(db, "B1")
+    cfg = {"symbol": "TSLA", "timeframe_minutes": 5, "data": {}, "live": {}}
+    seen: set = set()
+
+    monkeypatch.setattr(R, "run_engine", lambda *a, **k: SimpleNamespace(events=[first]))
+    R.poll_once(cfg, db, run_id, notifier, seen, verbose=False, label="B1")
+    assert "CORRECTION" not in (sent[0].note or ""), "the first signal is not a correction"
+
+    # FMP revises the bar; the engine now places the entry 15 minutes later
+    monkeypatch.setattr(R, "run_engine", lambda *a, **k: SimpleNamespace(events=[first, second]))
+    R.poll_once(cfg, db, run_id, notifier, seen, verbose=False, label="B1")
+
+    assert len(sent) == 2, "the replacement must still be delivered"
+    assert "CORRECTION" in sent[1].note and "09:45" in sent[1].note, (
+        "the replacement must say which alert it supersedes, or it reads as a second entry")
