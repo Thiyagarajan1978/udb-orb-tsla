@@ -335,7 +335,14 @@ enhancements:
   pd_level_exit:
     enabled: true
     levels: [pdO, pdH, pdL, pdC]   # which prior-day areas may trigger the exit
-    ahead_only: true               # only levels the trade is moving toward
+    ahead_only: false              # BOTH SIDES — adopted 2026-08-11 by user call, AGAINST the
+                                   # measurement. false also watches the level the trade BROKE, so
+                                   # closing back through it is an exit ("you lost the level").
+                                   # Cost, per unit 2022-01-03..2026-08-10 vs ahead_only true:
+                                   #   A1 485.6/502.0  B1 558.3/575.9  C1 556.4/573.2  D1 480.3/483.5
+                                   # B1 by year: 22 -21.2 / 23 -5.1 / 24 -4.8 / 25 -3.4 / 26 +17.0.
+                                   # 4 of 5 years worse, WR 46.2->44.2, pre-fit slice 309.9->278.8.
+                                   # Only 2026 gains — the regime-trap signature. Revert = true.
     zone: 0.05                     # tag tolerance as a fraction of the adaptive TP distance
     require_reject_candle: true    # the bar must also close against the trade direction
     max_body_frac: 0.25            # |close-open| / (high-low) must be BELOW this; 1.0 = no filter.

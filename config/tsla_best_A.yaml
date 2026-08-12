@@ -90,7 +90,9 @@ enhancements:
   pd_level_exit:            # ADOPTED 2026-08-10; added to A1 2026-08-11 after the v3.9.6 TV validation
     enabled: true           # found this file was missing the block — the TV chart runs A1 with the rule
     levels: [pdO, pdH, pdL, pdC]   # ON while forward_test.py loaded this yaml with it silently OFF.
-    ahead_only: true                # A1 is the OPTIONS default profile, so the drift mattered most here.
+    ahead_only: false               # A1 is the OPTIONS default profile, so the drift mattered most here.
+                            # BOTH SIDES, adopted 2026-08-11 by user call AGAINST the measurement:
+                            # A1 485.6 vs 502.0 per unit, worse in 4 of 5 years. Revert = true.
     zone: 0.05
     require_reject_candle: true
     max_body_frac: 0.25     # Engine A/B on A1 2022-2026: +10.6% per unit. TV v3.9.6 export reconciles

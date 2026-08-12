@@ -386,7 +386,9 @@ class OrbEngine:
     # REJECTED off it exits the remaining position at that close. Distinct from pdh_pdl_filter
     # (an entry gate) and from a plain take-profit-at-the-level (no reversal required).
     #   levels: which of pdO/pdH/pdL/pdC may trigger it   (default all four)
-    #   ahead_only: only levels the trade is moving TOWARD (default true)
+    #   ahead_only: only levels the trade is moving TOWARD (default FALSE since 2026-08-11 — see
+    #     the "both sides" note below; false also watches the level the trade broke, so LOSING a
+    #     level you were on the right side of is an exit too)
     #   zone: tag tolerance as a fraction of the adaptive TP distance (0 = must touch)
     #   require_reject_candle: the bar must also close against the trade direction
     #   in_profit_only: arm only once the bar closes in profit (otherwise the stop owns it)
@@ -403,6 +405,20 @@ class OrbEngine:
     # 2026-08-11 subset sweep showed dropping ANY single level is worse than keeping all four
     # (drop_pdH 493.8, drop_pdC 488.2, drop_pdO 487.3, drop_pdL 480.4, all < all4 498.4), and no
     # single level alone beats the baseline. See docs/BE_STOP_ANALYSIS.md.
+    #
+    # "BOTH SIDES" (ahead_only false) — ADOPTED 2026-08-11 BY USER CALL, AGAINST THE MEASUREMENT.
+    # It also treats a level BEHIND the entry as a trigger, i.e. price closing back through a level
+    # the trade had already won is a rejection. Motivation: the 08-04 and 08-11 shorts both triggered
+    # ~$0.33 below pdC and were immediately reclaimed. It does fire on those days (08-04 exits 09:50
+    # -1.12 instead of 10:05 -2.45; 08-05 11:05 -1.29 instead of 11:15 -1.91) but the full-history
+    # cost is real and was measured before adopting, per unit 2022-01-03..2026-08-10 vs ahead_only:
+    #     A1 485.6 vs 502.0   B1 558.3 vs 575.9   C1 556.4 vs 573.2   D1 480.3 vs 483.5
+    # B1 by year: 2022 -21.2 / 2023 -5.1 / 2024 -4.8 / 2025 -3.4 / 2026 +17.0 — FOUR of five years
+    # worse, win rate 46.2% -> 44.2%, and the pre-fitting-window slice (before 2025-08-11) falls
+    # 309.9 -> 278.8. Only 2026 improves, which is the §31 regime-trap signature and also the only
+    # year the motivating days came from. Widening `zone` on top of this adds NOTHING to those days
+    # (identical at 0.05/0.10/0.20) and costs a further ~$41/unit, so the zone stays at 0.05.
+    # Revert = ahead_only true in the five yamls + the Pine "Levels ahead of entry only" box.
     @property
     def _pdx_cfg(self) -> dict[str, Any]:
         return self.enh.get("pd_level_exit", {})
@@ -433,7 +449,7 @@ class OrbEngine:
         names = cfg.get("levels", ["pdO", "pdH", "pdL", "pdC"])
         tp_dist = max(self.p.adaptive_tp_min, (st.or_width or 0.0) * self.p.adaptive_tp_scale)
         tol = float(cfg.get("zone", 0.05)) * tp_dist
-        ahead_only = bool(cfg.get("ahead_only", True))
+        ahead_only = bool(cfg.get("ahead_only", False))
         for name, lvl in zip(("pdO", "pdH", "pdL", "pdC"), st.pd_levels):
             if lvl is None or name not in names:
                 continue

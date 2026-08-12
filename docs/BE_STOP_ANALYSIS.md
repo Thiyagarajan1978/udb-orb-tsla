@@ -1083,7 +1083,8 @@ body: a doji or pin that runs into the level and cannot close through it.**
 
 Wired into the engine as `pd_level_exit.max_body_frac` (default **1.0 = no filter**, so the shipped
 behaviour is unchanged). Real engine, ONE run per profile sliced by `exit_ts.year`, at `max_body_frac:
-0.25` with `levels: all 4 | ahead_only | zone 0.05 | require_reject_candle`:
+0.25` with `levels: all 4 | ahead_only | zone 0.05 | require_reject_candle` (`ahead_only` was later
+turned OFF by user call — see §32d):
 
 | profile | baseline | delta | yrs up |
 |---|---|---|---|
@@ -1162,3 +1163,72 @@ of the candle is not wrong; there is simply no exit edge at prior-day levels on 
 
 **Conclusion: `max_body_frac` is TSLA-specific.** Consistent with the standing finding that the ORB edge
 itself is TSLA-specific (SPY: no edge; 8 of 9 liquid names: no edge). Do not port it to the SPX bots.
+
+---
+
+## §32d — The "buffer" question, and `ahead_only: false` ADOPTED BY USER CALL (2026-08-11)
+
+Prompted by three losing sessions the user flagged — 2026-08-04, 08-05, 08-11 — with the request to add
+a **buffer** to the PD rule so it exits failures earlier and lifts the win rate.
+
+### The buffer cannot reach those days
+
+`pd_level_exit` only looked at levels **ahead** of the entry. Geometry of the four legs (B1, final bars):
+
+| day | leg | nearest level AHEAD | closest approach | `zone` required |
+|---|---|---|---|---|
+| 08-04 | S 09:40 @321.77 → −2.45 | pdO 311.05, **10.72 away** | short $9.75 | 2.17 = **43× shipped** |
+| 08-05 | L 09:35 @324.72 → −1.91 | pdC 327.45, 2.73 away | short $0.31 | 0.094 = 2× shipped |
+| 08-11 | S 09:35 @330.51 → −0.90 | pdO 326.76, 3.75 away | short $2.77 | 1.18 = 24× shipped |
+| 08-11 | L rev 10:00 @334.86 → −2.50 | **none — all four behind** | — | **impossible at any size** |
+
+Three of four legs are structurally out of reach, and the 08-11 reversal (74% of that day's loss) was in
+blue sky above pdH/pdC/pdO/pdL, where no prior-day rule can ever act. 08-05's near miss also fails on a
+second count: the 10:05 bar that came within $0.31 of pdC **closed up**, so there was no reject candle.
+Confirmed by running the days — `zone` 0.05 → 0.10 → 0.20 leaves all three **bit-identical at −7.76/unit**.
+
+### `zone` sweep — 0.05 is a true peak, and a wider buffer is a 2026 regime trap
+
+B1, one engine run per config split by `exit_ts.year`, `max_body_frac` held at 0.25:
+
+```
+ zone   n   PDx   WR%    net    PF     2022    2023    2024    2025    2026  pre-fit
+ 0.00 1128  114  46.3  562.86  1.35  128.32   44.28   41.70  205.34  143.22  293.56
+ 0.05 1126  138  46.2  575.93  1.36  141.34   51.92   37.74  199.74  145.19  309.85 <- shipped
+ 0.10 1124  157  46.7  561.62  1.36  139.43   39.50   27.25  192.46  162.99  286.43
+ 0.15 1123  171  46.7  557.16  1.36  128.45   28.59   30.07  200.62  169.43  274.23
+ 0.20 1121  184  46.0  513.42  1.33  108.22   24.62   27.69  184.10  168.79  235.83
+ 0.50 1115  230  44.8  454.64  1.31   94.04   11.46    6.24  176.62  166.28  169.27
+```
+
+Same shape on A1/C1/D1. Worse at 0.00, monotone decay above, and `pre-fit` (everything before the knob's
+2025-08-11 fitting window) decays monotonically too — so 0.05 is a real optimum, not a fitting artifact.
+Note the win-rate column: **0.10-0.15 does raise WR (46.2 → 46.7) while net falls $14-19** — the buffer
+delivers the requested statistic by clipping winners. And **2026 is the only year that improves, in every
+variant** — the §31 signature, and the only year the motivating days come from.
+
+### What was actually in those days: `ahead_only: false` ("both sides")
+
+08-04 shorted **$0.33 below pdC**; 08-11 shorted **$0.34 below pdC**. Both broke a prior-day close by a
+third of a dollar and were immediately reclaimed — a level *behind* the entry, invisible to `ahead_only`.
+Dropping that guard makes a reclaim of a broken level an exit too.
+
+| B1 | n | PDx | WR% | net | 2022 | 2023 | 2024 | 2025 | 2026 | pre-fit |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ahead_only (was shipped) | 1126 | 138 | 46.2 | **575.93** | 141.34 | 51.92 | 37.74 | 199.74 | 145.19 | **309.85** |
+| both sides, zone 0.05 | 1120 | 191 | 44.2 | 558.32 | 120.11 | 46.82 | 32.91 | 196.32 | 162.16 | 278.79 |
+| both sides, zone 0.20 | 1112 | 245 | 44.1 | 517.08 | 96.62 | 24.36 | 15.49 | 193.29 | 187.31 | 214.11 |
+
+All four profiles, per unit 2022-01-03..2026-08-10, both-sides @ 0.05 vs ahead-only:
+**A1 485.6 / 502.0 · B1 558.3 / 575.9 · C1 556.4 / 573.2 · D1 480.3 / 483.5.**
+
+It does fire on the motivating days — 08-04 exits 09:50 for −1.12 instead of 10:05 for −2.45, 08-05 exits
+11:05 for −1.29 instead of 11:15 for −1.91, 3-day total −7.76 → **−5.81**. 08-11 is untouched (still −3.40).
+
+**Verdict: the measurement says NO** — 4 of 5 years worse on B1, WR 46.2 → 44.2, pre-fit slice −31, and
+only 2026 gains. It buys $1.95 on three self-selected 2026 days for ~$17.6/unit across the history.
+
+**ADOPTED ANYWAY 2026-08-11 on the user's explicit call**, after the above was presented. Shipped in all
+five yamls, the engine fallback (`ahead_only` now defaults False) and **Pine v3.9.8** (new input "Levels
+AHEAD of entry only", default UNTICKED). `zone` deliberately stays **0.05** — widening it adds nothing to
+the motivating days and costs a further ~$41/unit. Revert = `ahead_only: true` + tick the Pine box.

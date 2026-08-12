@@ -94,8 +94,10 @@ enhancements:
   pd_level_exit:            # ADOPTED 2026-08-10 (user call) — same block as tsla_config_C1.yaml and the
     enabled: true           # Pine v3.9.6 default, so the chart and the live runner agree.
     levels: [pdO, pdH, pdL, pdC]
-    ahead_only: true
-    zone: 0.05
+    ahead_only: false       # BOTH SIDES, adopted 2026-08-11 by user call AGAINST the measurement:
+                            # B1 558.3 vs 575.9 per unit, WR 46.2->44.2, worse in 4 of 5 years
+                            # (only 2026 +17.0). See orb_engine.py `_pd_tag_reject`. Revert = true.
+    zone: 0.05              # stays 0.05 — widening it adds nothing to the motivating days.
     require_reject_candle: true
     max_body_frac: 0.25     # engine sweep on B1: +$2,983 over 5 years, up in 5 of 5. 1.0 = no filter
                             # loses on every profile; 0.10-0.25 is the plateau; 0.35+ breaks.

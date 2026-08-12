@@ -94,9 +94,10 @@ enhancements:
     enabled: false
     proximity_pct: 14.0
   pd_level_exit:            # ADOPTED 2026-08-10 (user call). Flatten on a bar that tags a prior-day
-    enabled: true           # level AHEAD of the trade, closes rejected off it, and has a SMALL body.
+    enabled: true           # level, closes rejected off it, and has a SMALL body.
     levels: [pdO, pdH, pdL, pdC]
-    ahead_only: true
+    ahead_only: false       # BOTH SIDES, adopted 2026-08-11 by user call AGAINST the measurement:
+                            # C1 556.4 vs 573.2 per unit, worse in 4 of 5 years. Revert = true.
     zone: 0.05
     require_reject_candle: true
     max_body_frac: 0.25     # THE knob: only a doji/pin that cannot close through the level predicts a

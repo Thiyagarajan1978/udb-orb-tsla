@@ -1,6 +1,23 @@
 //@version=6
-indicator("UDB-ORB TSLA v3.9.7 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.7", overlay=true, max_labels_count=500, max_lines_count=500)
+indicator("UDB-ORB TSLA v3.9.8 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.8", overlay=true, max_labels_count=500, max_lines_count=500)
 
+// v3.9.8 2026-08-11 — PD-LEVEL EXIT NOW WATCHES BOTH SIDES. New input "Levels AHEAD of entry only",
+//     DEFAULT UNTICKED, which drops the guard that a level must lie ahead of the entry. A level the
+//     trade already broke now triggers too, so closing back through it is an exit ("you lost the
+//     level"). Nothing else in the rule changed — small body, reject candle, ranking below stop /
+//     target / partial / runner, and it still does not arm the reversal.
+//     WHY: on 2026-08-04 and 2026-08-11 the short triggered ~$0.33 below PDC and was immediately
+//     reclaimed; ahead-only is structurally blind to that. Of the four legs across the three days
+//     the user flagged (08-04, 08-05, 08-11), three had no level ahead within reach at all and the
+//     08-11 reversal was above ALL FOUR levels, so no ahead-only buffer of any size could act.
+//     ADOPTED BY USER CALL AGAINST THE MEASUREMENT — the honest numbers, 2022-01-03..2026-08-10
+//     per unit, unticked vs ticked: A1 485.6/502.0, B1 558.3/575.9, C1 556.4/573.2, D1 480.3/483.5.
+//     B1 by year: 2022 -21.2 / 2023 -5.1 / 2024 -4.8 / 2025 -3.4 / 2026 +17.0. Win rate 46.2->44.2%.
+//     Four of five years are worse and 2026 — the only year that gains — is also the only year the
+//     motivating days came from, which is the known regime-trap signature. Tick the box to revert.
+//     The tag zone stays 0.05: widening it changes NOTHING on those three days (identical at 0.05,
+//     0.10 and 0.20) while costing a further ~$41/unit.
+//
 // v3.9.7 2026-08-11 — HALF-DAY SESSIONS NOW FLATTEN ON THEIR OWN LAST BAR. One line of session logic;
 //     no profile, entry, exit or PD-level behaviour touched. `session.islastbar_regular` was meant to
 //     cover the early close and simply does not fire on TSLA's 12:55 final bar, so the day-after-
@@ -315,10 +332,11 @@ showPDO   = input.bool(true, "PDO — prior day OPEN (orange, dashed)", group=gr
 
 // ---- PD-LEVEL TAG-AND-REJECT EXIT (v3.9.4) — EXPERIMENTAL, DEFAULT OFF ----
 grpPX = "PD-Level Exit (tag-and-reject)"
-pdxOn      = input.bool(true, "Enable PD-level tag-and-reject exit", group=grpPX, tooltip="DEFAULT ON since v3.9.6 (it was OFF in v3.9.4-v3.9.5). Measured on C1 over 2025-08-11..2026-08-10 by exporting this script twice, ticked and unticked: $17,554 vs $13,623 = +$3,932 (+29%), PF 1.76 vs 1.52, win rate 55.2% vs 50.4%, worst trade unchanged, positive in both year-cells. The 54 fires are right 70% of the time. CAVEAT: the body threshold below was fitted in-sample on that same span with no holdout. Turn this OFF to get the v3.9.3 baseline back. ON: an open position is flattened at the close of a bar that tags a prior-day level lying AHEAD of the trade, closes rejected back off it, AND has a small body (see below). Ranks BELOW the stop, the target, the partial and the runner trail — those all keep precedence, so this only ever fires on a bar nothing else claimed. It does NOT arm the reversal (only Base SL / BE Stop / BE Trail do), matching orb_engine.py.", display=display.none)
+pdxOn      = input.bool(true, "Enable PD-level tag-and-reject exit", group=grpPX, tooltip="DEFAULT ON since v3.9.6 (it was OFF in v3.9.4-v3.9.5). Measured on C1 over 2025-08-11..2026-08-10 by exporting this script twice, ticked and unticked: $17,554 vs $13,623 = +$3,932 (+29%), PF 1.76 vs 1.52, win rate 55.2% vs 50.4%, worst trade unchanged, positive in both year-cells. The 54 fires are right 70% of the time. CAVEAT: the body threshold below was fitted in-sample on that same span with no holdout. Turn this OFF to get the v3.9.3 baseline back. ON: an open position is flattened at the close of a bar that tags a prior-day level, closes rejected back off it, AND has a small body (see below). Which levels count is set by \"Levels AHEAD of entry only\" — since v3.9.8 that box is UNTICKED, so levels on both sides of the entry qualify. Ranks BELOW the stop, the target, the partial and the runner trail — those all keep precedence, so this only ever fires on a bar nothing else claimed. It does NOT arm the reversal (only Base SL / BE Stop / BE Trail do), matching orb_engine.py.", display=display.none)
 pdxMaxBody = input.float(0.25, "Max rejection-candle body (|C-O| / (H-L))", minval=0.01, maxval=1.0, step=0.05, group=grpPX, tooltip="THE KNOB THAT MATTERS, and it runs OPPOSITE to intuition. A big decisive candle closing back off the level is worthless — it is a trend bar that happens to touch a line, and price continues. What predicts a real rejection is a SMALL body: a doji or pin that runs into the level and cannot close through it. 5-year deltas: no filter (1.0) = -$3,796 to -$5,466 on every profile; 0.25 = +$1,248 A1 / +$2,983 B1 / +$3,487 C1 / +$755 D1. The 0.10-0.25 band is a flat plateau; 0.35 is +$207 and 0.40-0.50 are negative. A full D1 sweep (2022-2026, per unit, baseline 450.5) put 0.25 at the TOP of that plateau — 0.10 +4.9% / 0.15 +7.2% / 0.20 +7.0% / 0.25 +7.8% / 0.30 +0.6% — so 0.25 is right for all four profiles and the earlier note that D1 preferred 0.15 is withdrawn. D1 is simply the weakest beneficiary (+7.8% vs C1 +25.0 / B1 +21.1 / A1 +10.6).", display=display.none)
 pdxZone    = input.float(0.05, "Tag zone (x today's TP distance)", minval=0.0, maxval=0.50, step=0.01, group=grpPX, tooltip="How close the bar's extreme must come to the level to count as a tag, as a fraction of the adaptive TP distance shown in the stats table. 0.05 of a $3.74 TP distance = about 19 cents.", display=display.none)
 pdxLevels  = input.string("All four (PDO/PDH/PDL/PDC)", "Which levels may trigger it", options=["All four (PDO/PDH/PDL/PDC)", "PDH + PDL only", "PDC only"], group=grpPX, tooltip="All four is the validated default. PDC-only and PDH/PDL-only were both swept WITHOUT the body filter and lost on every profile; they have not been re-swept with it.", display=display.none)
+pdxAhead   = input.bool(false, "Levels AHEAD of entry only", group=grpPX, tooltip="UNTICKED IS THE DEFAULT SINCE v3.9.8 (\"both sides\"), adopted by user call AGAINST the measurement — tick it to get the v3.9.4-v3.9.7 behaviour back. TICKED: only a level the trade is moving TOWARD can trigger the exit (a rejection at the next obstacle). UNTICKED: a level BEHIND the entry counts too, so closing back through a level the trade had already won is also an exit (\"you lost the level\"). Motivation: on 2026-08-04 and 2026-08-11 the short triggered about 33 cents below PDC and was immediately reclaimed, and ahead-only cannot see that. It does fire on those days (08-04 exits 09:50 for -1.12 instead of 10:05 for -2.45). COST, measured over 2022-01-03..2026-08-10 per unit, unticked vs ticked: A1 485.6 vs 502.0, B1 558.3 vs 575.9, C1 556.4 vs 573.2, D1 480.3 vs 483.5. B1 by year: 2022 -21.2 / 2023 -5.1 / 2024 -4.8 / 2025 -3.4 / 2026 +17.0 — four of five years worse, win rate 46.2% to 44.2%. Only 2026 improves, and 2026 is also the only year the motivating days came from.", display=display.none)
 
 maxCapSL = maxCapOverride > 0 ? maxCapOverride : (isC1 ? 6.0 : 5.0)
 
@@ -622,7 +640,8 @@ if active and not na(stop) and bar_index > entryBar
             if exitOnClose ? close >= lvl : high >= lvl
                 runnerHit := true
                 runnerPx := exitOnClose ? close : lvl
-    // Step 3b: PD-LEVEL TAG-AND-REJECT (v3.9.4, default OFF) — mirrors orb_engine.py `_pd_tag_reject`.
+    // Step 3b: PD-LEVEL TAG-AND-REJECT (v3.9.4; default ON since v3.9.6, both-sides since v3.9.8)
+    // — mirrors orb_engine.py `_pd_tag_reject`.
     // Evaluated here but ranked LAST in the elif chain below, so the stop, the target, the partial and
     // the runner all keep precedence and this can only claim a bar none of them wanted.
     bool pdxHit = false
@@ -634,13 +653,15 @@ if active and not na(stop) and bar_index > entryBar
             usePDO = pdxLevels == "All four (PDO/PDH/PDL/PDC)"
             usePDC = pdxLevels != "PDH + PDL only"
             usePDHL = pdxLevels != "PDC only"
-            if usePDO and not na(pdO) and (pdO - entry) * tdir > 0
+            // v3.9.8: `pdxAhead` off (the new default) drops the "level must lie ahead" guard, so a
+            // level BEHIND the entry — one the trade had already won — also triggers on a reclaim.
+            if usePDO and not na(pdO) and (not pdxAhead or (pdO - entry) * tdir > 0)
                 pdxHit := pdxHit or (tdir == 1 ? (high >= pdO - tolPD and close < pdO) : (low <= pdO + tolPD and close > pdO))
-            if usePDHL and not na(pdH) and (pdH - entry) * tdir > 0
+            if usePDHL and not na(pdH) and (not pdxAhead or (pdH - entry) * tdir > 0)
                 pdxHit := pdxHit or (tdir == 1 ? (high >= pdH - tolPD and close < pdH) : (low <= pdH + tolPD and close > pdH))
-            if usePDHL and not na(pdL) and (pdL - entry) * tdir > 0
+            if usePDHL and not na(pdL) and (not pdxAhead or (pdL - entry) * tdir > 0)
                 pdxHit := pdxHit or (tdir == 1 ? (high >= pdL - tolPD and close < pdL) : (low <= pdL + tolPD and close > pdL))
-            if usePDC and not na(pdC) and (pdC - entry) * tdir > 0
+            if usePDC and not na(pdC) and (not pdxAhead or (pdC - entry) * tdir > 0)
                 pdxHit := pdxHit or (tdir == 1 ? (high >= pdC - tolPD and close < pdC) : (low <= pdC + tolPD and close > pdC))
     // Step 4: hit checks — STOP FIRST (matches the engine), then target, then partial, then runner
     // resting-stop realism: a BE-retrace that fired THIS bar cannot protect it — fill against the
