@@ -1232,3 +1232,55 @@ only 2026 gains. It buys $1.95 on three self-selected 2026 days for ~$17.6/unit 
 five yamls, the engine fallback (`ahead_only` now defaults False) and **Pine v3.9.8** (new input "Levels
 AHEAD of entry only", default UNTICKED). `zone` deliberately stays **0.05** — widening it adds nothing to
 the motivating days and costs a further ~$41/unit. Revert = `ahead_only: true` + tick the Pine box.
+
+### TV A/B on 16 years — the measurement CONFIRMED, ~2.5× worse (2026-08-12)
+
+The user exported the v3.9.8 strategy twice, 45 seconds apart, changing **only** the new checkbox
+(`UDB-ORB_v3.9.8_S_NASDAQ_TSLA_2026-08-11_1f33f.csv` = UNTICKED/both-sides, 1202 `PD Level` exits;
+`…_e7521.csv` = TICKED/ahead-only, 963). NASDAQ:TSLA 5m, **2010-06-29 → 2026-08-11, 4,522 trades**,
+zero slippage, 20-share base. Harness `scratchpad/tv_pair.py`.
+
+```
+ year   both-sides    ahead-only        diff        year   both-sides    ahead-only        diff
+ 2020       542.67        372.87     +169.80        2024      1147.75       1336.16     -188.41
+ 2021      5076.23       5133.27      -57.04        2025      3374.99       3494.29     -119.30
+ 2022      2862.53       3310.83     -448.30        2026      3758.56       3523.24     +235.32
+ 2023      1496.27       1874.41     -378.14       TOTAL     18196.20      18983.67     -787.47
+```
+
+**2010-2019 is unreadable and must be excluded** — TSLA traded $1.18-$24 split-adjusted there against a
+$2.14 minimum TP and a $0.25 BE trail, so the dollar params have no meaning; those ten years total ±$60
+of noise. (General rule for any long TV export on this system: the usable window starts ~2020.)
+
+On the real window it loses **5 of 6 years** and wins only 2026 — the §31 signature, independently
+reproduced. 2022-2026 = **−$44.9/unit** vs the Python sandbox's −$17.6/unit: same sign, same per-year
+shape, ~2.5× the magnitude, and TV charges no slippage so it is the flattering estimate.
+
+**Of the three motivating days the change moves exactly one.** 08-04 −23.20 (PD Level 09:50) vs −49.00
+(BE Stop 10:05) — matches Python's −1.16 vs −2.45/unit to the cent. **08-05 and 08-11 are bit-identical
+in both exports.** 08-11 was predicted untouched; **08-05 was not** — Python tags pdO (behind by $0.72)
+on the 11:05 retrace and exits −1.29, TV holds to the 11:15 BE Stop. One leg of four, inside the known
+~91% PD concordance band, but it is the only open Python/TV divergence on this feature.
+
+So the feature bought one of three days at a measured cost of $787 across the history.
+**Recommend revert** (`ahead_only: true` + tick the Pine box); left in place pending the user's call.
+
+### Half-day flatten still leaks (Pine-only, found in the same export)
+
+Both exports carry two `EOD flat` rows and neither is what v3.9.7 intended:
+
+```
+ #2190  Entry short 2018-11-23 10:10 @22.00  ->  Exit 2018-11-26 15:50  EOD flat  -40.40  (130 bars)
+ #585   Entry short 2012-11-23 09:40 @2.13   ->  Exit 2012-11-26 15:50  EOD flat   -0.40  (118 bars)
+```
+
+Both entries are on the **Friday after Thanksgiving, a 13:00 half day**. v3.9.7 was supposed to flatten
+on that session's own last bar (~12:55); instead the position carried 2.5 days and the flatten fired on
+Monday's regular 15:50 — the fix catches the carry a session late rather than preventing it. Two
+occurrences in 16 years, and Pine-only (Python handles half days via `last_ts_by_date`), so low priority,
+but **open, not closed**.
+
+Clean in the same export: **0 entries after 12:00** (17-18 exactly at 12:00, matching the Python inclusive
+boundary), and both `PD Level` and `REV PD Level` present. The export does not record the profile; the
+per-year shape (strong 2022, weak 2024, strong 2025/26) says **B1 or C1** and rules out A1 and D1 — it
+does not affect the verdict, since the A/B is same-profile against itself.
