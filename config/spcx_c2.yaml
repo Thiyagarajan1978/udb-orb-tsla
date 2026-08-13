@@ -1,0 +1,161 @@
+# SPCX / C2 — the OR-WIDTH take-profit profile on SpaceX. RESEARCH COMPARISON, NOT A RECOMMENDATION.
+# Sibling of `spcx_orb.yaml` (which is B1 and is the adopted one). Base = `tsla_config_C.yaml`,
+# with the SAME gate treatment applied: the TSLA-fitted filters off, the $8 OR cap kept.
+#
+# ⚠ READ THIS BEFORE SWITCHING TO IT. Measured 2026-06-15..08-12, 41 sessions, $10k notional:
+#     C2  52 trades  WR 59.6%  PF 2.24  +$64.91/sh  +45.9%   worst -4.66   ex-top-3 +32.05
+#     B1  52 trades  WR 55.8%  PF 2.33  +$69.73/sh  +49.3%   worst -4.66   ex-top-3 +32.84
+#   All five profiles take the IDENTICAL entries here (52/52 shared), so they can be compared
+#   PAIRED — and paired, NOTHING SEPARATES THEM. B1 - C2 = +4.83/sh at p=0.727, and the sign FLIPS
+#   to -2.40 if you drop one day (2026-06-15). Across all ten profile pairs the best p is 0.166.
+#   So do not read the Strategy Tester difference between profiles on an SPCX chart as a result.
+#   B1 stays the adopted profile for operational consistency with TSLA, not because it won.
+#
+# What C2 is: TP = the OPEN BAR's High - Low exactly (adaptive_tp_scale 1.0, adaptive_tp_min 0.0 =
+# no $2.14 floor), and use_partial_exit FALSE so the whole position exits together.
+# NOTE `runner_trail.enabled: true` below is INERT — orb_engine.py:1244 gates the trail on
+# `use_partial_exit and part1_closed`, and C2 has no partial. Pine says the same ("C2 = OR-WIDTH
+# target, FULL exit (no partial/runner)"). Left as-is to stay a pure symbol-swap of the TSLA C2.
+#
+# The one C2-specific finding that IS durable on SPCX: the 2026-07-23 OR-width change beats the
+# fixed-$2 TP it replaced, +45.9% vs +29.2%, the same direction as TSLA. So the v3.5 change ports.
+# Mechanism vs B1 (identical entries, pure exit management): C2 hits its TP on 24 of 52 trades
+# (+$74.26). It BEATS B1 on 15 trades (+19.40), every one a VWAP-cross giveback it banked ahead of;
+# it LOSES on 9 (-24.22), of which three capped EOD runners are 71% (06-15 -7.23, 08-07 -5.58,
+# 08-12 -4.45). Median win +0.86 vs median loss -1.80 — it trades a fatter tail for frequent small
+# gains. Adding B1's $2.14 floor back would make it +48.2%; adding a 25% partial makes it +44.4%.
+#
+# TSLA C2 header, kept for reference: TP = OPEN BAR High - Low instead of the old fixed $2. Per unit,
+# close-stop, OR-width vs fixed-$2 -> 2022 +29.7 vs +42.9 | 2023 +82.3 vs +88.8 | 2024 +36.6 vs
+# -23.1 | 2025 +38.3 vs -0.3 | 2026YTD(07-23) +111.7 vs +49.0 => 5yr +298.6 vs +157.3 (~2x),
+# POSITIVE EVERY YEAR. To reproduce the OLD fixed-$2 C2: tp_mode: Fixed. Pine: Profile 'C2' (v3.5+),
+# and on an SPCX chart set "Symbol preset" = Non-TSLA to match the gate treatment below.
+# NOT wired for live: `TRADED_PROFILES` in cli.py stays TSLA-only.
+symbol: SPCX
+timeframe_minutes: 5
+timezone: America/New_York
+execution:
+  stop_fill_mode: close   # ADOPTED 2026-07-15: CLOSE-triggered stop (fires only when the bar CLOSES beyond the level, fills at the close; TP stays wick-favorable). C2 (no partial) drives the OPTIONS webhook - a clean single open->close. Same close-stop model adopted across all v3 profiles (walk-forward: +42-46% net, DD -40%, 2024 flips green over 2022-2026).
+  exit_on_close: true
+  protective_stop: false
+  daily_loss_limit: 0.0
+session:
+  rth_start: 09:30
+  rth_end: '16:00'
+  market_open: 09:30
+  eod_exit: '15:50'
+profile:
+  name: Adaptive TP + Reversal (Best Combined)
+  # The profile NAME is shared across the yamls, so the label is what scopes a run in the DB and
+  # (if it were ever traded live) the alert seen-set. spcx_orb.yaml uses B1 on the same db_path.
+  label: C2
+  trade_qty: 1.0
+  slippage_per_unit: 0.1
+  use_breakout_buffer: true
+  buffer_pct_or: 10.0
+  sl_mode: Candle High/Low + Max Cap
+  sl_offset: 0.0
+  fixed_sl: 5.0
+  tp_mode: Adaptive        # TP dist = max(adaptive_tp_min, OR_width x adaptive_tp_scale)
+  adaptive_tp_scale: 1.0   # 1.0 + min 0.0 => TP = open bar High - Low, exactly
+  adaptive_tp_min: 0.0
+  fixed_tp: 2.0            # unused since 2026-07-23 (set tp_mode: Fixed to get the old C2)
+  use_be_retrace: true
+  be_retrace_trigger: 0.55
+  be_trail_amount: 0.25
+  be_retrace_use_close: false
+  use_partial_exit: false
+  partial_qty_pct: 25.0
+  partial_activation: 1.0
+  use_reversal: true
+  reversal_qty_mult: 2.0
+  reversal_target: 5.0
+  apply_be_to_reversal: true
+  reversal_risk_cap: 6.0
+  reversal_risk_mode: scale
+  min_or_width_enabled: false
+  min_or_width: 2.5
+  max_or_width_enabled: true
+  max_or_width: 8.0
+  use_vwap_filter: false
+  trade_side_mode: Both
+enhancements:
+  rvol_filter:
+    enabled: false
+    lookback_bars: 20
+    min_rvol: 1.2
+  volatility_regime:
+    # DISABLED for SPCX, same as spcx_orb.yaml. The 4.92% cap was fitted on TSLA 2024-25 and is
+    # justified by a TSLA-specific mechanism (a close-based BE stop costs more when a high-vol bar
+    # closes further past it). It skips 10% of TSLA days but 48% of SPCX's evaluable days.
+    # This is C2's ONLY TSLA-fitted gate — it never carried the noon cutoff or the PD exit, which
+    # is the whole reason as-shipped C2 (+41.2%) looked so far ahead of as-shipped B1 (+22.4%)
+    # before the gates were equalised. Isolated on B1/D1 the three are worth, in Delta ret%:
+    # noon cutoff +18.0 / vol cap +10.2 to +12.9 / PD exit +3.8 to +4.3 (stable in both directions).
+    enabled: false
+    lookback: 20
+    max_rvol_pct: 4.92
+  or_width_regime:
+    enabled: false
+    skip_below: 0.0
+    skip_above: 0.0
+  time_window:            # Already off in the TSLA C2 and it STAYS off — C2 never carried the
+    enabled: false        # 12:00 cutoff, which is exactly why as-shipped C2 beat the others here.
+    start: 09:35          # Removing it is the single biggest gate effect on SPCX (+18.0 ret% on
+    end: '14:00'          # B1 and D1 alike). The 14:00 end is inherited and unused while disabled.
+  reversal_capture:
+    enabled: true
+    trigger_on_be_stop: true
+    trail_to_eod: true
+    target_or_mult: 0.0
+    reenter_after_whipsaw: false
+  runner_trail:           # ⚠ INERT, not a live setting. orb_engine.py:1244 arms the trail only
+    enabled: true         # under `use_partial_exit and part1_closed`, and C2 has no partial, so
+    or_mult: 0.75         # this never fires. Kept true so this file stays a pure symbol-swap of
+                          # tsla_config_C.yaml; changing it here would be a silent divergence.
+  resume_reentry:
+    enabled: false
+    trigger: buffered
+    risk_cap: 0.0
+    disarm_other: true
+  confirm_two_closes:
+    enabled: false
+  confirm_breakout:
+    enabled: false
+    require_trend_candle: true
+    hold_bars: 1
+  pdh_pdl_filter:
+    enabled: false
+    proximity_pct: 14.0
+  pd_level_exit:          # Stated EXPLICITLY rather than left absent. The TSLA C2 has no block at
+    enabled: false        # all and orb_engine.py:397-403 defaults it OFF, so behaviour is the same
+                          # — but "absent" and "deliberately off for SPCX" read identically in a
+                          # diff, and this file exists to be compared against spcx_orb.yaml, which
+                          # disables it on purpose. Measured on SPCX: OFF is worth +3.8 to +4.3
+                          # ret% (the smallest of the three gates, but positive on every profile).
+data:
+  provider: fmp
+  cache_dir: data/cache
+  db_path: data/udb_orb.db
+alerts:
+  enabled: true
+  channels:
+  - email
+  - webhook
+  events:
+  - primary_entry
+  - reversal_entry
+  - be_retrace_fired
+  - tp_full
+  - partial_exit
+  - be_trail_exit
+  - be_stop_exit
+  - vwap_cross_exit
+  - base_sl_exit
+  - eod_exit
+live:
+  poll_seconds: 30
+  lookback_days: 3
+  bar_settle_seconds: 300    # parity with spcx_orb.yaml / config.yaml — FMP serves a PARTIAL 5m bar
+                             # for ~2-3 min past its close. Inert while this profile is not traded
+                             # live, but a config that could be run live must not omit it.
