@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.9.9 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.9 S", overlay=true,
+strategy("UDB-ORB TSLA v3.9.10 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.10 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -14,7 +14,7 @@ strategy("UDB-ORB TSLA v3.9.9 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle=
      max_labels_count        = 500,
      max_lines_count         = 500)
 
-// v3.9.9 2026-08-12 — RUNS AND REPORTS ON ANY SYMBOL. No strategy logic changed; the TSLA Strategy
+// v3.9.10 2026-08-12 — RUNS AND REPORTS ON ANY SYMBOL. No strategy logic changed; the TSLA Strategy
 //     Tester result is bit-identical to v3.9.8. New group "Symbol Portability (non-TSLA charts)"
 //     with a checkbox "Auto-scale $ inputs to this symbol's price" (DEFAULT OFF = production) and a
 //     reference price (default 330, what the dollar defaults were fitted at).
@@ -484,7 +484,7 @@ f_pdLevels() =>
     [open[1], high[1], low[1], close[1]]
 [pdO, pdH, pdL, pdC] = request.security(syminfo.tickerid, "D", f_pdLevels(), lookahead=barmerge.lookahead_on)
 
-// ==================== v3.9.9 SYMBOL PRICE SCALE (portability only, OFF by default) ====================
+// ==================== v3.9.10 SYMBOL PRICE SCALE (portability only, OFF by default) ====================
 // Converts the eight DOLLAR-denominated inputs into this symbol's price scale. Units conversion and
 // nothing else -- no rule, no ordering, and no ratio-valued input (buffer % of OR, BE trigger % of
 // OR, runner x OR, adaptive TP multiplier, partial %, PD body/zone, rvol %) is touched, because
@@ -947,18 +947,37 @@ if showLevels and isNewDay
     tgLBK := na
     tgSBK := na
 
-// open today's four segments on the OR bar, once the range and the skip decision are both known
-if showLevels and isORbar and not daySkipped and not na(orHigh)
-    lnORH := line.new(bar_index, orHigh,   bar_index, orHigh,   color=cORH, width=2, style=line.style_solid)
-    lnORL := line.new(bar_index, orLow,    bar_index, orLow,    color=cORH, width=2, style=line.style_solid)
-    lnLBK := line.new(bar_index, longBrk,  bar_index, longBrk,  color=cLBK, width=1, style=line.style_dashed)
-    lnSBK := line.new(bar_index, shortBrk, bar_index, shortBrk, color=cSBK, width=1, style=line.style_dashed)
+// open today's four segments on the OR bar, once the range and the skip decision are both known.
+//
+// v3.9.10: this NO LONGER REQUIRES A TRADABLE DAY. The guard used to read `and not daySkipped`, so a
+// session the day gates rejected drew nothing whatsoever -- and because the $8 Max OR Width gate rejects
+// EVERY session on a symbol priced unlike TSLA, the chart came up completely blank with no indication of
+// why. "The gate ate the whole history" and "there were no signals" looked identical. A skipped day now
+// still draws its range, DIMMED and DOTTED, and the OR-High tag names the gate that rejected it and the
+// number that failed -- so the chart answers the question instead of posing it.
+//
+// DRAWING ONLY. `daySkipped` still feeds `canTrade` exactly as before and no order path is touched; a
+// skipped day has no entries because the LOGIC skipped it, which is the honest thing to show.
+skipLine = daySkipped
+dORH = skipLine ? color.new(color.aqua, 55) : cORH
+dLBK = skipLine ? color.new(color.lime, 55) : cLBK
+dSBK = skipLine ? color.new(color.red,  55) : cSBK
+stOR = skipLine ? line.style_dotted : line.style_solid
+stBK = skipLine ? line.style_dotted : line.style_dashed
+if showLevels and isORbar and not na(orHigh)
+    lnORH := line.new(bar_index, orHigh,   bar_index, orHigh,   color=dORH, width=2, style=stOR)
+    lnORL := line.new(bar_index, orLow,    bar_index, orLow,    color=dORH, width=2, style=stOR)
+    lnLBK := line.new(bar_index, longBrk,  bar_index, longBrk,  color=dLBK, width=1, style=stBK)
+    lnSBK := line.new(bar_index, shortBrk, bar_index, shortBrk, color=dSBK, width=1, style=stBK)
     if showLvlLbl
+        // On a skipped day the OR-High tag carries the REASON. Both gates can fire at once, so all three
+        // cases are spelled out; rvol20 is guaranteed non-na inside skipVol, so it never prints NaN.
+        skipWhy = not daySkipped ? "" : skipWide and skipVol ? "\nSKIPPED: OR $" + str.tostring(orWidth, "#.##") + " > max $" + str.tostring(maxORWidthS, "#.##") + " AND vol " + str.tostring(rvol20, "#.##") + "% > " + str.tostring(maxRvolPct, "#.##") + "%" : skipWide ? "\nSKIPPED: OR $" + str.tostring(orWidth, "#.##") + " > max $" + str.tostring(maxORWidthS, "#.##") : "\nSKIPPED: vol " + str.tostring(rvol20, "#.##") + "% > max " + str.tostring(maxRvolPct, "#.##") + "%"
         // the two trigger tags sit OUTSIDE the range and the two OR tags INSIDE it, so the pairs never collide
-        tgORH := label.new(bar_index, orHigh,   "OR H " + str.tostring(orHigh, format.mintick),   style=label.style_label_up,   color=cORH, textcolor=color.black, size=size.tiny)
-        tgORL := label.new(bar_index, orLow,    "OR L " + str.tostring(orLow, format.mintick),    style=label.style_label_down, color=cORH, textcolor=color.black, size=size.tiny)
-        tgLBK := label.new(bar_index, longBrk,  "LONG > " + str.tostring(longBrk, format.mintick), style=label.style_label_down, color=cLBK, textcolor=color.black, size=size.tiny)
-        tgSBK := label.new(bar_index, shortBrk, "SHORT < " + str.tostring(shortBrk, format.mintick), style=label.style_label_up, color=cSBK, textcolor=color.white, size=size.tiny)
+        tgORH := label.new(bar_index, orHigh,   "OR H " + str.tostring(orHigh, format.mintick) + skipWhy,   style=label.style_label_up,   color=dORH, textcolor=color.black, size=size.tiny)
+        tgORL := label.new(bar_index, orLow,    "OR L " + str.tostring(orLow, format.mintick),    style=label.style_label_down, color=dORH, textcolor=color.black, size=size.tiny)
+        tgLBK := label.new(bar_index, longBrk,  "LONG > " + str.tostring(longBrk, format.mintick), style=label.style_label_down, color=dLBK, textcolor=color.black, size=size.tiny)
+        tgSBK := label.new(bar_index, shortBrk, "SHORT < " + str.tostring(shortBrk, format.mintick), style=label.style_label_up, color=dSBK, textcolor=color.white, size=size.tiny)
 
 // extend today's segments (and drag their tags) to the newest bar of THIS session only
 if showLevels and session.ismarket
@@ -1061,7 +1080,7 @@ if showPD
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 6, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.9.9", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.9.10", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSLS, "#.##"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
