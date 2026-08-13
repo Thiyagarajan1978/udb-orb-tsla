@@ -31,3 +31,6 @@ Thumbs.db
 
 # local trade CSVs + forward-test ledger (data, not code)
 exports/
+
+# live runner per-day console logs
+logs/

@@ -232,12 +232,54 @@ def test_superseded_event_is_flagged_not_mailed_as_a_new_signal():
     """
     seen = {_event_key(ev("2026-08-10 09:45"))}
     later = ev("2026-08-10 10:00")
-    assert _superseded_by(seen, later) == pd.Timestamp("2026-08-10 09:45").tz_localize(_TZ).isoformat()
+    assert _superseded_by(seen, later) == (
+        pd.Timestamp("2026-08-10 09:45").tz_localize(_TZ).isoformat(), 100.0)
 
     # different direction, different type and different session are all legitimate
     assert _superseded_by(seen, ev("2026-08-10 10:00", direction="S")) is None
     assert _superseded_by(seen, ev("2026-08-10 10:00", type_="partial_exit")) is None
     assert _superseded_by(seen, ev("2026-08-11 10:00")) is None
+
+
+def test_a_price_only_revision_is_a_new_key_and_a_correction():
+    """The 2026-08-12 defect: a revision that does NOT move the timestamp.
+
+    `_event_key` keyed on (ts, type, direction) only, so when FMP revised the 09:40 close from
+    329.4185 to a final 329.38 the re-priced entry read as already-seen and was dropped. Both
+    live profiles kept — and had already mailed — an entry price that never existed. Price is
+    part of the key now, so the same bar at a different price is a CORRECTION like any other.
+    """
+    stale = ev("2026-08-12 09:40", price=329.4185)
+    final = ev("2026-08-12 09:40", price=329.38)
+    assert _event_key(stale) != _event_key(final), "a re-priced event must not read as seen"
+
+    seen = {_event_key(stale)}
+    assert _event_key(final) not in seen
+    prior = _superseded_by(seen, final)
+    assert prior is not None, "the re-priced event must be flagged as superseding the stale one"
+    was_ts, was_px = prior
+    assert was_px == 329.4185
+    # same bar -- the correction is price-only, and the message must not claim the bar moved
+    assert pd.Timestamp(was_ts) == pd.Timestamp(final.ts)
+
+    # an unchanged event is still the same event: no duplicate alert
+    assert _event_key(stale) in seen
+
+
+def test_seed_seen_key_format_matches_event_key(db):
+    """`_seed_seen` used to build the key inline, so it silently drifts when the format changes.
+
+    If these two disagree the runner re-appends (and re-alerts) its whole replay window on every
+    restart, which is invariant #2/#3 breaking in the least visible way possible.
+    """
+    from udb_orb.live.runner import _seed_seen
+
+    run_id = _run(db, "B1")
+    e = ev("2026-08-12 09:40", price=329.4185)
+    db.append_events(run_id, "TSLA", [e])
+    seeded = _seed_seen(db, "TSLA", pd.Timestamp(e.ts).date(), "B1", lookback_days=3)
+    assert _event_key(e) in seeded, (
+        f"_seed_seen built {seeded} but _event_key builds {_event_key(e)!r}")
 
 
 def test_poll_once_marks_a_superseded_alert(db, monkeypatch):

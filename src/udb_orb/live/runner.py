@@ -32,8 +32,31 @@ _TZ = "America/New_York"
 DEFAULT_SETTLE_S = 300
 
 
+def _make_key(ts, typ: str, direction: str, price) -> str:
+    """The re-alert identity of an event. **PRICE IS PART OF IT — see below.**
+
+    It originally keyed on (ts, type, direction) only, and that silently dropped a whole class
+    of correction. FMP can revise a bar in two ways: the revision may move which bar an event
+    fires on (the timestamp changes) or it may only change the price on the same bar. The first
+    produced a new key and routed through `_superseded_by`; the second read as already-seen and
+    was thrown away, so the wrong price stayed in the DB forever and no correction was mailed.
+
+    2026-08-12, the first full session on the 300s settle margin, hit exactly that: the 09:40 bar
+    was consumed at close 329.4185 against a final 329.38, and because the entry stayed on the
+    09:40 bar BOTH profiles recorded — and alerted — an entry price that never existed. The two
+    revisions that did move a timestamp (B1's partial 10:35 -> 10:50 and the VWAP exit
+    12:25 -> 12:00) were caught and corrected properly, which is what made the gap obvious.
+
+    Including the price means any revision at all is a new key, so every correction takes the
+    same visible path. The cost is that a jittering price could mail more than one correction;
+    that is the right way to fail for an alerts-only system whose output is a price to act on.
+    """
+    px = "" if price is None else f"{float(price):.4f}"
+    return f"{pd.Timestamp(ts).isoformat()}|{typ}|{direction}|{px}"
+
+
 def _event_key(e) -> str:
-    return f"{pd.Timestamp(e.ts).isoformat()}|{e.type}|{e.direction}"
+    return _make_key(e.ts, e.type, e.direction, getattr(e, "price", None))
 
 
 def _closed_bars(df: pd.DataFrame, tf_min: int, now: pd.Timestamp,
@@ -74,8 +97,8 @@ def _closed_bars(df: pd.DataFrame, tf_min: int, now: pd.Timestamp,
     return df[close_time <= now]
 
 
-def _superseded_by(seen: set[str], e) -> str | None:
-    """If this event replaces one already alerted for the same session, return its timestamp.
+def _superseded_by(seen: set[str], e) -> tuple[str, float | None] | None:
+    """If this event replaces one already alerted for the same session, return its (ts, price).
 
     Belt-and-braces behind the settle margin. Should FMP ever revise a bar beyond
     `bar_settle_seconds`, the engine's replay can move an event's timestamp — and because
@@ -86,11 +109,15 @@ def _superseded_by(seen: set[str], e) -> str | None:
     than letting the correction masquerade as a fresh signal.
     """
     day = pd.Timestamp(e.ts).date()
+    hits = []
     for key in seen:
-        ts_s, typ, direction = key.split("|", 2)
+        ts_s, typ, direction, px_s = key.split("|", 3)
         if typ == e.type and direction == e.direction and pd.Timestamp(ts_s).date() == day:
-            return ts_s
-    return None
+            hits.append((ts_s, float(px_s) if px_s else None))
+    if not hits:
+        return None
+    # `seen` is a set, so pick deterministically rather than taking whatever comes out first.
+    return max(hits, key=lambda h: pd.Timestamp(h[0]))
 
 
 def profile_label(cfg: dict[str, Any]) -> str:
@@ -118,11 +145,13 @@ def _seed_seen(db: Database, symbol: str, day: date, label: str,
     """
     seen: set[str] = set()
     first = day - timedelta(days=max(lookback_days, 0))
-    q = ("SELECT e.ts, e.type, e.direction FROM events e "
+    q = ("SELECT e.ts, e.type, e.direction, e.price FROM events e "
          "JOIN runs r ON r.id = e.run_id "
          "WHERE e.symbol=? AND r.profile=? AND e.ts >= ?")
     for row in db.conn.execute(q, (symbol, label, first.isoformat())).fetchall():
-        seen.add(f"{pd.Timestamp(row['ts']).isoformat()}|{row['type']}|{row['direction']}")
+        # Build via _make_key, never inline — this used to duplicate the key format and so
+        # would have silently stopped matching the moment price joined the key.
+        seen.add(_make_key(row["ts"], row["type"], row["direction"], row["price"]))
     return seen
 
 
@@ -174,13 +203,23 @@ def poll_once(cfg: dict[str, Any], db: Database, run_id: int, notifier: Notifier
         if is_today:
             if prior:
                 # Never let a correction go out looking like a second trade.
-                was = pd.Timestamp(prior).strftime("%H:%M")
+                was_ts, was_px = prior
+                was = pd.Timestamp(was_ts).strftime("%H:%M")
+                now_s = pd.Timestamp(e.ts).strftime("%H:%M")
+                old_px = "?" if was_px is None else f"{was_px:.2f}"
+                moved = pd.Timestamp(was_ts) != pd.Timestamp(e.ts)
+                what = (f"moves it to {now_s} ET" if moved
+                        else f"keeps the same {now_s} ET bar and only corrects the price")
                 e.note = (f"{e.note} " if e.note else "") + (
-                    f"*** CORRECTION: replaces the {e.type} alerted at {was} ET — "
-                    f"that one came off a bar FMP had not finished aggregating. "
-                    f"This supersedes it; do not treat it as a second signal.")
-                print(f"[{tag}] !! SUPERSEDED {e.type} {was} -> {pd.Timestamp(e.ts):%H:%M} "
-                      f"@ {e.price:.2f} (raise live.bar_settle_seconds if this recurs)")
+                    # ASCII only: this note reaches the per-day console log, and the Windows
+                    # console codepage turns an em-dash into a literal '?'.
+                    f"*** CORRECTION: replaces the {e.type} alerted at {was} ET @ {old_px} - "
+                    f"that one came off a bar FMP had not finished aggregating. The final bar "
+                    f"{what} @ {e.price:.2f}. This supersedes the earlier alert; do not treat "
+                    f"it as a second signal.")
+                print(f"[{tag}] !! SUPERSEDED {e.type} {was}@{old_px} -> {now_s}@{e.price:.2f}"
+                      f" ({'bar moved' if moved else 'price only'})"
+                      f" (raise live.bar_settle_seconds if this recurs)")
             if notifier.notify(e):
                 alerted_ids.append(eid)
             n_alerted += 1
