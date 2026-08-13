@@ -1,0 +1,143 @@
+# TSLA BEST-B (HIGHER NET): confirm_breakout OFF + runner_trail OFF.
+# The 75% runner rides to BE/EOD instead of peak-trailing -> more net, slightly lower WR
+# and more give-back variance. Keeps all risk controls (max-cap, vol gate, reversal parity).
+# 3yr (touch, $0.10 slip): 638 tr, 46.4% WR, +$574/unit.
+symbol: SPCX
+timeframe_minutes: 5
+timezone: America/New_York
+execution:
+  stop_fill_mode: close   # ADOPTED 2026-07-14: CLOSE-triggered stop (fires only when the bar CLOSES beyond the level, fills at the close). Beats wick/resting +46% net over 2022-2026, flips 2024 positive, cuts MaxDD ~40% (walk-forward OOS-confirmed on 2022-23). Avoids wick-fakeout stop-outs in chop years; TP stays wick-favorable.
+  exit_on_close: true
+  protective_stop: false
+  daily_loss_limit: 0.0
+session:
+  rth_start: 09:30
+  rth_end: '16:00'
+  market_open: 09:30
+  eod_exit: '15:50'
+profile:
+  name: Adaptive TP + Reversal (Best Combined)
+  # Short id used to scope live alerts and the DB run record. B1 and C1 share a profile NAME
+  # and a db_path, so without a distinct label they cross-suppress each other's alerts (the
+  # live "seen" set is keyed on symbol+day+label) and their events are indistinguishable.
+  label: B1
+  trade_qty: 1.0
+  slippage_per_unit: 0.1
+  use_breakout_buffer: true
+  buffer_pct_or: 10.0
+  sl_mode: Candle High/Low + Max Cap
+  sl_offset: 0.0
+  fixed_sl: 5.0
+  tp_mode: Adaptive
+  adaptive_tp_scale: 1.0
+  adaptive_tp_min: 2.14
+  fixed_tp: 2.14
+  use_be_retrace: true
+  be_retrace_trigger: 0.55
+  be_trail_amount: 0.25
+  be_retrace_use_close: false
+  use_partial_exit: true
+  partial_qty_pct: 25.0
+  partial_activation: 1.0
+  use_reversal: true
+  reversal_qty_mult: 2.0
+  reversal_target: 5.0
+  apply_be_to_reversal: true
+  reversal_risk_cap: 6.0
+  reversal_risk_mode: scale
+  min_or_width_enabled: false
+  min_or_width: 2.5
+  max_or_width_enabled: true
+  max_or_width: 8.0
+  use_vwap_filter: false
+  trade_side_mode: Both
+enhancements:
+  rvol_filter:
+    enabled: false
+    lookback_bars: 20
+    min_rvol: 1.2
+  volatility_regime:
+    # DISABLED for SPCX. The 4.92% cap was fitted on TSLA 2024-25 and CLAUDE.md justifies it by a
+    # TSLA-specific mechanism (close-based BE stops cost more when a high-vol bar closes further
+    # past the stop). It does not port: it skips 10% of TSLA days but 48% of SPCX's evaluable days.
+    # Measured on SPCX 2026-06-15..08-12: +11 trades at 73% WR, and every robustness metric IMPROVES
+    # (ex-top-3 goes from ~0 to positive on all four profiles; bootstrap p 0.075 -> 0.034).
+    enabled: false
+    lookback: 20
+    max_rvol_pct: 4.92
+  or_width_regime:
+    enabled: false
+    skip_below: 0.0
+    skip_above: 0.0
+  time_window:            # DISABLED for SPCX. The 12:00 cutoff was validated on 5 years OF TSLA;
+                          # the post-noon cohort being net-negative is a TSLA fact. On SPCX,
+                          # removing it is the single biggest improvement AND the most robust:
+                          # mean across A1/B1/C1/D1 goes PF 2.22 -> 2.37, ret 36.9% -> 49.4%,
+                          # net-ex-top-3 $19.3 -> $33.6, bootstrap P(net<=0) 0.02 -> 0.01, worst
+                          # trade only -3.83 -> -4.66. It beats every other option in the ladder,
+                          # including removing the OR-width caps (which is worse on both counts).
+                          # ADOPTED 2026-07-26 on TSLA: no NEW entries (primary or reversal) after 12:00
+    enabled: false        # (TSLA rationale, kept for the record: post-noon entries were a
+    start: 09:35          # net-NEGATIVE cohort there; WR up in every tested year-cell A1/B1/C1/D1
+    end: '12:00'          # incl 2022-23 OOS.) Pine v3.9.11 'Symbol preset = Non-TSLA' is the twin.
+  reversal_capture:
+    enabled: true
+    trigger_on_be_stop: true
+    trail_to_eod: true
+    target_or_mult: 0.0
+    reenter_after_whipsaw: false
+  runner_trail:
+    enabled: false
+    or_mult: 0.75
+  resume_reentry:
+    enabled: false
+    trigger: buffered
+    risk_cap: 0.0
+    disarm_other: true
+  confirm_two_closes:
+    enabled: false
+  confirm_breakout:
+    enabled: false
+    require_trend_candle: true
+    hold_bars: 1
+  pdh_pdl_filter:
+    enabled: false
+    proximity_pct: 14.0
+  pd_level_exit:            # DISABLED for SPCX: measured and TV-validated on TSLA ONLY. On SPCX it
+    enabled: false          # costs ~$6.55/sh over 06-15..08-12 (B1 net 46.13 -> 52.68 with it off).
+    levels: [pdO, pdH, pdL, pdC]
+    ahead_only: false       # BOTH SIDES, adopted 2026-08-11 by user call AGAINST the measurement:
+                            # B1 558.3 vs 575.9 per unit, WR 46.2->44.2, worse in 4 of 5 years
+                            # (only 2026 +17.0). See orb_engine.py `_pd_tag_reject`. Revert = true.
+    zone: 0.05              # stays 0.05 — widening it adds nothing to the motivating days.
+    require_reject_candle: true
+    max_body_frac: 0.25     # engine sweep on B1: +$2,983 over 5 years, up in 5 of 5. 1.0 = no filter
+                            # loses on every profile; 0.10-0.25 is the plateau; 0.35+ breaks.
+    in_profit_only: false
+                            # ⚠ 0.25 was fitted in-sample with NO holdout. The TV A/B that decided this
+                            # was run on C1, not B1: $17,554 vs $13,623 = +$3,932 (+29%) over 365 days.
+data:
+  provider: fmp
+  cache_dir: data/cache
+  db_path: data/udb_orb.db
+alerts:
+  enabled: true
+  channels:
+  - email
+  - webhook
+  events:
+  - primary_entry
+  - reversal_entry
+  - be_retrace_fired
+  - tp_full
+  - partial_exit
+  - be_trail_exit
+  - be_stop_exit
+  - vwap_cross_exit
+  - base_sl_exit
+  - eod_exit
+live:
+  poll_seconds: 30
+  lookback_days: 3
+  bar_settle_seconds: 300    # see config.yaml — FMP serves a PARTIAL 5m bar for ~2-3 min after
+                             # its close; this waits it out. Do not lower without re-measuring.
