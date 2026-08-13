@@ -1,6 +1,34 @@
 //@version=6
-indicator("UDB-ORB TSLA v3.9.8 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.8", overlay=true, max_labels_count=500, max_lines_count=500)
+indicator("UDB-ORB TSLA v3.9.9 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.9", overlay=true, max_labels_count=500, max_lines_count=500)
 
+// v3.9.9 2026-08-12 — RUNS AND DISPLAYS ON ANY SYMBOL. No strategy logic changed; TSLA output is
+//     bit-identical to v3.9.8. New group "Symbol Portability (non-TSLA charts)" with a checkbox
+//     "Auto-scale $ inputs to this symbol's price" (DEFAULT OFF = production) and a reference price
+//     (default 330, what the dollar defaults were fitted at).
+//     THE PROBLEM. Nothing here was ever hardcoded to a ticker — every request.security uses
+//     syminfo.tickerid — but every risk and target input is an absolute DOLLAR amount fitted on a
+//     ~$330 TSLA. One of them is a day-level GATE: `skipWide := orWidth > maxORWidth` with
+//     maxORWidth = $8. On any symbol whose first 5m bar spans more than $8, every session sets
+//     daySkipped, canTrade is false all day, and the chart shows nothing at all. That reads as "no
+//     signals" when it is really "the gate ate the entire history", which is why this script looked
+//     dead on other symbols. The reverse breaks cheap symbols: a $2.14 minimum target is ~7% of a
+//     $30 stock and never fills.
+//     THE FIX. pxScale = prior daily close / reference price, applied to the eight dollar inputs:
+//     maxORWidth, maxCapSL, adaptiveTPMin, atrTPMin, fixedTP, beTrailAmt, vwapArmProfit, revRiskCap.
+//     Nothing else is touched — every ratio-valued input (buffer % of OR, BE trigger % of OR, runner
+//     x OR, adaptive TP multiplier, partial %, PD body/zone, rvol %) is already dimensionless and
+//     portable. Prior daily close, not `close`, so the scale is fixed for the session and cannot move
+//     a stop under an open position. With the box unticked pxScale is exactly 1.0 and `x * 1.0 == x`
+//     bit-for-bit, so a traded number cannot move — that invariant is the point of the design.
+//     NOT AN EDGE CLAIM. The frozen B1/C1 over 2024-01..2026-07 on nine liquid names (fixed $10k
+//     notional, price-scaled slippage, ATR-normalisation on and off) returned 1 of 9 profitable,
+//     mean -15%, all at PF 0.84-1.04 against TSLA's 1.23-1.28, and the two "winners" swapped
+//     identity between variants. This makes the trades and the failures VISIBLE elsewhere; it does
+//     not make them good. Bonus: it also makes TSLA's own pre-2020 history readable.
+//     The vol gate is intentionally left alone (already a %, so price-scale-free) — but it is still
+//     TSLA-fitted at 4.92%, so watch the "Skipped vol / wide" row and raise it by hand if needed.
+//     Also fixes the stats-table title, which still read v3.9.7 on a v3.9.8 script.
+//
 // v3.9.8 2026-08-11 — PD-LEVEL EXIT NOW WATCHES BOTH SIDES. New input "Levels AHEAD of entry only",
 //     DEFAULT UNTICKED, which drops the guard that a level must lie ahead of the entry. A level the
 //     trade already broke now triggers too, so closing back through it is an exit ("you lost the
@@ -281,6 +309,14 @@ maxORWidth  = input.float(8.0,  "Max OR Width ($) — skip wider days", step=0.5
 volLookback = input.int(20,     "Volatility Lookback (days)", minval=2, group=grpR, display=display.none)
 maxRvolPct  = input.float(4.92, "Max Prior Realised Daily Vol (%)", step=0.01, group=grpR, display=display.none)
 
+grpP = "Symbol Portability (non-TSLA charts)"
+pxAutoOn = input.bool(false, "Auto-scale $ inputs to this symbol's price", group=grpP, tooltip="OFF BY DEFAULT AND OFF IS THE PRODUCTION SETTING — with this unticked pxScale is exactly 1.0, every parameter multiplies by 1.0, and the script is bit-identical to v3.9.8 on TSLA. Nothing about the strategy changes.\n\nWHY IT EXISTS. Every risk and target input in this script is an absolute DOLLAR amount fitted on a ~$330 TSLA. Nothing is hardcoded to the ticker (all data requests use syminfo.tickerid), but the dollar scale is. The one that bites is 'Max OR Width ($)' = 8: it is a day-level gate, so on any symbol whose first 5-minute bar spans more than $8 EVERY session is skipped and the chart shows no trades at all -- indistinguishable from 'no signals'. That is the usual reason this script looks dead on another symbol.\n\nWHAT IT DOES. Multiplies the eight dollar-denominated inputs by (prior daily close / reference price). Purely a units conversion -- no rule, threshold ratio, or sequence is altered.\n\nWHAT IT IS NOT. It is not a way to make this profitable elsewhere. The frozen B1/C1 was tested over 2024-01..2026-07 on nine liquid names at fixed $10k notional with price-scaled slippage, with and without ATR normalisation: 1 of 9 profitable, mean -15%, every non-TSLA symbol at PF 0.84-1.04 (breakeven noise) against TSLA's 1.23-1.28, and the two 'winners' swapped identity between the two variants. Use this to SEE the trades and the failures on another chart, not to trade them.\n\nSide effect worth knowing: it also makes TSLA's own pre-2020 history readable, where a $2.14 minimum target against a $5-20 share price otherwise makes every year meaningless.", display=display.none)
+pxRef    = input.float(330.0, "Reference price ($) the $ defaults were tuned at", minval=0.01, step=1.0, group=grpP, tooltip="The share price the dollar defaults were calibrated at. TSLA sat near $330 when Max OR Width $8 / Adaptive TP floor $2.14 / BE trail $0.25 / max stop $5-6 were fitted, so 330 is the correct reference and you should not need to change it. Scale factor = prior daily close / this. Only read when the box above is ticked.", display=display.none)
+// The vol gate is deliberately NOT scaled: 'Max Prior Realised Daily Vol (%)' is already a
+// percentage, so it is price-scale-free. It is still TSLA-fitted though (4.92% was set on 2024-25
+// TSLA), so on a more volatile symbol it will skip days on its own. Raise it by hand if the stats
+// table's "Skipped vol / wide" row shows the vol counter climbing.
+
 grpE = "Entry"
 bufferPctOR = input.float(10.0, "Breakout Buffer (% of OR width)", step=0.5, group=grpE, display=display.none)
 tradeQty    = input.float(1.0,  "Units Per Trade", minval=0.01, group=grpE, display=display.none)
@@ -358,6 +394,31 @@ dailyATR = request.security(syminfo.tickerid, "D", f_priorATR(), lookahead=barme
 f_pdLevels() =>
     [open[1], high[1], low[1], close[1]]
 [pdO, pdH, pdL, pdC] = request.security(syminfo.tickerid, "D", f_pdLevels(), lookahead=barmerge.lookahead_on)
+
+// ==================== v3.9.9 SYMBOL PRICE SCALE (portability only, OFF by default) ====================
+// Converts the eight DOLLAR-denominated inputs into this symbol's price scale. It is a units
+// conversion and nothing else -- no rule, no ordering, no ratio-valued input (buffer % of OR, BE
+// trigger % of OR, runner x OR, adaptive TP multiplier, partial %, PD body/zone fractions, rvol %)
+// is touched, because those are already dimensionless and travel between symbols unchanged.
+//
+// With pxAutoOn false, pxScale is exactly 1.0 and `x * 1.0 == x` bit-for-bit in IEEE-754, so the
+// production TSLA output is unchanged from v3.9.8. That property is the whole point: this feature
+// must not be able to move a traded number.
+//
+// Reference is the PRIOR daily close, not `close`: it is fixed for the whole session (a live-updating
+// scale would move the stop and the target under an open position mid-bar) and it is already
+// available above as a non-repainting request.security. It also drifts with the symbol over the
+// years, which is why this incidentally makes TSLA's own $5-20 era readable.
+pxScaleRef = not na(pdC) ? pdC : close
+pxScale    = pxAutoOn and pxRef > 0 and pxScaleRef > 0 ? pxScaleRef / pxRef : 1.0
+maxORWidthS    = maxORWidth    * pxScale
+maxCapSLS      = maxCapSL      * pxScale
+adaptiveTPMinS = adaptiveTPMin * pxScale
+atrTPMinS      = atrTPMin      * pxScale
+fixedTPS       = fixedTP       * pxScale
+beTrailAmtS    = beTrailAmt    * pxScale
+vwapArmProfitS = vwapArmProfit * pxScale
+revRiskCapS    = revRiskCap    * pxScale
 
 // ==================== "TRADE TASTIC" ATR TRAIL (D1 runner exit) ====================
 // ONE line for BOTH directions, exactly the original script: TS = HHV(high - mult*ATR, hhv);
@@ -485,7 +546,7 @@ if isORbar
     orLow := low
     orWidth := high - low
     skipVol := not na(rvol20) and rvol20 > maxRvolPct
-    skipWide := orWidth > maxORWidth
+    skipWide := orWidth > maxORWidthS
     daySkipped := skipVol or skipWide
     if skipVol
         volSkipDays += 1
@@ -494,7 +555,7 @@ if isORbar
 
 longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
 shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
-tpDist = tpModeSel == "Fixed" ? fixedTP : tpModeSel == "ORw" ? orWidth : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMin, atrTPMult * dailyATR) : fixedTP) : (not na(orWidth) ? math.max(adaptiveTPMin, orWidth * adaptiveTPScale) : na)
+tpDist = tpModeSel == "Fixed" ? fixedTPS : tpModeSel == "ORw" ? orWidth : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMinS, atrTPMult * dailyATR) : fixedTPS) : (not na(orWidth) ? math.max(adaptiveTPMinS, orWidth * adaptiveTPScale) : na)
 canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar and (not entryCutOn or hour * 60 + minute <= entryCutH * 60 + entryCutM)
 
 longConfirm  = not confirmBreakout or (close[1] > longBrk and (close >= open or not requireTrendCandle))
@@ -508,7 +569,7 @@ if canTrade and not active and not firstTaken
         inRev := false
         suppressPartial := false
         entry := close
-        stop := maxCapSL > 0 ? math.max(orLow, close - maxCapSL) : orLow
+        stop := maxCapSLS > 0 ? math.max(orLow, close - maxCapSLS) : orLow
         tp := close + tpDist
         beLevel := orHigh - beTrigger * orWidth
         entryBar := bar_index
@@ -530,7 +591,7 @@ if canTrade and not active and not firstTaken
         inRev := false
         suppressPartial := false
         entry := close
-        stop := maxCapSL > 0 ? math.min(orHigh, close + maxCapSL) : orHigh
+        stop := maxCapSLS > 0 ? math.min(orHigh, close + maxCapSLS) : orHigh
         tp := close - tpDist
         beLevel := orLow + beTrigger * orWidth
         entryBar := bar_index
@@ -551,7 +612,7 @@ if canTrade and not active and not firstTaken
 if canTrade and primStopped and not active
     if primDir == 1 and close < orLow
         rpu = math.abs(close - orHigh)
-        rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
+        rq = revRiskCapS > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCapS / rpu) : tradeQty * revQtyMult
         active := true
         tdir := -1
         inRev := true
@@ -574,7 +635,7 @@ if canTrade and primStopped and not active
             label.new(bar_index, high, "REV SHORT " + str.tostring(entry, format.mintick) + "\nqty " + str.tostring(rq, "#.##"), style=label.style_label_down, color=color.purple, textcolor=color.white, size=size.small)
     else if primDir == -1 and close > orHigh
         rpu = math.abs(close - orLow)
-        rq = revRiskCap > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCap / rpu) : tradeQty * revQtyMult
+        rq = revRiskCapS > 0 and rpu > 0 ? math.min(tradeQty * revQtyMult, revRiskCapS / rpu) : tradeQty * revQtyMult
         active := true
         tdir := 1
         inRev := true
@@ -608,8 +669,8 @@ if active and not na(stop) and bar_index > entryBar
             aBEFired := true
             beFiredNow := true
     // Step 2: BE Trail
-    if beTrig and beTrailAmt > 0
-        stop := tdir == 1 ? math.max(stop, high - beTrailAmt) : math.min(stop, low + beTrailAmt)
+    if beTrig and beTrailAmtS > 0
+        stop := tdir == 1 ? math.max(stop, high - beTrailAmtS) : math.min(stop, low + beTrailAmtS)
     // Step 3: runner level (only after the partial, only for A1/B1/C1)
     runnerHit = false
     float runnerPx = na
@@ -621,7 +682,7 @@ if active and not na(stop) and bar_index > entryBar
             runnerPx := close
             runnerReason := "ATR Trail"
     else if usePartial and part1 and not suppressPartial and runnerVWAP
-        if not vwapArmed and (tdir == 1 ? close - entry : entry - close) >= vwapArmProfit
+        if not vwapArmed and (tdir == 1 ? close - entry : entry - close) >= vwapArmProfitS
             vwapArmed := true
         if vwapArmed and not na(sessVwap) and (tdir == 1 ? close <= sessVwap : close >= sessVwap)
             runnerHit := true
@@ -1062,7 +1123,7 @@ alertcondition(isC2 and aStop,    title="C2 SL",       message="C2 SL - close po
 alertcondition(isC2 and aEOD,     title="C2 EOD",      message="C2 EOD - end-of-day forced close | {{ticker}} {{interval}}m @ {{close}}")
 
 // ==================== SUMMARY TABLE ====================
-var table tbl = table.new(position.top_right, 2, 16, border_width=1)
+var table tbl = table.new(position.top_right, 2, 17, border_width=1)
 f_row(_r, _k, _v, _col) =>
     table.cell(tbl, 0, _r, _k, text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(tbl, 1, _r, _v, text_color=_col, bgcolor=color.rgb(25,25,25), text_size=size.small)
@@ -1073,7 +1134,7 @@ if barstate.islast and showTable
     wr = nTrades > 0 ? nSucc * 100.0 / nTrades : 0.0
     pf = grossL > 0 ? grossP / grossL : na
     exp = nTrades > 0 ? netPnl / nTrades : 0.0
-    table.cell(tbl, 0, 0, "UDB-ORB v3.9.7", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(tbl, 0, 0, "UDB-ORB v3.9.9", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(tbl, 1, 0, str.substring(profile, 0, 2) + " · " + tpModeSel, text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     f_row(1, "Trades", str.tostring(nTrades), color.yellow)
     f_row(2, "Win Rate", str.tostring(wr, "#.#") + "%", color.orange)
@@ -1083,10 +1144,11 @@ if barstate.islast and showTable
     f_row(6, "Best / Worst Day", (na(bD) ? "-" : "+" + str.tostring(bD, "#.##")) + " / " + (na(wD) ? "-" : str.tostring(wD, "#.##")), color.silver)
     f_row(7, "Trade Days", str.tostring(tD) + " / " + str.tostring(totalDays), color.aqua)
     f_row(8, "Today's TP dist", na(tpDist) ? "n/a" : "$" + str.tostring(tpDist, "#.##"), color.aqua)
-    f_row(9, "Max Stop", "$" + str.tostring(maxCapSL, "#"), color.silver)
+    f_row(9, "Max Stop", "$" + str.tostring(maxCapSLS, "#.##"), color.silver)
     f_row(10, "Skipped vol / wide", str.tostring(volSkipDays) + " / " + str.tostring(wideSkipDays), color.fuchsia)
     f_row(11, "Reversals", str.tostring(cRev), color.purple)
     f_row(12, "Wins (TP/runner)", str.tostring(cWin), color.lime)
     f_row(13, "Stops", str.tostring(cStop), color.orange)
     f_row(14, "EOD closes", str.tostring(cEOD), color.silver)
+    f_row(16, "$ scale (" + syminfo.ticker + ")", pxAutoOn ? "x" + str.tostring(pxScale, "#.###") + " vs $" + str.tostring(pxRef, "#") : "1.000 (off)", pxAutoOn ? color.aqua : color.silver)
     f_row(15, "Net @ " + str.tostring(shareQty) + " sh", (netPnl >= 0 ? "+$" : "-$") + str.tostring(math.abs(netPnl * shareQty), "#,###"), netPnl >= 0 ? color.lime : color.red)
