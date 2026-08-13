@@ -147,6 +147,13 @@ releases T+1 so it prices up to the last fully-available session. Needs `DATABEN
 - Run:      `python forward_test.py`                 (prices new sessions since the ledger)
 - Backfill: `python forward_test.py --start 2026-07-10 --end 2026-07-16`
 - Schedule: `run_forward_test.bat` via Task Scheduler ~9:00 AM ET (T+1 after close). ~$0.05/day.
+- Health:   `python scripts/check_ledger_freshness.py [--strict]` — did the ledger actually ADVANCE?
+  **Never judge this task by its exit code.** "OPRA has not released that session yet" is a clean
+  no-op and exits 0, which is correct, so a genuine stall also exits 0 and Task Scheduler reports
+  success indefinitely. On 2026-08-12 the ledger sat two sessions back behind a Databento
+  `403 license_not_found_unauthorized` with rc=0 and a reassuring-but-3-days-stale
+  `forward_test_FAILED.txt`. The checker trips at 2 trading days behind (lag 1 is the normal
+  overnight slip); `run_forward_test.bat` calls it with `--strict`.
 This validates the SIGNAL edge going forward; it still assumes fills at the quote — TradersPost paper
 trading is the complementary test for real fill quality.
 
@@ -203,6 +210,22 @@ Five live-only invariants, none of which a backtest can catch (see `tests/test_l
    a trade that never had a signal: 2026-08-11 (last session before the fix) mailed a reversal long
    at 09:55 @333.83 when the buffered break needs a close >334.034 — the OR high was still ~0.20
    short of final. That phantom leg + 2 mispriced fills made a real −5.31/unit day read −9.06.
+   **Completed 2026-08-12 (`e74a91b`): the re-alert key must carry the PRICE.** The settle margin
+   alone was not enough — on 08-12, the first full session running it, FMP lagged *past* 300s and the
+   09:40 bar was consumed at 329.4185 against a final 329.38. The margin is arithmetically right
+   (`runner.py` `_closed_bars` = index + tf + settle), so do not treat the 168-214s measurement as a
+   bound and do not "fix" this by raising the margin — a longer settle only delays every alert. The
+   real hole was that `_event_key` omitted price: a revision that moves the TIMESTAMP is a new key and
+   corrects itself, but a revision that changes ONLY the price matched the old key exactly, read as
+   already-seen, and was dropped — so a price that never existed stayed in `events` and in the mailed
+   alert. `_event_key` now carries a 4dp price, `_superseded_by` returns `(ts, price)`, and the alert
+   states which kind of revision it was. Build keys **only** via `_make_key` — `_seed_seen` used to
+   duplicate the format inline and would have silently stopped matching; a test now guards that.
+   Alert/console strings must stay **ASCII** (the Windows console renders an em-dash as `?`), since
+   `scripts/run_live.bat` now tees to `logs/live_YYYY-MM-DD.log` (`logs/` gitignored).
+   **Pre-fix live rows do not self-heal:** superseded rows remain in `events`, so a naive
+   `sum(events.pnl)` for a live day overstates it (B1 2026-08-12 reads +8.76/unit vs a true +2.64).
+   De-dupe on (day, type, direction) keeping the LAST row, or replay the final bars.
 
 Corollary: **do not backtest through the current session** — the partial day's last bar produces an
 artificial `eod_exit`. Reconciled 2026-07-31 over 07-28..07-30: live and backtest event streams are
