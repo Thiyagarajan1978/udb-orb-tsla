@@ -580,3 +580,20 @@ def test_reversal_only_once_per_day():
     ]
     res = _run({"2024-06-03": rows})
     assert len(res.trades) <= 2
+
+
+def test_zero_width_opening_range_does_not_crash():
+    """A flat 09:30-09:35 bar (high == low) leaves `be_level` None.
+
+    The BE-retrace `fire` expression is evaluated before the `is not None` guard, so without a
+    short-circuit it raises TypeError comparing float to None. TSLA has never printed a zero-width
+    opening range; QCOM 2025-03-31 does, and it killed every profile mid-run.
+    """
+    rows = [
+        (9, 30, 100.0, 100.0, 100.0, 100.0, 1000),   # zero-width OR -> or_size 0 -> be_level None
+        (9, 35, 100.0, 100.6, 99.5, 100.5, 1000),
+        (9, 40, 100.5, 101.2, 100.0, 100.2, 1000),
+        (15, 50, 100.2, 100.3, 100.1, 100.2, 1000),
+    ]
+    res = _run({"2024-06-03": rows})            # must not raise
+    assert res is not None

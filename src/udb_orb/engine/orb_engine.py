@@ -1225,7 +1225,8 @@ class OrbEngine:
         be_fired_now = False
 
         # Step 1: BE Retrace
-        fire = (c <= st.be_level) if p.be_retrace_use_close else (l <= st.be_level)
+        fire = st.be_level is not None and (
+            (c <= st.be_level) if p.be_retrace_use_close else (l <= st.be_level))
         if apply_be and not st.be_triggered and st.be_level is not None and fire:
             st.stop = max(st.stop, st.entry_price)
             st.be_triggered = True
@@ -1322,7 +1323,8 @@ class OrbEngine:
         be_before = st.be_triggered
         be_fired_now = False
 
-        fire = (c >= st.be_level) if p.be_retrace_use_close else (h >= st.be_level)
+        fire = st.be_level is not None and (
+            (c >= st.be_level) if p.be_retrace_use_close else (h >= st.be_level))
         if apply_be and not st.be_triggered and st.be_level is not None and fire:
             st.stop = min(st.stop, st.entry_price)
             st.be_triggered = True
