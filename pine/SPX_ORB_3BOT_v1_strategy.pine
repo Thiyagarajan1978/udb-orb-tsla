@@ -1,62 +1,65 @@
 //@version=6
 strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle="SPX-ORB 3BOT S", overlay=true,
-     initial_capital=20000, default_qty_type=strategy.fixed, default_qty_value=10,
-     margin_long=33.333, margin_short=33.333,
+     initial_capital=20000, default_qty_type=strategy.fixed, default_qty_value=3,
      calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
 
-// STATUS 2026-08-17 (v1.2.2): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
-// v1.2.2 (2026-08-17): ACCOUNT DEFAULTS ONLY, no signal logic touched. initial_capital
-//   10,000 -> 20,000; default_qty_value 1 -> 10; "Option contracts" 1 -> 10; margin 33.333%
-//   (= 3x leverage). Set on user instruction. READ THE THREE WARNINGS BELOW BEFORE TRADING IT.
+// STATUS 2026-08-17 (v1.3.0): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
+// v1.3.0 (2026-08-17): THIS IS NOW A ONE-BOT SYSTEM AT 3 CONTRACTS. Set on user instruction.
+//   1. default_qty_value 10 -> 3 and "Option contracts" 10 -> 3. See WARNING 1.
+//   2. BOT2 and BOT3 spread alerts DEFAULT OFF (enB2/enB3 = false). They were never automatable
+//      (single-leg webhooks only) and the decision is to run ONE bot. The code is left intact —
+//      tick the two boxes to get the labels/alerts back. BOT3-LONG (the separate strategy file)
+//      is likewise RETIRED, not deleted: do not put it on a chart.
+//   3. NEW "Bot1 - Risk" group: a RELATIVE premium skip (default 0.70% of spot) replacing the
+//      drifting fixed-$2,000 rule. Pine CANNOT read option prices, so this CANNOT block the
+//      order — it computes and PRINTS the dollar threshold on the entry label and exposes it to
+//      alerts. Enforcement is manual, or via TradersPost "Amount per position". See WARNING 3.
+//   4. margin_long/margin_short REMOVED (were 33.333). See WARNING 2 — that number was
+//      Strategy-Tester fiction and made the tester report leverage the broker will never grant.
+// v1.2.2 (2026-08-17): account re-base to $20,000 / 10ct / 3x. Superseded by v1.3.0 above.
 // v1.2.1 (2026-08-08): BOT1 entries blocked on the session's FINAL bar (15:55) — see the
 //   `rthIx < 77` note at the signal block. No other change.
 //
-// *** WARNING 1 — 10 CONTRACTS IS NOT SURVIVABLE ON $20,000 AT THE DOCUMENTED WORST DAYS. ***
-// Every backtest figure in this file is PER CONTRACT. Multiplied by 10 against a $20,000 account:
-//     BOT1 worst day       -$6,980/ct  ->  -$69,800   = 349% of the account
-//     BOT1+BOT3L worst day -$2,680/ct  ->  -$26,800   = 134% of the account
-//     BOT3L worst day      -$2,150/ct  ->  -$21,500   = 108% of the account
-// The live forward window (2026-07-17..08-14) already shows a -$1,515/ct day = -$15,150 at 10ct,
-// i.e. 76% of the account in one session. Premium at 10ct commits $8,000-$30,600 per BOT1 entry;
-// the top of that range EXCEEDS the account outright, and holding BOT1+BOT3L together needs
-// ~$21,500 at 10ct against $20,000 of capital. Sizing is the user's call, but the arithmetic is
-// not in dispute: at 10 fixed contracts this account is a total-loss candidate on a single
-// documented-magnitude day.
+// *** WARNING 1 — WHAT 3 CONTRACTS ON $20,000 ACTUALLY RISKS. ***
+// Every backtest figure in this file is PER CONTRACT. Multiplied by 3 against a $20,000 account,
+// WITHOUT the premium skip below:
+//     BOT1 worst day   -$6,980/ct  ->  -$20,940   = 105% of the account   (single session)
+//     BOT1 max DD     -$12,165/ct  ->  -$36,495   = 182% of the account
+// WITH the 0.70%-of-spot skip active (the reason it is the default):
+//     BOT1 worst day   -$2,230/ct  ->   -$6,690   = 33% of the account
+//     BOT1 max DD      -$6,655/ct  ->  -$19,965   = 100% of the account
+// So 3 contracts is survivable on a single bad DAY only if the skip is honoured, and the max
+// drawdown is at the edge of the account either way. A shuffled-path ruin sim on 2026 puts
+// P(ruin) at 1.1% with a minimum equity of $12,320 at 3ct+skip (it was 20.9% at 10ct). Premium
+// at 3ct commits $2,400-$9,180 per entry (median $3,660); on 2026 pricing the account can always
+// fund an entry, which was NOT true at 10ct (45% of 2026 sessions could not).
 //
-// *** WARNING 2 — "3x LEVERAGE" DOES NOT EXIST FOR THIS STRATEGY AT A BROKER. ***
-// The margin_long/margin_short=33.333 above only changes TradingView's Strategy Tester. Under
-// Reg T a LONG option position is 100% CASH — it is not marginable at any leverage, and 0DTE
-// least of all. The broker will reject anything the cash balance cannot pay for outright. Treat
-// the buying power available to this system as $20,000, not $60,000.
+// *** WARNING 2 — LEVERAGE DOES NOT EXIST FOR THIS STRATEGY AT A BROKER. ***
+// v1.2.2 briefly carried margin_long/margin_short=33.333 ("3x"). That only ever changed
+// TradingView's Strategy Tester, so it has been REMOVED. Under Reg T a LONG option position is
+// 100% CASH — not marginable at any leverage, 0DTE least of all. The broker rejects anything the
+// cash balance cannot pay for outright. Buying power for this system is $20,000, not $60,000.
 //
-// *** WARNING 3 — FIXED CONTRACTS DISCARDS THE LARGEST SINGLE SOURCE OF EDGE. ***
-// A flat contract count cannot skip rich-premium days, and the rich tercile is NET NEGATIVE
-// (-$61,310, PF 0.77) and hosts the worst day. Fixed-DOLLAR risk sizing returned +$452,985 over
-// 4.5yr vs +$205,025 at flat 1ct, with a 4.3x smaller worst day. Risk/ct = HALF the premium, so
-// on a $20,000 account a 10%-per-day budget = $2,000 risk = ~3 contracts at the median $1,220
-// premium and ~5 at the cheap end — it only reaches 10 contracts on genuinely cheap days, which
-// is the point. To get that behaviour set "Option quantity mode" = "TradersPost sizing" and put
-// $4,000 in TradersPost's "Amount per position" (verify in paper FIRST — see that tooltip).
+// *** WARNING 3 — THE PREMIUM SKIP IS THE LARGEST SINGLE SOURCE OF EDGE, AND PINE CANNOT ENFORCE IT. ***
+// The rich-premium tercile is NET NEGATIVE (-$61,310, PF 0.77) and hosts every worst day. The old
+// FIXED $2,000 rule drifts — it is a dollar threshold on a premium that scales with the index, so
+// it tightened from 0.49% of spot in 2022 to 0.28% in 2026, and by now it is actively harmful:
+//   no skip       : 2022 +58,425  2023 +63,415  2024 +14,775  2025 +40,715  2026 +28,235
+//   skip > $2,500 : 2022 +99,190  2023 +96,510  2024 +18,930  2025 +11,575  2026  +5,865
+// The RELATIVE cap now shipped as the default (0.70% of spot) fixes the drift: +$321,815 over
+// 2022-2026 vs +$205,585 no-skip, PF 2.39, worst day -$2,230 vs -$6,980, max DD -$6,655 vs
+// -$12,165, and it wins 4 of the 5 years. Walk-forward (each year's cap fit only on prior years)
+// = +$183,490 vs +$147,080 over the 4 live years, so it is not a single hindsight-fit number.
+// BUT: a Pine chart cannot see option prices. The strategy prints the dollar threshold and sends
+// it with the alert; YOU (or TradersPost sizing) must apply it. If the ATM ask exceeds the
+// printed number, SKIP THE TRADE.
 //
-//
-// *** SECOND AUTOMATED LEG ADDED 2026-08-07: pine/SPX_ORB_BOT3L_60M_v1_strategy.pine ***
-// BOT3's 60m OR now trades as a SINGLE-LEG long ATM option (the 10-wide spread was never
-// automatable — the TradersPost payload is single-leg only). RUN IT AS A SEPARATE STRATEGY ON
-// ITS OWN CHART WITH ITS OWN ALERT. Do NOT merge it into this file: TradingView nets positions
-// within a strategy, and BOT1/BOT3 break in OPPOSITE directions on 25% of days, so a merged
-// BOT3 entry would net against an open BOT1 position and silently flatten it.
-//
-// *** WARNING — THE FIXED $2,000 PREMIUM SKIP BELOW IS DRIFTING (found 2026-08-07). ***
-// It is a fixed DOLLAR threshold on a premium that scales with the index, so it tightens as SPX
-// rises: $2,000 was 0.49% of spot in 2022 but only 0.28% in 2026. Per-year on BOT1:
-//   no skip      : 2022 +58,425  2023 +63,415  2024 +14,775  2025 +40,945  2026 +27,755
-//   skip > $2,000: 2022 +113,015 2023 +124,595 2024 +22,525  2025  +6,425  2026  +3,965
-// It nearly doubles the early years and GUTS the recent ones — the headline +$452,985 is NOT a
-// go-forward expectation. A relative cap (0.45% of spot) recovers part of it but only beat
-// no-skip in 2/4 live years on BOT1, which is not clean enough to adopt off a sweep. THIS FILE IS
-// THEREFORE UNCHANGED pending forward evidence; if you use TradersPost sizing, revisit "Amount
-// per position" as SPX moves rather than leaving it fixed. (The identical test on BOT3-LONG came
-// back clean at 3/4 live years, which is why the new leg ships with a relative cap.)
+// *** BOT2 / BOT3 / BOT3-LONG ARE RETIRED AS OF v1.3.0 (one-bot decision). ***
+// BOT2/BOT3 credit spreads were never webhook-automatable (TradersPost is single-leg only) and
+// now default OFF here. pine/SPX_ORB_BOT3L_60M_v1_strategy.pine (the 60m single-leg long) is
+// retired too — leave it OFF the charts. If it is ever revived it MUST run as its own strategy on
+// its own chart: TradingView nets positions within a strategy, and BOT1/BOT3 break in OPPOSITE
+// directions on 25% of days, so a merged BOT3 entry would silently flatten an open BOT1.
 //
 // SEPARATE from the UDB-ORB TSLA suite. Chart: SPX, 5-minute, RTH.
 // v1.1 CHANGES (no signal logic touched): header synced to the 2026-07-24 re-verification;
@@ -76,23 +79,28 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
 // BARCLOSE-CORRECTED 2026-07-24 (the originals had a 5-min entry lookahead — bar-START quotes):
 // FULL 2022-2026 @1ct: BOT1 ts30 +$205,025 (was +$457,265; WR 48%, PF 1.50, worst -$6,980),
 // COMBO +$687,671 (was +$1,088,751). Every bot positive every year; see docs/SPX_ANALYSIS.md.
-// SIZING (re-verified 2026-07-24): the RICH premium tercile is NET NEGATIVE (-$61,310, PF 0.77)
-// and hosts the -$6,980 worst day. Capping BOT1 risk at $1k/day — risk/ct = HALF the premium,
-// so skip when premium > ~$2,000 — returns +$452,985 / 4.5yr (2.2x the flat-1ct +$205,025) with
-// the worst day cut to -$1,610 (4.3x smaller), trading 726 of 1107 days. Most of that gain is
-// the SKIP of rich days, not the contract count. See "Option quantity mode" below.
+// SIZING (re-verified 2026-07-24, skip re-fit 2026-08-17): the RICH premium tercile is NET
+// NEGATIVE (-$61,310, PF 0.77) and hosts the -$6,980 worst day. Skipping it is where the edge is.
+// The fixed-$ form of that skip has DRIFTED and is now harmful (header WARNING 3); the shipped
+// rule is the RELATIVE one — skip when ATM premium > 0.70% of spot — which returns +$321,815 vs
+// +$205,585 no-skip over 2022-2026, wins 4 of 5 years, and holds up walk-forward.
 // Forward ledger: forward_test_spx.py (daily, T+1; barclose-corrected + rebuilt same day).
 
 // ==================== INPUTS ====================
 bufPct     = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
 tsMin      = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bot1")
 optQtyMode = input.string("Fixed contracts", "Option quantity mode", options=["Fixed contracts", "TradersPost sizing (omit quantity)"], group="Bot1 · TradersPost", tooltip="Fixed contracts (default) = the webhook sends the 'Option contracts' quantity below, i.e. v1.0 behaviour, unchanged. 'TradersPost sizing' = the entry JSON OMITS the quantity field so TradersPost's strategy-level position sizing decides the contract count — set 'Amount per position' to ~$2,000 there (= the $1k/day risk cap, since risk/ct is HALF the premium). WHY: the 2026-07-24 re-verification found the RICH premium tercile is net NEGATIVE (-$61,310, PF 0.77) and hosts the -$6,980 worst day; a $1k risk cap auto-skips those days for +$452,985 / 4.5yr vs +$205,025 flat-1ct, worst day -$1,610. VERIFY IN PAPER FIRST — two things TradersPost's docs do not settle: (1) whether 'Amount per position' divides by the option PREMIUM (correct) or the INDEX price (very wrong — SPX ~6,000 would size 0 contracts every day), and (2) whether an unaffordable day SKIPS or errors. The skip is where most of the edge lives, so confirm it on a real fill before trusting it.")
-optContracts = input.int(10, "Option contracts (quantity)", minval=1, group="Bot1 · TradersPost", tooltip="Used only in 'Fixed contracts' mode. Default raised 1 -> 10 on 2026-08-17 by user instruction. THIS IS THE ONLY SIZING FIELD THAT REACHES THE BROKER — initial_capital and default_qty_value affect the Strategy Tester display only, because the chart trades the INDEX, not the option. All backtest figures are PER CONTRACT: at 10ct the documented BOT1 worst day is -$69,800 against a $20,000 account (349%), and premium commits $8,000-$30,600 per entry. Median SPX premium ~$1,220/ct (p90 ~$5,400); risk/ct = half premium. See WARNING 1 and WARNING 3 in the header — flat contracts cannot skip the net-negative rich-premium tercile, which is where most of the edge lives.")
+optContracts = input.int(3, "Option contracts (quantity)", minval=1, group="Bot1 · TradersPost", tooltip="Used only in 'Fixed contracts' mode. Default set to 3 on 2026-08-17 by user instruction (was briefly 10 in v1.2.2, which was not survivable — see WARNING 1). THIS IS THE ONLY SIZING FIELD THAT REACHES THE BROKER — initial_capital and default_qty_value affect the Strategy Tester display only, because the chart trades the INDEX, not the option. All backtest figures are PER CONTRACT: at 3ct the documented BOT1 worst day is -$20,940 against a $20,000 account (105%) WITHOUT the premium skip, and -$6,690 (33%) with it. Premium commits $2,400-$9,180 per entry, median $3,660. Median SPX premium ~$1,220/ct (p90 ~$5,400); risk/ct = half premium. The skip is what makes 3ct viable, and a flat contract count cannot apply it automatically — see the 'Bot1 - Risk' group below.")
 optQtyFixed  = str.startswith(optQtyMode, "Fixed")
-otmPct     = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots 2/3 (alerts only)") * 0.01
-strikeStep = input.float(5.0, "Strike spacing", group="Bots 2/3 (alerts only)")
-enB2       = input.bool(true, "Bot2 30m spread alerts", group="Bots 2/3 (alerts only)")
-enB3       = input.bool(true, "Bot3 60m spread alerts", group="Bots 2/3 (alerts only)")
+
+// --- Bot1 premium skip: RELATIVE to spot (replaces the drifting fixed-$ rule; see WARNING 3).
+//     Pine cannot read option prices, so this only COMPUTES AND PRINTS the dollar threshold.
+capOn  = input.bool(true, "Skip rich-premium days", group="Bot1 · Risk", tooltip="ON (default) prints a per-contract dollar ceiling on the entry label and in the BOT1 info alert. It does NOT and CANNOT block the order — a Pine chart has no access to option quotes. If the ATM ask is above the printed number, do not take the trade (or let TradersPost's 'Amount per position' do it for you). Turning this off only hides the number; it does not change any signal.")
+capPct = input.float(0.70, "Skip if ATM premium > this % of spot", minval=0.0, step=0.05, group="Bot1 · Risk", tooltip="RELATIVE cap, so it does not drift as the index rises — the whole reason the old fixed $2,000 rule failed (0.49% of spot in 2022, 0.28% by 2026). 0.70 was chosen on the full 2022-2026 OPRA backtest: +$321,815 vs +$205,585 no-skip, PF 2.39, worst day -$2,230 vs -$6,980, max DD -$6,655 vs -$12,165, and it wins 4 of the 5 years. Walk-forward (each year's cap fit on prior years only) = +$183,490 vs +$147,080 across the 4 live years, so the gain is not pure hindsight. Threshold in DOLLARS per contract = spot x this % (SPX 7,800 x 0.70% = 54.6 points = $5,460). Lower it to trade less and cut the tail further; raise it toward 1.0 to trade almost everything.")
+otmPct     = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots 2/3 (retired)") * 0.01
+strikeStep = input.float(5.0, "Strike spacing", group="Bots 2/3 (retired)")
+enB2       = input.bool(false, "Bot2 30m spread alerts", group="Bots 2/3 (retired)", tooltip="OFF by default since v1.3.0 (2026-08-17): this is a ONE-BOT system now. Credit spreads were never webhook-automatable anyway (TradersPost sends single-leg orders only), so these were always manual. Tick to restore the chart labels and alertcondition()s.")
+enB3       = input.bool(false, "Bot3 60m spread alerts", group="Bots 2/3 (retired)", tooltip="OFF by default since v1.3.0 (2026-08-17) — see the Bot2 tooltip. Note the 60m OR also has a single-leg long variant in pine/SPX_ORB_BOT3L_60M_v1_strategy.pine, which is likewise RETIRED under the one-bot decision; do not put it on a chart.")
 
 isRTH  = not na(time(timeframe.period, "0930-1600", "America/New_York"))
 newDay = ta.change(time("D")) != 0
@@ -146,6 +154,13 @@ b3Dn = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close < lo60 * (1 - bufP
 f_optMsg(action, cp) =>
     qpart = optQtyFixed ? '"quantity":' + str.tostring(optContracts) + ', ' : ''
     '{"ticker":"SPX", "action":"' + action + '", ' + qpart + '"expiration":"+0 days", "optionType":"' + cp + '", "strikesAway":0}'
+// Per-contract dollar ceiling for the relative premium skip: spot points x cap% x $100/point,
+// which reduces to spot x capPct. PRINTED ONLY — Pine has no option quotes (header WARNING 3).
+b1SkipUsd = close * capPct
+// display.data_window: off the price scale, but still selectable as a {{plot(...)}} alert
+// placeholder (display.none removes it from that list too).
+plot(b1SkipUsd, "B1 skip $", display=display.data_window)
+
 if b1Up or b1Dn
     b1Dir := b1Up ? 1 : -1
     b1Bar := bar_index
@@ -153,6 +168,12 @@ if b1Up or b1Dn
         strategy.entry("B1", strategy.long, alert_message=f_optMsg("buy", "call"))
     else
         strategy.entry("B1", strategy.short, alert_message=f_optMsg("buy", "put"))
+    if capOn
+        label.new(bar_index, b1Up ? low : high,
+          "BOT1 BUY " + (b1Up ? "CALL" : "PUT") + " 0DTE ATM" + (optQtyFixed ? " x" + str.tostring(optContracts) : " (broker-sized)") +
+          "\nSKIP IF ASK > $" + str.tostring(b1SkipUsd, "#,###") + " /ct  (" + str.tostring(capPct) + "% of spot)",
+          style=b1Up ? label.style_label_up : label.style_label_down,
+          color=color.new(color.teal, 15), textcolor=color.white, size=size.small)
 tsBars = math.max(1, math.round(tsMin / 5.0))
 b1TimeStop = strategy.position_size != 0 and not na(b1Bar) and bar_index >= b1Bar + tsBars
 b1EOD      = strategy.position_size != 0 and isRTH and rthIx >= 76      // 15:50 bar onward
@@ -187,7 +208,17 @@ plot(isRTH and rthIx > 5  ? lo30 : na, "OR30 Low",  color.new(color.blue, 55),  
 plot(isRTH and rthIx > 11 ? hi60 : na, "OR60 High", color.new(color.purple, 55),1, plot.style_linebr)
 plot(isRTH and rthIx > 11 ? lo60 : na, "OR60 Low",  color.new(color.purple, 55),1, plot.style_linebr)
 
-// ==================== SPREAD ALERTS ====================
+// ==================== BOT1 INFO ALERT (premium ceiling) ====================
+// The ORDER goes out through the strategy's alert_message (TradersPost JSON). This second,
+// human-readable alert carries the skip threshold, which the JSON deliberately does NOT — an
+// unknown key could be rejected by the broker bridge. Set it up as its own alert if you want the
+// ceiling in your inbox; otherwise read it off the chart label.
+alertcondition(b1Up and capOn, "BOT1 UP — buy CALL (with premium ceiling)",
+     'SPX BOT1: 15m OR broke UP. BUY ATM 0DTE CALL. SKIP IF ASK > ${{plot("B1 skip $")}} per contract. Time stop 30m.')
+alertcondition(b1Dn and capOn, "BOT1 DN — buy PUT (with premium ceiling)",
+     'SPX BOT1: 15m OR broke DOWN. BUY ATM 0DTE PUT. SKIP IF ASK > ${{plot("B1 skip $")}} per contract. Time stop 30m.')
+
+// ==================== SPREAD ALERTS (retired — enB2/enB3 default OFF since v1.3.0) ====================
 alertcondition(b2Up, "BOT2 UP — sell PUT spread",  "SPX BOT2: 30m OR broke UP. SELL 5-wide PUT credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
 alertcondition(b2Dn, "BOT2 DN — sell CALL spread", "SPX BOT2: 30m OR broke DOWN. SELL 5-wide CALL credit spread ~0.30% OTM. Close @50% credit, stop @2x.")
 alertcondition(b3Up, "BOT3 UP — sell PUT spread",  "SPX BOT3: 60m OR broke UP. SELL 10-wide PUT credit spread ~0.30% OTM. Close @50% credit, stop @2x.")

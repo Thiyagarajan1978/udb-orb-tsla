@@ -1,25 +1,37 @@
 //@version=6
 strategy("SPX ORB BOT3-LONG 60m STRATEGY — long ATM 0DTE", shorttitle="SPX-ORB B3L S", overlay=true,
-     initial_capital=20000, default_qty_type=strategy.fixed, default_qty_value=10,
-     margin_long=33.333, margin_short=33.333,
+     initial_capital=20000, default_qty_type=strategy.fixed, default_qty_value=3,
      calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
 
-// STATUS 2026-08-17 (v1.0.2): production leg — BOT3 traded as a SINGLE-LEG LONG OPTION on the
+// ############################################################################################
+// ###  RETIRED 2026-08-17 (v1.0.3) — DO NOT PUT THIS ON A CHART OR WIRE IT TO AN ALERT.     ###
+// ###  The system was reduced to ONE bot on user instruction: BOT1 only, in                 ###
+// ###  pine/SPX_ORB_3BOT_v1_strategy.pine, at 3 contracts with the 0.70%-of-spot premium    ###
+// ###  skip. This file is kept intact, not deleted, so the leg can be revived without       ###
+// ###  rebuilding it — nothing in the logic is broken or disproven. If it IS revived:       ###
+// ###    (a) it MUST run as its own strategy on its own chart (see the note below), and     ###
+// ###    (b) re-check the sizing against the account first — the numbers below assume the   ###
+// ###        two legs can be funded together, which at anything above ~3ct they cannot.     ###
+// ############################################################################################
+//
+// STATUS 2026-08-17 (v1.0.3): production leg — BOT3 traded as a SINGLE-LEG LONG OPTION on the
 // 60-minute opening range, replacing the un-automatable 10-wide credit spread.
 // Companion to pine/SPX_ORB_3BOT_v1_strategy.pine (BOT1). Chart: SPX, 5-minute, RTH.
-// v1.0.2 (2026-08-17): ACCOUNT DEFAULTS ONLY, no signal logic touched. initial_capital
-//   10,000 -> 20,000; default_qty_value 1 -> 10; "Option contracts" 1 -> 10; margin 33.333%
-//   (= 3x leverage). Set on user instruction — see the sizing warning below.
+// v1.0.3 (2026-08-17): RETIRED (banner above). Contract default 10 -> 3 and margin_long/short
+//   removed, so that if it is ever switched back on it does not come back at the withdrawn
+//   v1.0.2 sizing. No signal logic touched.
+// v1.0.2 (2026-08-17): account re-base to $20,000 / 10ct / 3x margin. WITHDRAWN by v1.0.3.
 // v1.0.1 (2026-08-08): entries blocked on the session's FINAL bar (15:55) — see the `rthIx < 77`
 //   note at the signal block. Found by reading a Strategy Tester export; nothing else changed.
 //
-// *** SIZING WARNING — every figure in this file is PER CONTRACT. *** At 10 contracts against a
-// $20,000 account the documented BOT3L worst day (-$2,150/ct) becomes -$21,500 = 108% of the
-// account, and the BOT1+BOT3L combined worst day (-$2,680/ct) becomes -$26,800 = 134%. The
-// ~$2,150/ct of premium committed when both legs are open becomes ~$21,500 — more than the whole
-// account, so the two legs cannot both fill at 10ct. Also note margin_long/short=33.333 above is
-// Strategy-Tester-only fiction: a long option is 100% CASH under Reg T and cannot be levered 3x
-// at a broker. The validated alternative is fixed-DOLLAR sizing — see "Option quantity mode".
+// *** SIZING WARNING — every figure in this file is PER CONTRACT. *** At 3 contracts against a
+// $20,000 account the documented BOT3L worst day (-$2,150/ct) becomes -$6,450 = 32% of the
+// account, and the BOT1+BOT3L combined worst day (-$2,680/ct) becomes -$8,040 = 40% — but that
+// combined figure assumes BOTH legs are funded, which needs ~$6,450 of premium open at once on
+// top of BOT1's own $2,400-$9,180. That is the practical reason the one-bot decision is not just
+// a preference: at this account size the second leg competes with the first for cash. Note also
+// that v1.0.2's margin_long/short=33.333 was Strategy-Tester-only fiction and has been removed —
+// a long option is 100% CASH under Reg T and cannot be levered at a broker.
 //
 // *** RUN THIS AS A SEPARATE STRATEGY ON ITS OWN CHART/TAB, WITH ITS OWN ALERT. ***
 // It is deliberately NOT merged into the BOT1 strategy file. TradingView nets positions within
@@ -77,7 +89,7 @@ capMode     = input.string("Relative (% of spot)", "Premium skip mode", options=
 capPct      = input.float(0.45, "Skip if premium > this % of spot", minval=0.05, step=0.05, group="BOT3-Long · Risk", tooltip="0.45% of spot. Walk-forward validated (beat no-skip 3/4 live years); the 0.35-0.50 band is a plateau. At SPX 7,000 this is ~$3,150 of premium per contract.")
 capFixed    = input.float(3000.0, "Fixed skip threshold ($/ct)", minval=0.0, step=100, group="BOT3-Long · Risk", tooltip="Used only in 'Fixed $' mode. Provided for parity with the BOT1 file; prefer Relative.")
 optQtyMode  = input.string("Fixed contracts", "Option quantity mode", options=["Fixed contracts", "TradersPost sizing (omit quantity)"], group="BOT3-Long · TradersPost", tooltip="Fixed contracts = the webhook carries the quantity below. 'TradersPost sizing' OMITS quantity so TradersPost's 'Amount per position' decides the contract count. CAVEAT: TradersPost's amount is a FIXED DOLLAR setting, so it cannot express the relative cap — if you use it, revisit the amount when SPX moves materially (say every quarter), or the skip drifts exactly the way the fixed-$ cap does. VERIFY IN PAPER: (1) that the amount divides by option PREMIUM not the INDEX price, and (2) that an unaffordable day SKIPS rather than errors — the skip is where the edge is.")
-optContracts= input.int(10, "Option contracts (quantity)", minval=1, group="BOT3-Long · TradersPost", tooltip="Default raised 1 -> 10 on 2026-08-17 by user instruction. THIS IS THE ONLY SIZING FIELD THAT REACHES THE BROKER — initial_capital and default_qty_value only move the Strategy Tester, which trades the INDEX rather than the option. All figures in this file are PER CONTRACT: at 10ct the documented worst day is -$21,500 against a $20,000 account (108%), and BOT1+BOT3L together commit ~$21,500 of premium, which the account cannot cover. See the SIZING WARNING in the header.")
+optContracts= input.int(3, "Option contracts (quantity)", minval=1, group="BOT3-Long · TradersPost", tooltip="MOOT WHILE THIS FILE IS RETIRED (see the banner at the top) — set to 3 only so a revival does not inherit v1.0.2's withdrawn 10. THIS IS THE ONLY SIZING FIELD THAT REACHES THE BROKER — initial_capital and default_qty_value only move the Strategy Tester, which trades the INDEX rather than the option. All figures in this file are PER CONTRACT: at 3ct the documented worst day is -$6,450 against a $20,000 account (32%), and BOT1+BOT3L together commit ~$6,450 of premium on top of BOT1's own. See the SIZING WARNING in the header.")
 optQtyFixed = str.startswith(optQtyMode, "Fixed")
 
 isRTH  = not na(time(timeframe.period, "0930-1600", "America/New_York"))
