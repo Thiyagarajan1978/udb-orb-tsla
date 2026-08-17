@@ -1,11 +1,42 @@
 //@version=6
 strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle="SPX-ORB 3BOT S", overlay=true,
-     initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1,
+     initial_capital=20000, default_qty_type=strategy.fixed, default_qty_value=10,
+     margin_long=33.333, margin_short=33.333,
      calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
 
-// STATUS 2026-08-08 (v1.2.1): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
+// STATUS 2026-08-17 (v1.2.2): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
+// v1.2.2 (2026-08-17): ACCOUNT DEFAULTS ONLY, no signal logic touched. initial_capital
+//   10,000 -> 20,000; default_qty_value 1 -> 10; "Option contracts" 1 -> 10; margin 33.333%
+//   (= 3x leverage). Set on user instruction. READ THE THREE WARNINGS BELOW BEFORE TRADING IT.
 // v1.2.1 (2026-08-08): BOT1 entries blocked on the session's FINAL bar (15:55) — see the
 //   `rthIx < 77` note at the signal block. No other change.
+//
+// *** WARNING 1 — 10 CONTRACTS IS NOT SURVIVABLE ON $20,000 AT THE DOCUMENTED WORST DAYS. ***
+// Every backtest figure in this file is PER CONTRACT. Multiplied by 10 against a $20,000 account:
+//     BOT1 worst day       -$6,980/ct  ->  -$69,800   = 349% of the account
+//     BOT1+BOT3L worst day -$2,680/ct  ->  -$26,800   = 134% of the account
+//     BOT3L worst day      -$2,150/ct  ->  -$21,500   = 108% of the account
+// The live forward window (2026-07-17..08-14) already shows a -$1,515/ct day = -$15,150 at 10ct,
+// i.e. 76% of the account in one session. Premium at 10ct commits $8,000-$30,600 per BOT1 entry;
+// the top of that range EXCEEDS the account outright, and holding BOT1+BOT3L together needs
+// ~$21,500 at 10ct against $20,000 of capital. Sizing is the user's call, but the arithmetic is
+// not in dispute: at 10 fixed contracts this account is a total-loss candidate on a single
+// documented-magnitude day.
+//
+// *** WARNING 2 — "3x LEVERAGE" DOES NOT EXIST FOR THIS STRATEGY AT A BROKER. ***
+// The margin_long/margin_short=33.333 above only changes TradingView's Strategy Tester. Under
+// Reg T a LONG option position is 100% CASH — it is not marginable at any leverage, and 0DTE
+// least of all. The broker will reject anything the cash balance cannot pay for outright. Treat
+// the buying power available to this system as $20,000, not $60,000.
+//
+// *** WARNING 3 — FIXED CONTRACTS DISCARDS THE LARGEST SINGLE SOURCE OF EDGE. ***
+// A flat contract count cannot skip rich-premium days, and the rich tercile is NET NEGATIVE
+// (-$61,310, PF 0.77) and hosts the worst day. Fixed-DOLLAR risk sizing returned +$452,985 over
+// 4.5yr vs +$205,025 at flat 1ct, with a 4.3x smaller worst day. Risk/ct = HALF the premium, so
+// on a $20,000 account a 10%-per-day budget = $2,000 risk = ~3 contracts at the median $1,220
+// premium and ~5 at the cheap end — it only reaches 10 contracts on genuinely cheap days, which
+// is the point. To get that behaviour set "Option quantity mode" = "TradersPost sizing" and put
+// $4,000 in TradersPost's "Amount per position" (verify in paper FIRST — see that tooltip).
 //
 //
 // *** SECOND AUTOMATED LEG ADDED 2026-08-07: pine/SPX_ORB_BOT3L_60M_v1_strategy.pine ***
@@ -56,7 +87,7 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
 bufPct     = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
 tsMin      = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bot1")
 optQtyMode = input.string("Fixed contracts", "Option quantity mode", options=["Fixed contracts", "TradersPost sizing (omit quantity)"], group="Bot1 · TradersPost", tooltip="Fixed contracts (default) = the webhook sends the 'Option contracts' quantity below, i.e. v1.0 behaviour, unchanged. 'TradersPost sizing' = the entry JSON OMITS the quantity field so TradersPost's strategy-level position sizing decides the contract count — set 'Amount per position' to ~$2,000 there (= the $1k/day risk cap, since risk/ct is HALF the premium). WHY: the 2026-07-24 re-verification found the RICH premium tercile is net NEGATIVE (-$61,310, PF 0.77) and hosts the -$6,980 worst day; a $1k risk cap auto-skips those days for +$452,985 / 4.5yr vs +$205,025 flat-1ct, worst day -$1,610. VERIFY IN PAPER FIRST — two things TradersPost's docs do not settle: (1) whether 'Amount per position' divides by the option PREMIUM (correct) or the INDEX price (very wrong — SPX ~6,000 would size 0 contracts every day), and (2) whether an unaffordable day SKIPS or errors. The skip is where most of the edge lives, so confirm it on a real fill before trusting it.")
-optContracts = input.int(1, "Option contracts (quantity)", minval=1, group="Bot1 · TradersPost", tooltip="Used only in 'Fixed contracts' mode. Real backtest figures are PER CONTRACT. Median SPX premium ~$1,220/ct (p90 ~$5,400); risk/ct = half premium. Start with 1 while forward-testing.")
+optContracts = input.int(10, "Option contracts (quantity)", minval=1, group="Bot1 · TradersPost", tooltip="Used only in 'Fixed contracts' mode. Default raised 1 -> 10 on 2026-08-17 by user instruction. THIS IS THE ONLY SIZING FIELD THAT REACHES THE BROKER — initial_capital and default_qty_value affect the Strategy Tester display only, because the chart trades the INDEX, not the option. All backtest figures are PER CONTRACT: at 10ct the documented BOT1 worst day is -$69,800 against a $20,000 account (349%), and premium commits $8,000-$30,600 per entry. Median SPX premium ~$1,220/ct (p90 ~$5,400); risk/ct = half premium. See WARNING 1 and WARNING 3 in the header — flat contracts cannot skip the net-negative rich-premium tercile, which is where most of the edge lives.")
 optQtyFixed  = str.startswith(optQtyMode, "Fixed")
 otmPct     = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots 2/3 (alerts only)") * 0.01
 strikeStep = input.float(5.0, "Strike spacing", group="Bots 2/3 (alerts only)")

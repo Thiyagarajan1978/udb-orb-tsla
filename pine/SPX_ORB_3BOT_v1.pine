@@ -1,8 +1,12 @@
 //@version=6
 indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", overlay=true, max_labels_count=500, max_lines_count=500)
 
-// STATUS 2026-08-07 (v1.2 — BOT3-LONG production mode + the fixed-$ skip-drift WARNING below.
-// No signal logic changed): SEPARATE indicator for the SPX 0DTE system —
+// STATUS 2026-08-17 (v1.2.1 — account re-based to $20,000: the Bot1 risk budget default moves
+// $1,000 -> $2,000/day, holding the validated 10%-of-account ratio. No signal logic changed.
+// The strategy files also went to 10 contracts / 3x margin on the same instruction — read their
+// headers, the arithmetic there is unfavourable).
+// v1.2 (2026-08-07) — BOT3-LONG production mode + the fixed-$ skip-drift WARNING below:
+// SEPARATE indicator for the SPX 0DTE system —
 // deliberately NOT part of the UDB-ORB TSLA suite (different symbol, different concept,
 // different risk). ALERTS-ONLY.
 // Chart: SPX (or SPXW-settling index), 5-minute, RTH. Options: SPXW 0DTE, strikes are 5-wide.
@@ -68,7 +72,7 @@ b3Mode    = input.string("Long ATM (production)", "Bot3 instrument", options=["L
 tsMin     = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bots")
 tsMinB3L  = input.int(50, "Bot3-Long time stop (minutes)", minval=5, step=5, group="Bots", tooltip="50, NOT BOT1's 30. Validated independently: beats a 30-min stop by +$41,970 on the identical 1,010 trades (t=2.48, bootstrap P=100%, 95% CI excludes zero) and wins 5/5 YEARS; walk-forward hold selection also beat flat-30 in 4/4 live years. BOT3 enters ~10:40+, past the opening gamma burst, so the move needs longer to develop. The same test REJECTED a longer hold for BOT1.")
 capPctB3L = input.float(0.45, "Bot3-Long skip if premium > % of spot", minval=0.0, step=0.05, group="Bots", tooltip="RELATIVE cap, deliberately not a fixed dollar amount — see the drift warning in the header. 0.45% of spot; walk-forward beat no-skip in 3/4 live years and the 0.35-0.50 band is a plateau. The rich-premium tercile is net NEGATIVE here (-$41,270, PF 0.80) and hosts the worst day. Set 0 to hide.")
-riskBudget= input.float(1000.0, "Bot1 fixed-dollar risk budget ($/day, 0 = off)", minval=0.0, step=100, group="Bots", tooltip="Risk per contract = HALF the premium (the -50% stop), so this budget implies a SKIP THRESHOLD of 2x it: skip the trade when 1ct premium exceeds that. The BOT1 label prints the number — the chart cannot read option prices, so YOU check it against the actual ask before buying. WHY: on corrected bar-close fills the rich-premium tercile is NET NEGATIVE (-$61,310, PF 0.77) and hosts the worst day; $1k/day risk-capping returns +$452,985 over 4.5yr vs +$205,025 at a flat 1 contract, with the worst day 4.3x smaller. Set 0 to hide the reminder.")
+riskBudget= input.float(2000.0, "Bot1 fixed-dollar risk budget ($/day, 0 = off)", minval=0.0, step=100, group="Bots", tooltip="Raised 1,000 -> 2,000 on 2026-08-17 with the account re-base to $20,000 — the validated setting was 10% of a $10,000 account, and this holds that ratio. Risk per contract = HALF the premium (the -50% stop), so this budget implies a SKIP THRESHOLD of 2x it: skip the trade when 1ct premium exceeds that. The BOT1 label prints the number — the chart cannot read option prices, so YOU check it against the actual ask before buying. WHY: on corrected bar-close fills the rich-premium tercile is NET NEGATIVE (-$61,310, PF 0.77) and hosts the worst day; $1k/day risk-capping returns +$452,985 over 4.5yr vs +$205,025 at a flat 1 contract, with the worst day 4.3x smaller. Set 0 to hide the reminder.")
 otmPct    = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots") * 0.01
 strikeStep= input.float(5.0, "Strike spacing", group="Bots")
 showOR    = input.bool(true, "Show OR boxes", group="Display")
