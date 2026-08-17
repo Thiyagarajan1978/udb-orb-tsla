@@ -1,10 +1,13 @@
 //@version=6
 strategy("SPX ORB BOT3-LONG 60m STRATEGY — long ATM 0DTE", shorttitle="SPX-ORB B3L S", overlay=true,
-     initial_capital=20000, default_qty_type=strategy.fixed, default_qty_value=3,
+     // TESTER-ONLY, not the account: 1 INDEX unit on notional capital. Setting these to the real
+     // $20,000/3 makes the tester unable to afford the position and it silently drops ~40% of the
+     // trades — see WARNING 0 in pine/SPX_ORB_3BOT_v1_strategy.pine. Broker qty = "Option contracts".
+     initial_capital=100000, default_qty_type=strategy.fixed, default_qty_value=1,
      calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
 
 // ############################################################################################
-// ###  RETIRED 2026-08-17 (v1.0.3) — DO NOT PUT THIS ON A CHART OR WIRE IT TO AN ALERT.     ###
+// ###  RETIRED 2026-08-17 (v1.0.4) — DO NOT PUT THIS ON A CHART OR WIRE IT TO AN ALERT.     ###
 // ###  The system was reduced to ONE bot on user instruction: BOT1 only, in                 ###
 // ###  pine/SPX_ORB_3BOT_v1_strategy.pine, at 3 contracts with the 0.70%-of-spot premium    ###
 // ###  skip. This file is kept intact, not deleted, so the leg can be revived without       ###
@@ -14,9 +17,11 @@ strategy("SPX ORB BOT3-LONG 60m STRATEGY — long ATM 0DTE", shorttitle="SPX-ORB
 // ###        two legs can be funded together, which at anything above ~3ct they cannot.     ###
 // ############################################################################################
 //
-// STATUS 2026-08-17 (v1.0.3): production leg — BOT3 traded as a SINGLE-LEG LONG OPTION on the
+// STATUS 2026-08-17 (v1.0.4): production leg — BOT3 traded as a SINGLE-LEG LONG OPTION on the
 // 60-minute opening range, replacing the un-automatable 10-wide credit spread.
 // Companion to pine/SPX_ORB_3BOT_v1_strategy.pine (BOT1). Chart: SPX, 5-minute, RTH.
+// v1.0.4 (2026-08-17): tester sizing fixed alongside BOT1 — initial_capital 20,000 -> 100,000,
+//   default_qty_value 3 -> 1. Same defect, same reason (WARNING 0 in the BOT1 file).
 // v1.0.3 (2026-08-17): RETIRED (banner above). Contract default 10 -> 3 and margin_long/short
 //   removed, so that if it is ever switched back on it does not come back at the withdrawn
 //   v1.0.2 sizing. No signal logic touched.

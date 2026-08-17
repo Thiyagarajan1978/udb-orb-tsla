@@ -1,11 +1,19 @@
 //@version=6
+// initial_capital / default_qty_value below are STRATEGY-TESTER ONLY and are deliberately NOT
+// the account. The tester trades ONE unit of the INDEX; the broker buys the "Option contracts"
+// quantity of an OPTION. See "WARNING 0" — setting them to the real account silently deletes
+// trades from the backtest.
 strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle="SPX-ORB 3BOT S", overlay=true,
-     initial_capital=20000, default_qty_type=strategy.fixed, default_qty_value=3,
+     initial_capital=100000, default_qty_type=strategy.fixed, default_qty_value=1,
      calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
 
-// STATUS 2026-08-17 (v1.3.0): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
+// STATUS 2026-08-17 (v1.3.1): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
+// v1.3.1 (2026-08-17): TESTER SIZING FIX, no signal logic touched. initial_capital 20,000 ->
+//   100,000 and default_qty_value 3 -> 1, so the Strategy Tester can always afford the position
+//   and stops dropping trades. Found by auditing a real export — see WARNING 0. The BROKER
+//   quantity ("Option contracts") is UNCHANGED at 3.
 // v1.3.0 (2026-08-17): THIS IS NOW A ONE-BOT SYSTEM AT 3 CONTRACTS. Set on user instruction.
-//   1. default_qty_value 10 -> 3 and "Option contracts" 10 -> 3. See WARNING 1.
+//   1. "Option contracts" 10 -> 3. See WARNING 1.
 //   2. BOT2 and BOT3 spread alerts DEFAULT OFF (enB2/enB3 = false). They were never automatable
 //      (single-leg webhooks only) and the decision is to run ONE bot. The code is left intact —
 //      tick the two boxes to get the labels/alerts back. BOT3-LONG (the separate strategy file)
@@ -19,6 +27,20 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
 // v1.2.2 (2026-08-17): account re-base to $20,000 / 10ct / 3x. Superseded by v1.3.0 above.
 // v1.2.1 (2026-08-08): BOT1 entries blocked on the session's FINAL bar (15:55) — see the
 //   `rthIx < 77` note at the signal block. No other change.
+//
+// *** WARNING 0 — NEVER SET initial_capital/default_qty_value TO YOUR REAL ACCOUNT. ***
+// Measured on a real export (SPCFD:SPX, 2026-08-17, v1.3.0 defaults of $20,000 / 3 units):
+//   The tester bought 3 units of the INDEX = ~$20,400 of notional against $20,000 of equity.
+//   Median headroom $457, MINIMUM $14. 52 of 95 entries had under $500 to spare. THREE trades
+//   were partially margin-called mid-position (filled at qty 1 and 2 instead of 3), and once SPX
+//   crossed ~6,816 the tester could not open a 3-lot at all — it silently stopped trading on
+//   2026-04-13 and showed nothing for the following four months.
+//   Cross-checked against the OPRA backtest for the SAME window (2025-08-18..2026-04-13):
+//   158 BOT1 signals existed. The export showed 95. **40% of the trades were missing**, with no
+//   error anywhere — the equity curve just looked calm and short.
+// The fix is NOT fake margin (see WARNING 2), it is to stop conflating the two numbers: the
+// tester is a 1-unit INDEX TIMING PROXY on notional capital, and the only field that reaches the
+// broker is "Option contracts". Keep tester capital far above 1x the index level.
 //
 // *** WARNING 1 — WHAT 3 CONTRACTS ON $20,000 ACTUALLY RISKS. ***
 // Every backtest figure in this file is PER CONTRACT. Multiplied by 3 against a $20,000 account,
@@ -75,7 +97,14 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
 //   BOT2/BOT3 credit spreads = ALERTS ONLY (multi-leg orders are not webhook-able here);
 //   use the alertcondition()s and place the spread at the broker.
 // Strategy Tester shows INDEX-POINT P&L of the Bot1 timing only (a proxy) — real option P&L
-// (premium, theta, IV) is NOT backtestable in TV. The REAL numbers are the OPRA backtest,
+// (premium, theta, IV) is NOT backtestable in TV. HOW BIG THE GAP IS, measured on the
+// 2025-08-18..2026-04-13 export: the tester showed +$453 on 95 trades (+2.27%, WR 52.6%,
+// PF 1.38, +1.59 index points per unit per trade). OPRA over the same window, on the 158 trades
+// that actually existed: +$30,755 @1ct / +$92,265 @3ct, WR 46.2%. Note the tester's win rate is
+// HIGHER and its P&L ~200x smaller — the index is directionally right more often than the option
+// is profitable (theta eats the small wins), and the option converts a 1.6-point index move into
+// a leveraged premium move. NEVER read the tester's % return as the strategy's return.
+// The REAL numbers are the OPRA backtest,
 // BARCLOSE-CORRECTED 2026-07-24 (the originals had a 5-min entry lookahead — bar-START quotes):
 // FULL 2022-2026 @1ct: BOT1 ts30 +$205,025 (was +$457,265; WR 48%, PF 1.50, worst -$6,980),
 // COMBO +$687,671 (was +$1,088,751). Every bot positive every year; see docs/SPX_ANALYSIS.md.
