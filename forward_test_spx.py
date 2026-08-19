@@ -20,6 +20,7 @@ import argparse, os, re, sys, time, datetime as dt
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
 import pandas as pd, numpy as np
 from udb_orb.data.fmp_client import fetch_5min, rth_only
+from udb_orb.options import ExpiryMismatch, assert_expiry
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 LEDGER = os.path.join(ROOT, "exports", "forward_spx_ledger.csv")
@@ -154,6 +155,15 @@ def main():
         except Exception as e:
             print(f"{day}: quotes not available yet ({str(e)[:60]}) — stopping."); break
         if not len(q): print(f"{day}: no quotes returned — OPRA likely not published yet; stopping."); break
+        # EXPIRY GUARD (2026-08-19). This ledger has always been clean -- it pulls a ONE-SESSION
+        # window and only ever requests symbols expiring `exp` -- but nothing asserted it, which is
+        # exactly how scripts/spx/price_hersystem_ts30.py merged 2-8 expiries into one series for
+        # years without anyone noticing. Assert it, so "clean by construction" stays true if the
+        # construction is ever edited. Skip the day rather than kill a scheduled run.
+        try:
+            for _s in q["symbol"].unique(): assert_expiry(_s, exp, context=f"forward_spx {day}")
+        except ExpiryMismatch as _e:
+            print(f"{day}: EXPIRY GUARD TRIPPED, day NOT priced -- {_e}"); continue
         sc=1e9 if q["ask_px_00"].abs().median()>1e6 else 1.0
         q["ask"]=q["ask_px_00"]/sc; q["bid"]=q["bid_px_00"]/sc
         t=pd.to_datetime(q["ts_event"],utc=True).dt.tz_convert("America/New_York")
