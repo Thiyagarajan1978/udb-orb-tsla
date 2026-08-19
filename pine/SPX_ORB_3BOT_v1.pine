@@ -71,6 +71,9 @@ indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", ov
 
 // ==================== INPUTS ====================
 bufPct    = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
+// v1.3.2 (2026-08-19): mirrors the same input in SPX_ORB_3BOT_v1_strategy.pine — keep the two
+// charts on the SAME value or the indicator's labels will not match the strategy's fills.
+confBars  = input.int(1, "Entry confirmation bars", minval=1, maxval=3, group="Signal", tooltip="Consecutive 5m closes required beyond the buffered OR level before BOT1 signals. 1 = shipped behaviour, unchanged. 2 = the 2-candle confirmation (the breakout bar alone does not fire; the next bar must close beyond the SAME level, and the signal is that second bar's close). Evidence is mixed — better on index points 2022-2026 but WORSE on real 0DTE option quotes for 2022-23, and it splits by regime. See the strategy file's tooltip and WARNING 4 for the full numbers.")
 enB1      = input.bool(true,  "Bot1: 15m OR — long ATM 0DTE",        group="Bots")
 enB2      = input.bool(false, "Bot2: 30m OR — 5-wide credit spread", group="Bots", tooltip="OFF by default since v1.3.0 (2026-08-17): this is a ONE-BOT system now. The spread bots were never automatable (TradersPost webhooks are single-leg only) so they were always manual work, and the decision is to run BOT1 alone. Logic is untouched — tick to restore the labels and alerts.")
 enB3      = input.bool(false, "Bot3: 60m OR",                       group="Bots", tooltip="OFF by default since v1.3.0 (2026-08-17) — see the Bot2 tooltip. This covers BOT3-LONG as well: pine/SPX_ORB_BOT3L_60M_v1_strategy.pine is retired under the same decision, so keep it off your charts.")
@@ -117,8 +120,17 @@ var int b1Bar = na
 if newDay
     b1Dir := 0, b2Dir := 0, b3Dir := 0, b1Bar := na
 
-b1Up = enB1 and isRTH and rthIx > 2  and b1Dir == 0 and close > hi15 * (1 + bufPct)
-b1Dn = enB1 and isRTH and rthIx > 2  and b1Dir == 0 and close < lo15 * (1 - bufPct)
+// v1.3.2: run-length counters so `confBars` consecutive closes are required. `rthIx > 2` sits in
+// the RAW test so the opening-range bars never count toward a run; at confBars=1 these two lines
+// reduce exactly to the v1.3.0 conditions. Counters reset on any close back inside and outside RTH.
+b1RawUp = isRTH and rthIx > 2 and close > hi15 * (1 + bufPct)
+b1RawDn = isRTH and rthIx > 2 and close < lo15 * (1 - bufPct)
+var int b1UpRun = 0
+var int b1DnRun = 0
+b1UpRun := b1RawUp ? nz(b1UpRun[1]) + 1 : 0
+b1DnRun := b1RawDn ? nz(b1DnRun[1]) + 1 : 0
+b1Up = enB1 and isRTH and rthIx > 2  and b1Dir == 0 and b1UpRun >= confBars
+b1Dn = enB1 and isRTH and rthIx > 2  and b1Dir == 0 and b1DnRun >= confBars
 b2Up = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close > hi30 * (1 + bufPct)
 b2Dn = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close < lo30 * (1 - bufPct)
 b3Up = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close > hi60 * (1 + bufPct)

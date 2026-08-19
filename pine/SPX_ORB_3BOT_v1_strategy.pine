@@ -7,6 +7,24 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
      initial_capital=100000, default_qty_type=strategy.fixed, default_qty_value=1,
      calc_on_every_tick=false, process_orders_on_close=true, max_labels_count=500)
 
+// ############ WARNING 4 (2026-08-19) — THE OPRA $ FIGURES IN THIS HEADER ARE INVALID ############
+// Every dollar number below (+$205,025 / +$321,815 / worst day / PF / tercile) came from
+// scripts/spx/price_hersystem_ts30.py, which keys its quote book on (day, cp, strike) with NO
+// EXPIRY. The pull (scripts/spx/pull_hersystem.py) fetches each day's 0DTE symbols over a WHOLE
+// MONTH range, so 2-8 expiries land at the same strike and get sorted into ONE series — the exit
+// scan then fills the +50% target on a LATER-EXPIRY quote. Verified 2023-03-02 CALL 3945: 0DTE
+// entry ask $10.10, next quote in the merged series is an $81.40 bid from the 3/24 contract ->
+// a fabricated +$7,060. Re-priced correctly (expiry-keyed, true 0DTE, ATM<=6pt), 2022-23 BOT1
+// ts30 is -$32,310, NEGATIVE both years, vs the +$116,955 published for the same 465 sessions.
+// 2024-2026 cannot be re-priced at all from that cache (only 1.5-4.8% of days hold an ATM 0DTE
+// strike). The 0.70% skip is largely a data filter: 70.3% of what it removes is wrong-expiry.
+// NOT affected: forward_test_spx.py / exports/forward_spx_ledger.csv (single-day pulls, verified
+// 22 of 22 true 0DTE) and every bar-based figure (trade timing, counts, scripts/spx_expected_trades.py).
+// DO NOT SIZE ON THE NUMBERS BELOW until OPRA is re-pulled per-day. See memory
+// spx-opra-expiry-merge-bug.md. Left in place, unedited, only so the re-run has a baseline to diff.
+// ################################################################################################
+//
+// v1.3.2 (2026-08-19): adds "Entry confirmation bars" (default 1 = UNCHANGED). See the input.
 // STATUS 2026-08-17 (v1.3.1): STRATEGY companion to pine/SPX_ORB_3BOT_v1.pine (same signals) —
 // v1.3.1 (2026-08-17): TESTER SIZING FIX, no signal logic touched. initial_capital 20,000 ->
 //   100,000 and default_qty_value 3 -> 1, so the Strategy Tester can always afford the position
@@ -133,6 +151,9 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
 
 // ==================== INPUTS ====================
 bufPct     = input.float(0.05, "Break buffer (% of OR level)", minval=0.0, step=0.01, group="Signal") * 0.01
+// v1.3.2 (2026-08-19): 1 = the shipped rule, byte-identical to v1.3.1. 2 = require the break to
+// HOLD for a second consecutive bar before entering (the 2-candle confirmation).
+confBars   = input.int(1, "Entry confirmation bars", minval=1, maxval=3, group="Signal", tooltip="How many CONSECUTIVE 5m closes must sit beyond the buffered OR level before BOT1 enters. 1 = the shipped behaviour, unchanged (leave it here for the production chart). 2 = the 2-candle confirmation: the breakout bar alone no longer fires; the next bar must close beyond the SAME level too, and entry is at that second bar's close. A bar that closes back inside resets the count, so a later clean break the same day can still trigger (one trade per session either way). Earliest possible entry moves from the 09:45 bar to the 09:50 bar. WHY THIS EXISTS: 2026-08-17 broke the level by 0.04 pt and closed back above it on the very next bar, a textbook fakeout that cost -7.5 index pts; confirm=2 would have refused it, entered 12:55, and made +11.4. EVIDENCE SO FAR IS MIXED, DO NOT ASSUME IT IS AN IMPROVEMENT: across 2022-2026 on INDEX POINTS it beat confirm=1 in 6 of 6 exit variants, but paired t=0.66 (better on only 43.8% of days) and it LOSES 2022-23 while winning 2024-26 — a regime split. On real 0DTE option quotes for 2022-23 (the only historical option data that is trustworthy — see WARNING 4) it was WORSE paired: -$18,190 vs -$10,065 over the same 432 sessions, t=-0.85, because the extra 5-minute delay costs premium and theta that index points cannot see. 3 is offered only for probing; it has not been tested at all.")
 tsMin      = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bot1")
 optQtyMode = input.string("Fixed contracts", "Option quantity mode", options=["Fixed contracts", "TradersPost sizing (omit quantity)"], group="Bot1 · TradersPost", tooltip="Fixed contracts (default) = the webhook sends the 'Option contracts' quantity below, i.e. v1.0 behaviour, unchanged. 'TradersPost sizing' = the entry JSON OMITS the quantity field so TradersPost's strategy-level position sizing decides the contract count — set 'Amount per position' to ~$2,000 there (= the $1k/day risk cap, since risk/ct is HALF the premium). WHY: the 2026-07-24 re-verification found the RICH premium tercile is net NEGATIVE (-$61,310, PF 0.77) and hosts the -$6,980 worst day; a $1k risk cap auto-skips those days for +$452,985 / 4.5yr vs +$205,025 flat-1ct, worst day -$1,610. VERIFY IN PAPER FIRST — two things TradersPost's docs do not settle: (1) whether 'Amount per position' divides by the option PREMIUM (correct) or the INDEX price (very wrong — SPX ~6,000 would size 0 contracts every day), and (2) whether an unaffordable day SKIPS or errors. The skip is where most of the edge lives, so confirm it on a real fill before trusting it.")
 optContracts = input.int(3, "Option contracts (quantity)", minval=1, group="Bot1 · TradersPost", tooltip="Used only in 'Fixed contracts' mode. Default set to 3 on 2026-08-17 by user instruction (was briefly 10 in v1.2.2, which was not survivable — see WARNING 1). THIS IS THE ONLY SIZING FIELD THAT REACHES THE BROKER — initial_capital and default_qty_value affect the Strategy Tester display only, because the chart trades the INDEX, not the option. All backtest figures are PER CONTRACT: at 3ct the documented BOT1 worst day is -$20,940 against a $20,000 account (105%) WITHOUT the premium skip, and -$6,690 (33%) with it. Premium commits $2,400-$9,180 per entry, median $3,660. Median SPX premium ~$1,220/ct (p90 ~$5,400); risk/ct = half premium. The skip is what makes 3ct viable, and a flat contract count cannot apply it automatically — see the 'Bot1 - Risk' group below.")
@@ -179,8 +200,19 @@ if newDay
 // never be closed (the EOD failsafe skips the entry bar because position_size is still 0, there is
 // no later RTH bar, and `newDay` nulls b1Bar so the time stop dies too), so it would carry to the
 // next session while the 0DTE option expires. Same guard as SPX_ORB_BOT3L_60M_v1_strategy.pine.
-b1Up = isRTH and rthIx > 2  and rthIx < 77 and b1Dir == 0 and close > hi15 * (1 + bufPct)
-b1Dn = isRTH and rthIx > 2  and rthIx < 77 and b1Dir == 0 and close < lo15 * (1 - bufPct)
+// v1.3.2: the raw break test, then a run-length counter so `confBars` consecutive closes are
+// required. `rthIx > 2` is inside the RAW test, so the three opening-range bars can never count
+// toward a confirmation run — with confBars=2 the earliest entry is rthIx==4 (the 09:50 bar).
+// The counters reset to 0 on any bar that closes back inside, and outside RTH, so they need no
+// newDay handling. At confBars=1 these lines reduce exactly to the v1.3.1 conditions.
+b1RawUp = isRTH and rthIx > 2 and close > hi15 * (1 + bufPct)
+b1RawDn = isRTH and rthIx > 2 and close < lo15 * (1 - bufPct)
+var int b1UpRun = 0
+var int b1DnRun = 0
+b1UpRun := b1RawUp ? nz(b1UpRun[1]) + 1 : 0
+b1DnRun := b1RawDn ? nz(b1DnRun[1]) + 1 : 0
+b1Up = isRTH and rthIx > 2  and rthIx < 77 and b1Dir == 0 and b1UpRun >= confBars
+b1Dn = isRTH and rthIx > 2  and rthIx < 77 and b1Dir == 0 and b1DnRun >= confBars
 b2Up = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close > hi30 * (1 + bufPct)
 b2Dn = enB2 and isRTH and rthIx > 5  and b2Dir == 0 and close < lo30 * (1 - bufPct)
 b3Up = enB3 and isRTH and rthIx > 11 and b3Dir == 0 and close > hi60 * (1 + bufPct)
@@ -216,6 +248,7 @@ if b1Up or b1Dn
     if capOn
         label.new(bar_index, b1Up ? low : high,
           "BOT1 BUY " + (b1Up ? "CALL" : "PUT") + " 0DTE ATM" + (optQtyFixed ? " x" + str.tostring(optContracts) : " (broker-sized)") +
+          (confBars > 1 ? "  [" + str.tostring(confBars) + "-bar confirm]" : "") +
           "\nSKIP IF ASK > $" + str.tostring(b1SkipUsd, "#,###") + " /ct  (" + str.tostring(capPct) + "% of spot)",
           style=b1Up ? label.style_label_up : label.style_label_down,
           color=color.new(color.teal, 15), textcolor=color.white, size=size.small)
