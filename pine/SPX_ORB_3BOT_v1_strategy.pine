@@ -104,6 +104,22 @@ strategy("SPX ORB 3-Bot v1 STRATEGY — Bot1 orders + spread alerts", shorttitle
 // HIGHER and its P&L ~200x smaller — the index is directionally right more often than the option
 // is profitable (theta eats the small wins), and the option converts a 1.6-point index move into
 // a leveraged premium move. NEVER read the tester's % return as the strategy's return.
+//
+// *** HOW TO VALIDATE A STRATEGY-TESTER RE-RUN (do this after every paste). ***
+//   python scripts/spx_expected_trades.py
+// It replays THIS state machine bar-for-bar on the cached SPX 5m bars and writes
+// exports/spx/EXPECTED_bot1_trades_v131.csv (1,127 trades 2022-01-03..2026-07-16; it agrees
+// with the OPRA backtest on direction for 100.00% of the 1,107 shared sessions). Reconcile the
+// tester's trade LIST against it -- count, dates, directions. Expected per year: 2022 250 /
+// 2023 246 / 2024 250 / 2025 250 / 2026 131 (part year). Structural invariants that must hold:
+// entries 09:45-15:50 and NEVER 15:55, 1,123 of 1,127 exits are the 30m time stop at 6 bars,
+// exactly one trade per session, 586 long / 541 short.
+//   *** EXPECT A FLAT-TO-UGLY TESTER EQUITY CURVE -- THAT IS A PASS. *** Total index-point P&L
+//   over 2022-2026 is +163.5 points (~+$163 at 1 unit) and NEGATIVE in 3 of the 5 years, while
+//   the identical trades on real 0DTE options are +$205,025 @1ct, +$321,815 with the skip.
+//   Judge the re-run on trade count and dates ONLY. Never on the curve.
+//   NOTE the chart symbol matters: SPCFD:SPX (a CFD feed) breaks a few minutes off the index on
+//   some days, so match dates and directions, not timestamps.
 // The REAL numbers are the OPRA backtest,
 // BARCLOSE-CORRECTED 2026-07-24 (the originals had a 5-min entry lookahead — bar-START quotes):
 // FULL 2022-2026 @1ct: BOT1 ts30 +$205,025 (was +$457,265; WR 48%, PF 1.50, worst -$6,980),
