@@ -1,3 +1,12 @@
+# !! INVALID PRICING -- DO NOT QUOTE THESE NUMBERS (found 2026-08-18) !!
+# The quote book below is keyed (day, cp, strike) with NO EXPIRY. The OPRA cache holds
+# 2-8 expiries per strike, so an exit can fill on a LATER-expiry contract at the same
+# strike (verified: 2023-03-02 CALL 3945 entered at a $10.10 0DTE ask and "exited" on an
+# $81.40 bid belonging to the 2023-03-24 contract = a fake +$7,060). Every P&L this file
+# has ever printed -- including the headline BOT1 +$205,025 and COMBO +$687,671 -- is
+# contaminated upward. Correctly priced 2022-23 BOT1 is -$32,310, not +$117k.
+# Use scripts/spx/repull_0dte.py, which keys the book on the full OSI symbol and asserts
+# the expiry via udb_orb.options.assert_expiry. Kept only for signal-logic reference.
 # BARCLOSE CORRECTION 2026-07-24: entries are now priced at the signal bar's CLOSE (mod+5)
 # — the breakout only exists once the bar closes; the original bar-START pricing was a
 # 5-minute lookahead (the same bug found in the TSLA forward test 2026-07-20). Corrected

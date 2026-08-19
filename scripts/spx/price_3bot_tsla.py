@@ -54,6 +54,16 @@ q["expd"]=pd.to_datetime("20"+q["exp"],format="%Y%m%d").dt.strftime("%Y-%m-%d")
 q=q[q["expd"]>=q["day"]]
 near=q.groupby("day")["expd"].min().rename("near")
 q=q.merge(near,on="day"); q=q[q["expd"]==q["near"]]
+# GUARD (2026-08-19): "nearest" is the nearest expiry PRESENT IN THE CACHE. If a day's
+# true nearest contract was never pulled, that whole day silently prices on a later one --
+# the same class of error as the SPX expiry-merge bug. TSLA listed Friday-only expiries
+# until 2026-02-02, so a legitimate DTE here is 0-6; anything beyond that is a cache hole.
+_dte=(pd.to_datetime(q["near"])-pd.to_datetime(q["day"])).dt.days
+_bad=sorted(q.loc[_dte>6,"day"].unique())
+if _bad:
+    print("WARNING: %d day(s) have no cached expiry within 6 days -- DROPPED: %s"
+          % (len(_bad), ", ".join(_bad[:8]) + (" ..." if len(_bad)>8 else "")))
+    q=q[_dte<=6]
 book={}
 for (d,c),g in q.groupby(["day","cp"]):
     dd={}
