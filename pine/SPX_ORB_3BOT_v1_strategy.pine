@@ -1,4 +1,29 @@
 //@version=6
+
+// ############################################################################
+// ## !! DOLLAR FIGURES BELOW ARE INVALID -- CORRECTED 2026-08-19 !!          ##
+// ## Every $ number in this header (+$205,025 no-skip, +$321,815 with the    ##
+// ## 0.70% skip, +$687,671 COMBO, the terciles, the worst-day and PF values) ##
+// ## came from a quote book keyed (day, cp, strike) with NO EXPIRY. The OPRA  ##
+// ## cache holds 2-8 expiries per strike, so exits filled on LATER-expiry     ##
+// ## contracts (verified: a $10.10 0DTE entry "exited" on an $81.40 bid from  ##
+// ## a 22-DTE contract = a fake +$7,060 on one trade).                        ##
+// ##                                                                          ##
+// ## Re-pulled 2022-2026 on TRUE 0DTE quotes, 1,096 priced sessions:          ##
+// ##   BOT1 ts30 @1ct  = -$33,515   PF 0.88   WR 43.5%                        ##
+// ##   2022 -15,725 | 2023 -16,585 | 2024 -4,795 | 2025 +5,320 | 2026 -1,730  ##
+// ## Only 2025 is positive -- "positive every year" does not hold. At the      ##
+// ## production 3 contracts that is -$100,545.                                ##
+// ##                                                                          ##
+// ## The 0.70% skip is INERT on correct data: p99 of entry premium is 0.78%   ##
+// ## of spot, so it cuts ~1.5% of trades (-33,515 -> -31,285). No threshold   ##
+// ## makes the system positive. The +$116k it appeared to add was fitting the ##
+// ## contamination. Treat capPct as UNVALIDATED.                              ##
+// ##                                                                          ##
+// ## SIGNAL LOGIC IS UNAFFECTED -- entries/exits reconcile to Python exactly   ##
+// ## (1,127 trades). Only the P&L attached to them was wrong.                 ##
+// ## Source: scripts/spx/repull_0dte.py · guard: udb_orb.options.assert_expiry ##
+// ############################################################################
 // initial_capital / default_qty_value below are STRATEGY-TESTER ONLY and are deliberately NOT
 // the account. The tester trades ONE unit of the INDEX; the broker buys the "Option contracts"
 // quantity of an OPTION. See "WARNING 0" — setting them to the real account silently deletes
@@ -162,7 +187,7 @@ optQtyFixed  = str.startswith(optQtyMode, "Fixed")
 // --- Bot1 premium skip: RELATIVE to spot (replaces the drifting fixed-$ rule; see WARNING 3).
 //     Pine cannot read option prices, so this only COMPUTES AND PRINTS the dollar threshold.
 capOn  = input.bool(true, "Skip rich-premium days", group="Bot1 · Risk", tooltip="ON (default) prints a per-contract dollar ceiling on the entry label and in the BOT1 info alert. It does NOT and CANNOT block the order — a Pine chart has no access to option quotes. If the ATM ask is above the printed number, do not take the trade (or let TradersPost's 'Amount per position' do it for you). Turning this off only hides the number; it does not change any signal.")
-capPct = input.float(0.70, "Skip if ATM premium > this % of spot", minval=0.0, step=0.05, group="Bot1 · Risk", tooltip="RELATIVE cap, so it does not drift as the index rises — the whole reason the old fixed $2,000 rule failed (0.49% of spot in 2022, 0.28% by 2026). 0.70 was chosen on the full 2022-2026 OPRA backtest: +$321,815 vs +$205,585 no-skip, PF 2.39, worst day -$2,230 vs -$6,980, max DD -$6,655 vs -$12,165, and it wins 4 of the 5 years. Walk-forward (each year's cap fit on prior years only) = +$183,490 vs +$147,080 across the 4 live years, so the gain is not pure hindsight. Threshold in DOLLARS per contract = spot x this % (SPX 7,800 x 0.70% = 54.6 points = $5,460). Lower it to trade less and cut the tail further; raise it toward 1.0 to trade almost everything.")
+capPct = input.float(0.70, "Skip if ATM premium > this % of spot", minval=0.0, step=0.05, group="Bot1 · Risk", tooltip="[FIGURES CORRECTED 2026-08-19 -- the numbers in this tooltip came from a quote book that merged expiries; on true 0DTE data this skip is INERT (p99 premium = 0.78% of spot) and BOT1 is -$33,515, not +$205,025. See the header banner. TREAT AS UNVALIDATED.] RELATIVE cap, so it does not drift as the index rises — the whole reason the old fixed $2,000 rule failed (0.49% of spot in 2022, 0.28% by 2026). 0.70 was chosen on the full 2022-2026 OPRA backtest: +$321,815 vs +$205,585 no-skip, PF 2.39, worst day -$2,230 vs -$6,980, max DD -$6,655 vs -$12,165, and it wins 4 of the 5 years. Walk-forward (each year's cap fit on prior years only) = +$183,490 vs +$147,080 across the 4 live years, so the gain is not pure hindsight. Threshold in DOLLARS per contract = spot x this % (SPX 7,800 x 0.70% = 54.6 points = $5,460). Lower it to trade less and cut the tail further; raise it toward 1.0 to trade almost everything.")
 otmPct     = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots 2/3 (retired)") * 0.01
 strikeStep = input.float(5.0, "Strike spacing", group="Bots 2/3 (retired)")
 enB2       = input.bool(false, "Bot2 30m spread alerts", group="Bots 2/3 (retired)", tooltip="OFF by default since v1.3.0 (2026-08-17): this is a ONE-BOT system now. Credit spreads were never webhook-automatable anyway (TradersPost sends single-leg orders only), so these were always manual. Tick to restore the chart labels and alertcondition()s.")

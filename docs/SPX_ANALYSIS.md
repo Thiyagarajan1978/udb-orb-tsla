@@ -1,5 +1,45 @@
 # SPX ORB Exploration — Full Record (2026-07-18 session)
 
+> ## ⚠ EXPIRY-MERGE CORRECTION 2026-08-19 - EVERY DOLLAR FIGURE IN THIS FILE IS INVALID
+>
+> This supersedes the barclose correction below, which fixed a different bug and left this one
+> in place. The quote book used throughout this record was keyed `(day, cp, strike)` with **no
+> expiry**. The OPRA cache holds 2-8 expiries per strike, so exits filled on later-expiry
+> contracts - verified on 2023-03-02 CALL 3945, where a $10.10 0DTE entry "exited" on an $81.40
+> bid belonging to the 2023-03-24 contract, a fake +$7,060 on a single trade.
+>
+> Re-pulled 2022-2026 against contracts asserted to expire on the trade day
+> (`scripts/spx/repull_0dte.py`, guard `udb_orb.options.assert_expiry`), 1,096 priced sessions,
+> **zero guard trips**:
+>
+> | year | n | net $ @1ct | WR | PF |
+> |---|---|---|---|---|
+> | 2022 | 219 | -15,725 | 39.7% | 0.78 |
+> | 2023 | 246 | -16,585 | 39.4% | 0.68 |
+> | 2024 | 250 | -4,795 | 46.0% | 0.91 |
+> | 2025 | 250 | **+5,320** | 48.0% | 1.08 |
+> | 2026 | 131 | -1,730 | 44.3% | 0.95 |
+> | **ALL** | **1096** | **-33,515** | **43.5%** | **0.88** |
+>
+> **BOT1 ts30 is -$33,515 @1ct, not +$205,025. Only 2025 is positive** - the "positive every
+> year" claim does not survive. At the production 3 contracts that is **-$100,545**.
+>
+> The **0.70% premium skip is inert** on correct data: p99 of entry premium is 0.78% of spot,
+> so it removes ~1.5% of trades (-33,515 -> -31,285), and no threshold from 1.0% down to 0.3%
+> makes the system positive. The +$116k it appeared to add (+$205,585 -> +$321,815) was fitting
+> the contamination. The *direction* survives - expensive-premium entries are the worse cohort -
+> but net improves monotonically as the cap tightens, which is the signature of "this book is
+> negative, so trade less of it", not of a threshold with an optimum.
+>
+> Validation: the 2022-23 total reproduces the earlier independent partial re-pull to the
+> dollar (-$32,310). **The SIGNAL logic is unaffected** - 1,127 trades, reconciling to Pine
+> exactly. Only the P&L attached to them was wrong.
+>
+> Corrected 2022-23 spread/COMBO figures do not exist yet: `price_hersystem*.py` are the
+> infected pricers and are quarantined, so BOT2/BOT3/COMBO numbers here remain unpriced,
+> not merely restated.
+
+
 > **⚠ BARCLOSE CORRECTION 2026-07-24 — the 3-bot dollar figures below are INFLATED.**
 > All option entries in this record were priced at the signal bar's **START** quote — a
 > 5-minute lookahead (the breakout only exists at the bar's close; same bug found in the

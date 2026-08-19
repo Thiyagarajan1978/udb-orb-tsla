@@ -1132,6 +1132,13 @@ stands for every feature except this one — the losing trade is still not ident
 
 ### Cross-market check: SPX says NO (2026-08-10)
 
+> **CORRECTION 2026-08-19:** the SPX dollar figures in this section are INVALID -- the
+> baselines it reconciles to (BOT1 +$205,025 / BOT3L +$269,300) came from a quote book that
+> merged expiries. Correctly priced, BOT1 is **-$33,515** over 2022-2026. The *conclusion*
+> here is unaffected: this section rejects the SPX small-body exit, and it is rejected on
+> the corrected data too -- every variant is negative before and after. See
+> `docs/SPX_ANALYSIS.md` for the corrected table.
+
 The same protocol was re-run on the SPX system — real 5m SPX bars 2022-01-03..2026-07-16, real OPRA
 quotes, both automated legs (BOT1 15m-OR ts30, BOT3-LONG 60m-OR ts50) — with the exit priced at the bid
 on the fire bar's close minute. Harness `spx_pd_body_test.py` (scratchpad); it reconciles **exactly** to

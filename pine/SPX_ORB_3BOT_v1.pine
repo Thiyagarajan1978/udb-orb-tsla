@@ -1,4 +1,29 @@
 //@version=6
+
+// ############################################################################
+// ## !! DOLLAR FIGURES BELOW ARE INVALID -- CORRECTED 2026-08-19 !!          ##
+// ## Every $ number in this header (+$205,025 no-skip, +$321,815 with the    ##
+// ## 0.70% skip, +$687,671 COMBO, the terciles, the worst-day and PF values) ##
+// ## came from a quote book keyed (day, cp, strike) with NO EXPIRY. The OPRA  ##
+// ## cache holds 2-8 expiries per strike, so exits filled on LATER-expiry     ##
+// ## contracts (verified: a $10.10 0DTE entry "exited" on an $81.40 bid from  ##
+// ## a 22-DTE contract = a fake +$7,060 on one trade).                        ##
+// ##                                                                          ##
+// ## Re-pulled 2022-2026 on TRUE 0DTE quotes, 1,096 priced sessions:          ##
+// ##   BOT1 ts30 @1ct  = -$33,515   PF 0.88   WR 43.5%                        ##
+// ##   2022 -15,725 | 2023 -16,585 | 2024 -4,795 | 2025 +5,320 | 2026 -1,730  ##
+// ## Only 2025 is positive -- "positive every year" does not hold. At the      ##
+// ## production 3 contracts that is -$100,545.                                ##
+// ##                                                                          ##
+// ## The 0.70% skip is INERT on correct data: p99 of entry premium is 0.78%   ##
+// ## of spot, so it cuts ~1.5% of trades (-33,515 -> -31,285). No threshold   ##
+// ## makes the system positive. The +$116k it appeared to add was fitting the ##
+// ## contamination. Treat capPct as UNVALIDATED.                              ##
+// ##                                                                          ##
+// ## SIGNAL LOGIC IS UNAFFECTED -- entries/exits reconcile to Python exactly   ##
+// ## (1,127 trades). Only the P&L attached to them was wrong.                 ##
+// ## Source: scripts/spx/repull_0dte.py · guard: udb_orb.options.assert_expiry ##
+// ############################################################################
 indicator("SPX ORB 3-Bot (0DTE managed-early) v1", shorttitle="SPX-ORB 3BOT", overlay=true, max_labels_count=500, max_lines_count=500)
 
 // STATUS 2026-08-17 (v1.3.0 — ONE-BOT SYSTEM. Set on user instruction; no signal logic changed):
@@ -81,7 +106,7 @@ b3Mode    = input.string("Long ATM (production)", "Bot3 instrument", options=["L
 tsMin     = input.int(30, "Bot1 time stop (minutes)", minval=5, step=5, group="Bots")
 tsMinB3L  = input.int(50, "Bot3-Long time stop (minutes)", minval=5, step=5, group="Bots", tooltip="50, NOT BOT1's 30. Validated independently: beats a 30-min stop by +$41,970 on the identical 1,010 trades (t=2.48, bootstrap P=100%, 95% CI excludes zero) and wins 5/5 YEARS; walk-forward hold selection also beat flat-30 in 4/4 live years. BOT3 enters ~10:40+, past the opening gamma burst, so the move needs longer to develop. The same test REJECTED a longer hold for BOT1.")
 capPctB3L = input.float(0.45, "Bot3-Long skip if premium > % of spot", minval=0.0, step=0.05, group="Bots", tooltip="RELATIVE cap, deliberately not a fixed dollar amount — see the drift warning in the header. 0.45% of spot; walk-forward beat no-skip in 3/4 live years and the 0.35-0.50 band is a plateau. The rich-premium tercile is net NEGATIVE here (-$41,270, PF 0.80) and hosts the worst day. Set 0 to hide.")
-capPctB1  = input.float(0.70, "Bot1 skip if premium > % of spot", minval=0.0, step=0.05, group="Bots", tooltip="THE SHIPPED BOT1 SKIP since v1.3.0 (2026-08-17), replacing the fixed-dollar budget below. RELATIVE to spot so it does not drift as the index rises — see the header warning; the old $2,000 rule was 0.49% of spot in 2022 and 0.28% by 2026, and is now actively harmful. 0.70 measured on the full 2022-2026 OPRA backtest: +$321,815 vs +$205,585 no-skip, PF 2.39, worst day -$2,230 vs -$6,980, max DD -$6,655 vs -$12,165, wins 4 of 5 years; walk-forward (cap fit only on prior years) +$183,490 vs +$147,080 over the 4 live years. The label prints the dollar figure — the chart cannot read option prices, so YOU compare it to the actual ask. Set 0 to hide.")
+capPctB1  = input.float(0.70, "Bot1 skip if premium > % of spot", minval=0.0, step=0.05, group="Bots", tooltip="[FIGURES CORRECTED 2026-08-19 -- the numbers in this tooltip came from a quote book that merged expiries; on true 0DTE data this skip is INERT (p99 premium = 0.78% of spot) and BOT1 is -$33,515, not +$205,025. See the header banner. TREAT AS UNVALIDATED.] THE SHIPPED BOT1 SKIP since v1.3.0 (2026-08-17), replacing the fixed-dollar budget below. RELATIVE to spot so it does not drift as the index rises — see the header warning; the old $2,000 rule was 0.49% of spot in 2022 and 0.28% by 2026, and is now actively harmful. 0.70 measured on the full 2022-2026 OPRA backtest: +$321,815 vs +$205,585 no-skip, PF 2.39, worst day -$2,230 vs -$6,980, max DD -$6,655 vs -$12,165, wins 4 of 5 years; walk-forward (cap fit only on prior years) +$183,490 vs +$147,080 over the 4 live years. The label prints the dollar figure — the chart cannot read option prices, so YOU compare it to the actual ask. Set 0 to hide.")
 riskBudget= input.float(0.0, "Bot1 fixed-dollar risk budget ($/day, 0 = off)", minval=0.0, step=100, group="Bots", tooltip="LEGACY, now OFF by default (was 2,000). Kept only so an old chart layout can reproduce the previous label. A non-zero value OVERRIDES the relative cap above. Risk per contract = HALF the premium (the -50% stop), so the budget implies a skip threshold of 2x it. Do not re-enable without reading the skip-drift warning in the header: a fixed dollar threshold on a premium that scales with the index tightens every year, which is exactly why the relative cap replaced it.")
 otmPct    = input.float(0.30, "Spread short leg OTM %", step=0.05, group="Bots") * 0.01
 strikeStep= input.float(5.0, "Strike spacing", group="Bots")

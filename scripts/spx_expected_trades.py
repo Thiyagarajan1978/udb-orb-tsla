@@ -128,8 +128,12 @@ s.columns = ["trades", "index_points"]
 print(s.to_string())
 print("   TOTAL 2022-2026: %d trades, %+.1f index points" % (len(t), t["idx_pts"].sum()))
 print("   -> at 1 unit that is %+.0f USD on the tester, over 4.5 years." % (t["idx_pts"].sum() * 1))
-print("   The SAME trades on real 0DTE options = +$205,025 @1ct (no skip),")
-print("   +$321,815 with the 0.70%% skip. THE TESTER CURVE IS NOT THE EDGE.")
+print("   CORRECTED 2026-08-19 (the +$205,025 / +$321,815 figures were produced by a")
+print("   quote book that merged expiries -- see docs/SPX_ANALYSIS.md). The SAME trades")
+print("   on TRUE 0DTE quotes = -$33,515 @1ct over 1,096 priced sessions, PF 0.88,")
+print("   WR 43.5%; only 2025 is positive. The 0.70% skip is inert (p99 of premium is")
+print("   0.78% of spot) and no threshold makes it positive. Rebuild:")
+print("   python scripts/spx/repull_0dte.py")
 
 print("\n=== E. STRUCTURAL CHECKS (must all hold) ===")
 print("   entry times            : %s .. %s   (never 15:55 - the rthIx<77 guard)"
