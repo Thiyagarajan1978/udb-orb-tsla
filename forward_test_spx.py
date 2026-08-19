@@ -25,6 +25,7 @@ from udb_orb.options import ExpiryMismatch, assert_expiry
 ROOT = os.path.dirname(os.path.abspath(__file__))
 LEDGER = os.path.join(ROOT, "exports", "forward_spx_ledger.csv")
 BUF=0.0005; L_TGT,L_STP=1.50,0.50; S_OTM=0.0030; S_TGT_FRAC=0.50; S_STP_MULT=2.0
+LAST_ENTRY_IX=77   # Pine's `rthIx < 77` -- the 15:55 bar can never fill or close
 TS_MAIN=30; W30,W60=5,10
 # BOT3-LONG (added 2026-08-07): the 60m OR traded as a single-leg long ATM option instead of the
 # un-automatable 10-wide spread. Its two parameters were validated INDEPENDENTLY of BOT1 and do
@@ -96,11 +97,20 @@ def day_entries(g):
     bar-start quote was a 5-minute LOOKAHEAD (the same bug fixed in the TSLA forward test on
     2026-07-20). All downstream anchors (entry ask, time stop, spread management, held-minutes)
     key off this minute, so they are all fill-relative now. Ledger rebuilt same day.
+
+    PINE FIX 2026-08-19: added the `rthIx < 77` guard so Python matches Pine v1.2.1+.
+    Without it a 15:55 bar can signal, giving an entry minute of 16:00 -- after the last
+    bar of the session, so the trade can never fill and can never close. Pine blocked this
+    in v1.2.1; the Python side never did, and the divergence survived because it fires on
+    1 session in 1,128 (2023-09-05) and prices to nothing, so it read as a missing quote
+    rather than a phantom trade. Found by diffing signal days against
+    scripts/spx_expected_trades.py (1,128 vs 1,127).
     """
     out={}
     for name,nb in [("bot1",3),("bot2",6),("bot3",12)]:
         w=g.iloc[:nb]; hi=w["high"].max(); lo=w["low"].min(); e=None
-        for _,r in g.iloc[nb:].iterrows():
+        for ix,(_,r) in enumerate(g.iloc[nb:].iterrows(), start=nb):
+            if ix>=LAST_ENTRY_IX: break
             if r["close"]>hi*(1+BUF): e=("up",int(r["mod"])+5,float(r["close"])); break
             if r["close"]<lo*(1-BUF): e=("dn",int(r["mod"])+5,float(r["close"])); break
         if e: out[name]=e
