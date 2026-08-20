@@ -33,15 +33,17 @@ profile:
   be_trail_amount: 0.25
   be_retrace_use_close: false
   use_partial_exit: true
-  partial_qty_pct: 25.0
-  # ALL-RUNNER ALTERNATIVE (not adopted, measured 2026-08-20): set this to 0.0 and the adaptive
+  partial_qty_pct: 0.0
+  # ADOPTED 2026-08-20 (Pine v3.9.16 "All-runner exit", ticked by default). 0.0 = the adaptive
   # TP takes NOTHING -- its touch only ARMS the runner and 100% exits on ONE runner exit, which is
-  # what D1 has shipped since 2026-07-23. Twin of Pine v3.9.15's "All-runner exit" tick-box.
-  # 2022-01-03..2026-08-19 @60 shares: A1 $28,450 -> $31,664 (+11.3%), past 3 years +12.3%
-  # Better in the 2022-23 OOS years, the 2024-25 fit window AND the 2026 holdout; trade count
-  # identical. COST: win rate falls (A1 46.8 -> 45.6%) because the banked partial no longer rescues marginal
-  # trades, and B1's day-level delta is 160 up / 185 DOWN for +71.1/unit (ex-top-3 +56.7) -- bigger
-  # winners, more red days. Left at 25.0 because that is what is live, validated and reconciled.
+  # what D1 has shipped since 2026-07-23. Measured 2022-01-03..2026-08-19 @60 shares:
+  # A1 $28,450 -> $31,664 (+11.3%), past 3 years +12.3%. Better in the 2022-23 OOS years, the 2024-25 fit window AND
+  # the 2026 holdout at once, net/DD up, trade count IDENTICAL (quantity changes, not signals).
+  # COST, stated: win rate falls (A1 46.8 -> 45.6%) because the banked partial no longer rescues a marginal
+  # trade, and the day-level delta on B1 is 160 up / 185 DOWN for +71.1/unit (ex-top-3 +56.7) --
+  # bigger winners, MORE red days; maxDD slightly deeper on B1/C1. Set back to 25.0 for the
+  # pre-2026-08-20 behaviour. NOT the same as use_partial_exit: false (100% AT the target), which
+  # is 34-42% WORSE on every profile -- see docs and [[partial-exit-value-v32-toggle]].
   partial_activation: 1.0
   use_reversal: true
   reversal_qty_mult: 2.0

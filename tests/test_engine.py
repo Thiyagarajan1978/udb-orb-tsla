@@ -42,13 +42,16 @@ def _run(rows_by_day, slippage=0.0, enh_overrides=None, be_trigger=0.35, tp_scal
 
 
 def test_long_partial_then_eod():
+    """The 25% scale-out mechanics. NOT the default since 2026-08-20 (the shipped profiles
+    adopted all-runner, partial_qty_pct 0.0), so the partial is requested explicitly here --
+    the code path stays supported and is one config value away."""
     rows = [
         (9, 30, 100, 101.0, 99.0, 100.0, 1000),      # OR: H101 L99 -> width 2, long_brk 101.2
         (9, 35, 101, 101.6, 100.5, 101.5, 1000),     # entry long @101.5, SL 99, TP 103.64
         (9, 40, 101.5, 103.7, 101.4, 103.5, 1000),   # TP hit -> 25% partial (+0.535)
         (15, 50, 103.9, 104.1, 103.9, 104.0, 1000),  # EOD close 75% @104 (+1.875)
     ]
-    res = _run({"2024-06-03": rows})
+    res = _run({"2024-06-03": rows}, profile_overrides={"partial_qty_pct": 25.0})
     assert len(res.trades) == 1
     t = res.trades[0]
     assert t.direction == "L"
@@ -125,7 +128,8 @@ def test_summary_counts_be_stop_as_failure():
 
 def test_partial_then_be_stop_is_net_win_not_failure():
     """A partial banked at TP, then a BE-stop on the remainder, is a NET WIN — not a
-    BE-stop failure."""
+    BE-stop failure. Requires an explicit 25% partial: the shipped profiles adopted all-runner
+    on 2026-08-20, and with nothing banked these same bars are simply a BE-stop loss."""
     from udb_orb.engine.metrics import summarize
     rows = [
         (9, 30, 100, 101.0, 99.0, 100.0, 1000),      # OR width 2 -> TP 103.64, BE lvl 100.3
@@ -133,7 +137,7 @@ def test_partial_then_be_stop_is_net_win_not_failure():
         (9, 40, 101.5, 103.7, 101.4, 103.5, 1000),   # TP -> 25% partial (+0.535)
         (9, 45, 101, 101.6, 99.0, 100.0, 1000),      # retrace: BE fires, remainder BE-stops @entry
     ]
-    res = _run({"2024-06-03": rows})
+    res = _run({"2024-06-03": rows}, profile_overrides={"partial_qty_pct": 25.0})
     t = res.trades[0]
     assert t.reason == "BE Stop"
     assert t.pnl_total > 0                         # partial made it a net win

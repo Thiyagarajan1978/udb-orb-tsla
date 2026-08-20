@@ -50,6 +50,10 @@ top of the port (all cleared train 2024-25 + holdout 2026 — see `docs/BE_STOP_
    close-based BE stops, a high-vol bar closes further past the stop, so BE-stop cost scales with
    volatility. The top vol quintile is the only net-negative bucket. Skipping it rescues 2024
    (PF 1.07→1.19) and cannot touch 2026 (no high-vol days there). Threshold set on 2024-25 only.
+7. **All-runner exit — `partial_qty_pct: 0.0`** (adopted 2026-08-20). Nothing is taken at the
+   adaptive TP; its touch only ARMS the runner and 100% exits once. +11-14% over 2022-2026 on
+   A1/B1/C1, better in the OOS years, the fit window and the 2026 holdout at once — at a LOWER
+   win rate and more red days. See Enhancements §6.
 6. **`reversal_risk_cap` $6 (scale)** — RISK PARITY. The reversal enters after price crossed the
    whole OR, so its stop is far away; at 2× size it carried 1.6× the primary's risk ($10.03 vs
    $6.16) and caused **68% of worst-day damage**. Scaling its qty to equal dollar risk cuts the
@@ -107,21 +111,24 @@ separate, toggleable, and default OFF.
    plateau. Pine v3.9.14 "Entry Cutoff Hour/Minute" (11/30) is the twin.
 4. **Reversal capture** (default **ON** — adopted) — `trigger_on_be_stop` + `trail_to_eod`.
 5. **Walk-forward tuning** (`tuning/`) — re-fit `adaptive_tp_scale` etc. from stored trades.
-6. **All-runner single exit** (`partial_qty_pct: 0.0` + `use_partial_exit: true`, default **OFF**;
-   Pine v3.9.15 tick-box "All-runner exit", Profile group) — nothing comes off at the target, its
-   touch only ARMS the runner, and 100% leaves on ONE exit. This is D1's shipped behaviour
-   generalised to A1/B1/C1, so D1 is bit-identical with the box on (that equality is the check
-   that the generalisation is faithful) and C2 is inert. **Measured 2026-08-20**, 2022-01-03..
-   2026-08-19 @60 shares: A1 $28,450 → $31,664 (+11.3%), B1 $31,507 → $35,772 (+13.5%),
-   C1 $31,389 → $35,754 (+13.9%); past 3 years +11.7-12.6%; better in the 2022-23 OOS years, the
-   2024-25 fit window AND the 2026 holdout simultaneously; net/DD up on all three (B1 8.23 → 9.03).
-   Trade count is IDENTICAL — this changes exit quantity, never signals. **Cost:** win rate FALLS
-   (B1 46.0 → 44.3%, C1 47.5 → 44.1%) because the banked partial no longer rescues a marginal
-   trade; B1's day-level delta is 160 up / **185 down** for +71.1/unit (ex-top-3 +56.7) — bigger
-   winners, more red days — and maxDD is slightly deeper on B1/C1. **Not adopted**: 25% is what is
-   live, reconciled and TV-validated. Do NOT confuse this with exiting **100% AT the target**
-   (`use_partial_exit: false`), tested the same day and **34-42% WORSE on all four profiles** —
-   it caps the winners while the BE-stop cohort (87% of loss dollars) is untouched, and B1's
+6. **All-runner single exit** — **ADOPTED 2026-08-20 as the DEFAULT** (`partial_qty_pct: 0.0` +
+   `use_partial_exit: true` on `config.yaml` + A1/B1/C1; D1 was already there. Pine v3.9.16
+   tick-box "All-runner exit", Profile group, **ticked**). Nothing comes off at the target — its
+   touch only ARMS the runner — and 100% leaves on ONE exit, so all four TSLA profiles now scale
+   out zero. **Measured** 2022-01-03..2026-08-19 @60 shares: A1 $28,450 → $31,664 (+11.3%),
+   B1 $31,507 → $35,772 (+13.5%), C1 $31,389 → $35,754 (+13.9%), D1 bit-identical (that equality
+   is the check that the Pine generalisation is faithful); past 3 years +11.7-12.6%; better in the
+   2022-23 OOS years, the 2024-25 fit window AND the 2026 holdout simultaneously; net/DD up on all
+   three (B1 8.23 → 9.03). Trade count is IDENTICAL — this changes exit quantity, never signals.
+   **Cost, stated:** win rate FALLS (B1 46.0 → 44.3%, C1 47.5 → 44.1%) because the banked partial
+   no longer rescues a marginal trade; B1's day-level delta is 160 up / **185 down** for
+   +71.1/unit (ex-top-3 +56.7) — bigger winners, more red days — and maxDD is slightly deeper on
+   B1/C1. `partial_qty_pct: 25.0` restores the old scale-out. **`faithful_be035.yaml` keeps the
+   25% partial** (Pine v12.4.3 parity) and so do the SPCX configs — all-runner was never tested on
+   SPCX, where `runner_trail` is inert without a partial.
+   ⚠ Do NOT confuse this with exiting **100% AT the target** (`use_partial_exit: false`), tested
+   the same day and **34-42% WORSE on all four profiles** — it caps the winners while the BE-stop
+   cohort (87% of loss dollars) is untouched, the win rate RISES while net collapses, and B1's
    PD-Level exits flip +$10,450 → −$3,976.
 
 Enable one at a time and compare to the baseline before trusting it.

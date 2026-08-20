@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.9.15 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.15 S", overlay=true,
+strategy("UDB-ORB TSLA v3.9.16 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.16 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -14,6 +14,31 @@ strategy("UDB-ORB TSLA v3.9.15 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle
      max_labels_count        = 500,
      max_lines_count         = 500)
 
+// v3.9.16 2026-08-20 - ALL-RUNNER IS NOW THE DEFAULT (the box added in v3.9.15 ships TICKED).
+//     Nothing is taken at the adaptive target -- its touch only ARMS the runner -- and 100% of the
+//     position leaves on ONE exit. A1/B1/C1 therefore join D1, which has run this way since v3.6,
+//     so all four profiles now scale out zero and exit once. C2 is unchanged (it never had a
+//     partial). No logic moved in this version: the ONLY change is the default of `allRunner`
+//     from false to true, plus the wording that described the old default.
+//     WHY (measured 2026-08-20, Python engine, 2022-01-03..2026-08-19 @60 shares, $0.10/share):
+//       A1 $28,450 -> $31,664 (+11.3%)  net/DD 5.76 -> 6.62
+//       B1 $31,507 -> $35,772 (+13.5%)  net/DD 8.23 -> 9.03
+//       C1 $31,389 -> $35,754 (+13.9%)  net/DD 7.89 -> 8.32
+//       D1 bit-identical (already all-runner -- that equality is the check on the port)
+//     Past 3 years +11.7% to +12.6%. It improves the 2022-23 out-of-sample years, the 2024-25 fit
+//     window AND the 2026 holdout at the same time on all three profiles, which is the whole case
+//     for adopting it; the trade COUNT is identical, so this changes exit quantity, not signals.
+//     WHAT IT COSTS, stated: the win rate FALLS (B1 46.0 -> 44.3%, C1 47.5 -> 44.1%, A1 46.8 ->
+//     45.6%) because the banked partial no longer rescues a marginal trade into the green, while
+//     the average winner grows (B1 $4.19 -> $4.54/share). B1's day-level delta is 160 days UP
+//     against 185 DOWN for +71.1/unit (ex-top-3 +56.7) -- the gain is MAGNITUDE, not frequency,
+//     so expect more red days than the 25% partial gave you. Max drawdown is slightly deeper on
+//     B1 (-$3,829 -> -$3,962) and C1 (-$3,978 -> -$4,298), shallower on A1.
+//     TO GO BACK: untick the box; that is byte-identical to v3.9.14 behaviour.
+//     Python twins flipped in the same commit (tsla_best_A/B, tsla_config_C1, config.yaml ->
+//     partial_qty_pct: 0.0). faithful_be035.yaml KEEPS the 25% partial -- it is the Pine v12.4.3
+//     parity config and must not move. SPCX configs also keep it (never tested all-runner there).
+//
 // v3.9.15 2026-08-20 - ONE TICK-BOX FOR THE ALL-RUNNER SINGLE EXIT (Profile group, default OFF).
 //     "All-runner exit: take NOTHING at the target, 100% rides the runner (ONE exit)". D1 has had
 //     this since v3.6 as its "D1 Exit mode"; the box generalises that one path to A1/B1/C1, so
@@ -34,8 +59,8 @@ strategy("UDB-ORB TSLA v3.9.15 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle
 //     banked partial no longer rescues marginal trades; B1's day-level delta is 160 up / 185 DOWN
 //     for +71.1/unit (ex-top-3 +56.7) -- more red days, bigger winners. Max DD slightly deeper on
 //     B1/C1, but net-over-drawdown IMPROVES on all three (B1 8.23 -> 9.03, C1 7.89 -> 8.32,
-//     A1 5.76 -> 6.62). LEFT DEFAULT OFF: the 25% partial is what is validated, live and
-//     reconciled today.
+//     A1 5.76 -> 6.62). Shipped DEFAULT OFF in v3.9.15 and turned ON in v3.9.16 once the
+//     result had been read through per-year, breadth and ex-top-3.
 //     NOT to be confused with exiting 100% AT the target, tested the same day and 34-42% WORSE on
 //     every profile (it caps winners and leaves the BE-stop loss cohort untouched).
 //
@@ -433,7 +458,7 @@ profile = input.string("D1 · Adaptive + ATR-Trail (exp)", "Profile",
 c2TPFormula = input.string("OR width (open bar High-Low)", "C2 Take-Profit formula", options=["OR width (open bar High-Low)", "Fixed $"], group="Profile", tooltip="ADOPTED v3.5 (default): C2's target = the OPEN BAR's High - Low (= OR width, no floor). vs the old fixed $2 (per unit, close-stop): 2024 +36.6 vs -23.1, 2025 +38.3 vs -0.3, 2026YTD +111.7 vs +49.0; 2022/23 slightly behind; 5yr ~2x and positive every year. 'Fixed $' = the pre-v3.5 C2 (uses the Fixed TP $ input).", display=display.none)
 d1ExitMode = input.string("Full exit at ATR Trail", "D1 Exit mode", options=["Full exit at ATR Trail", "Partial TP + ATR Trail"], group="Profile", tooltip="D1 only. 'Full exit at ATR Trail' (DEFAULT since 2026-07-23; the Python forward test tracks it) = NOTHING is taken at the TP — its touch only ARMS the trail; 100% exits on the flip (ONE exit alert/order — also suits platforms that cannot split exits). 'Partial TP + ATR Trail' = the original D1: 25% off at the adaptive TP, 75% rides the flip. v3.6 test (per unit, fixed trail): full-trail beats the partial in all of 2024/25/26 (+39.7/+85.2/+179.0 vs +38.4/+72.2/+162.3) at a slightly deeper 2025 worst day (-13.6 vs -12.0).", display=display.none)
 profDefaults = input.bool(true, "Use each profile's ADOPTED Adaptive-TP multiplier", group="Profile", tooltip="TICKED (default) = the \"Adaptive TP - OR Width Multiplier (manual)\" box is IGNORED and each profile gets the multiplier it was actually validated at:\n  D1 -> 0.75\n  A1/B1/C1/C2 -> 1.00\n\nWHY THIS EXISTS. The Python side carries one config FILE per profile, so each profile owns its own adaptive_tp_scale. Pine has ONE global input set behind a Profile dropdown, so a single box cannot serve five profiles -- and before v3.9.13 switching the dropdown to B1 silently kept D1's 0.75, which is not B1's validated number. Ticking this makes the dropdown carry its own setting, the way the config files do, and keeps every profile reconciling to its Python twin.\n\nWHAT D1's 0.75 BUYS (2022-01-03..2026-08-11, per unit, full-exit D1): net 493.6 -> 529.0, PF 1.30 -> 1.33, win rate 44.9 -> 45.9, max drawdown -86.3 -> -66.6, positive in all five years. In full-exit mode the adaptive TP takes no money -- its touch only ARMS the ATR trail -- so a target at 1.00x OR width left the trail unarmed on most trades and the BE stop (81% of all loss dollars at a 0% win rate) collected them instead. 0.50 was tested too and is WORSE than 1.00 on every axis (2024 turns negative): the cliff sits between 0.65 and 0.55, so 0.70-0.80 is the plateau.\n\nWHY A1/B1/C1/C2 STAY AT 1.00. 0.75 was tested on them on 2026-08-20 and REJECTED. They take a real 25% partial at the TP, so shortening it caps winners as well as arming exits sooner. B1 shows +9.3/unit in aggregate but 314 of its 383 changed days are DOWN and ex-top-3 the delta is -17.9; the 2026 holdout gets worse on both traded profiles.\n\nUNTICK to hand-tune: the multiplier box is then read exactly as typed, for whatever profile is selected.", display=display.none)
-allRunner = input.bool(false, "All-runner exit: take NOTHING at the target, 100% rides the runner (ONE exit)", group="Profile", tooltip="UNTICKED (default) = the adopted behaviour: A1/B1/C1 take the \"Partial Exit Quantity %\" (25%) off at the adaptive target and the remaining 75% rides the runner (A1 peak-trail, B1/C1 VWAP cross). TICKED = ALL-RUNNER: NOTHING is taken at the target -- its touch only ARMS the runner -- and 100% of the position leaves on ONE exit. This is exactly what D1 already does by default (see \"D1 Exit mode\"), so on D1 this box changes nothing, and on C2 it is inert (C2 has no partial and no runner).\n\nWHY YOU MIGHT WANT IT: one exit order instead of two -- no scale-out, no partial fill for the broker to net, no \"Partial\" alert.\n\nMEASURED 2026-08-20 (Python engine, 2022-01-03..2026-08-19, 60 shares, after $0.10/share slippage):\n  A1  $28,450 -> $31,664  (+11.3%)\n  B1  $31,507 -> $35,772  (+13.5%)\n  C1  $31,389 -> $35,754  (+13.9%)\n  D1  unchanged -- already all-runner\nPast 3 years: A1 +12.3%, B1 +11.7%, C1 +12.6%. It improves the 2022-23 out-of-sample years, the 2024-25 fit window AND the 2026 holdout on all three profiles. The TRADE COUNT is identical (1,098 / 1,100 / 1,099 over the full history): this changes exit QUANTITY, never entries or exit timing.\n\nWHAT IT COSTS: the win rate FALLS (B1 46.0 -> 44.3%, C1 47.5 -> 44.1%, A1 46.8 -> 45.6%) because the small banked partial no longer rescues a trade into the green; the average winner grows instead (B1 $4.19 -> $4.54/share). Day by day on B1 the delta is 160 days UP against 185 DOWN and still +71.1/unit in total (ex-top-3 +56.7) -- the gain is magnitude, not frequency, so expect MORE red days than you have now. Max drawdown is slightly deeper on B1 (-$3,829 -> -$3,962) and C1 (-$3,978 -> -$4,298), shallower on A1 (-$4,943 -> -$4,781); net/DD IMPROVES on all three (B1 8.23 -> 9.03, C1 7.89 -> 8.32, A1 5.76 -> 6.62).\n\nNOT the same thing as exiting 100% AT THE TARGET. That was tested the same day and is 34-42% WORSE on all four profiles: it caps the winners while leaving the BE-stop loss cohort (87% of all loss dollars) completely untouched.\n\nPython twin: partial_qty_pct: 0.0 with use_partial_exit: true.", display=display.none)
+allRunner = input.bool(true, "All-runner exit: take NOTHING at the target, 100% rides the runner (ONE exit)", group="Profile", tooltip="TICKED (DEFAULT since v3.9.16) = ALL-RUNNER: NOTHING is taken at the adaptive target -- its touch only ARMS the runner -- and 100% of the position leaves on ONE exit. UNTICK to get the old scale-out back: A1/B1/C1 then take the \"Partial Exit Quantity %\" (25%) off at the target and the remaining 75% rides the runner (A1 peak-trail, B1/C1 VWAP cross), which is byte-identical to v3.9.14. This is exactly what D1 already does by default (see \"D1 Exit mode\"), so on D1 this box changes nothing, and on C2 it is inert (C2 has no partial and no runner).\n\nWHY YOU MIGHT WANT IT: one exit order instead of two -- no scale-out, no partial fill for the broker to net, no \"Partial\" alert.\n\nMEASURED 2026-08-20 (Python engine, 2022-01-03..2026-08-19, 60 shares, after $0.10/share slippage):\n  A1  $28,450 -> $31,664  (+11.3%)\n  B1  $31,507 -> $35,772  (+13.5%)\n  C1  $31,389 -> $35,754  (+13.9%)\n  D1  unchanged -- already all-runner\nPast 3 years: A1 +12.3%, B1 +11.7%, C1 +12.6%. It improves the 2022-23 out-of-sample years, the 2024-25 fit window AND the 2026 holdout on all three profiles. The TRADE COUNT is identical (1,098 / 1,100 / 1,099 over the full history): this changes exit QUANTITY, never entries or exit timing.\n\nWHAT IT COSTS: the win rate FALLS (B1 46.0 -> 44.3%, C1 47.5 -> 44.1%, A1 46.8 -> 45.6%) because the small banked partial no longer rescues a trade into the green; the average winner grows instead (B1 $4.19 -> $4.54/share). Day by day on B1 the delta is 160 days UP against 185 DOWN and still +71.1/unit in total (ex-top-3 +56.7) -- the gain is magnitude, not frequency, so expect MORE red days than you have now. Max drawdown is slightly deeper on B1 (-$3,829 -> -$3,962) and C1 (-$3,978 -> -$4,298), shallower on A1 (-$4,943 -> -$4,781); net/DD IMPROVES on all three (B1 8.23 -> 9.03, C1 7.89 -> 8.32, A1 5.76 -> 6.62).\n\nNOT the same thing as exiting 100% AT THE TARGET. That was tested the same day and is 34-42% WORSE on all four profiles: it caps the winners while leaving the BE-stop loss cohort (87% of all loss dollars) completely untouched.\n\nADOPTED as the default on 2026-08-20 together with the Python twins (tsla_best_A/B, tsla_config_C1 and config.yaml now carry partial_qty_pct: 0.0). The Pine v12.4.3 parity config faithful_be035.yaml deliberately KEEPS the 25% partial, and so do the SPCX configs -- all-runner was never tested on SPCX.", display=display.none)
 isA1 = str.startswith(profile, "A1")
 isB1 = str.startswith(profile, "B1")
 isC1 = str.startswith(profile, "C1")
@@ -1230,7 +1255,7 @@ if showPD
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 6, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.9.15", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.9.16", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSLS, "#.##"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)

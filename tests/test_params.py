@@ -14,7 +14,8 @@ def _assert_common_profile(p: Params):
     assert p.use_adaptive_tp is True
     assert p.adaptive_tp_min == 2.14
     # adaptive_tp_scale differs (default tuned 1.25 vs port 1.0) — asserted per-config below
-    assert p.partial_qty_pct == 25.0
+    # partial_qty_pct ALSO differs since 2026-08-20: the default adopted all-runner (0.0)
+    # while the Pine v12.4.3 port keeps its 25% scale-out — asserted per-config below.
     assert p.use_partial_exit is True
     assert p.use_be_retrace is True
     assert p.be_retrace_use_close is False          # NOT Pure Trail -> wick based
@@ -35,6 +36,7 @@ def test_default_profile_uses_tuned_be_055():
     _assert_common_profile(p)
     assert p.be_retrace_trigger == 0.55             # adopted tuned default
     assert p.adaptive_tp_scale == 1.0               # re-tuned under realistic exit_on_close
+    assert p.partial_qty_pct == 0.0                 # ALL-RUNNER adopted 2026-08-20 (Pine v3.9.16)
 
 
 def test_faithful_port_config_preserves_035():
@@ -44,6 +46,9 @@ def test_faithful_port_config_preserves_035():
     _assert_common_profile(p)
     assert p.be_retrace_trigger == 0.35             # exact Pine port
     assert p.adaptive_tp_scale == 1.0               # exact Pine port
+    assert p.partial_qty_pct == 25.0                # exact Pine port: 25% off at the TP, 75%
+                                                    # trails. The DEFAULT moved to all-runner
+                                                    # on 2026-08-20; this config must not.
 
 
 def test_traded_configs_adopt_close_triggered_stop():
@@ -147,21 +152,35 @@ def test_the_other_profiles_keep_the_10_tp_scale():
         assert p.adaptive_tp_scale == 1.0, name
 
 
-def test_all_runner_is_documented_but_not_adopted():
-    """Pine v3.9.15 added an "All-runner exit" tick-box (default OFF). Its Python twin is
-    `partial_qty_pct: 0.0` with `use_partial_exit: true` -- exactly what D1 already ships.
+def test_all_runner_is_the_adopted_default():
+    """ADOPTED 2026-08-20 (Pine v3.9.16 "All-runner exit", ticked by default): `partial_qty_pct`
+    0.0 with `use_partial_exit` true, so the adaptive TP takes NOTHING -- its touch only ARMS the
+    runner -- and 100% leaves on one exit. A1/B1/C1 joined D1, which has shipped this since
+    2026-07-23.
 
-    Measured 2026-08-20 over 2022-01-03..2026-08-19 @60 shares: A1 $28,450 -> $31,664 (+11.3%),
-    B1 $31,507 -> $35,772 (+13.5%), C1 $31,389 -> $35,754 (+13.9%), D1 bit-identical. Better in
-    the OOS years, the fit window and the 2026 holdout at once, and net/DD improves on all three
-    -- but the win rate FALLS (B1 46.0 -> 44.3%) and B1's day-level delta is 160 up / 185 DOWN,
-    so it trades more red days for bigger winners. NOT adopted: 25% is what is live and
-    reconciled. This test exists so a Pine-side default flip cannot silently drift the twins.
+    Measured over 2022-01-03..2026-08-19 @60 shares: A1 $28,450 -> $31,664 (+11.3%), B1 $31,507 ->
+    $35,772 (+13.5%), C1 $31,389 -> $35,754 (+13.9%), D1 bit-identical (which is the check that
+    the Pine generalisation is faithful). Better in the 2022-23 OOS years, the 2024-25 fit window
+    AND the 2026 holdout at once; net/DD up on all three; trade count IDENTICAL. Cost: the win
+    rate FALLS (B1 46.0 -> 44.3%) and B1 runs 160 up days against 185 DOWN for +71.1/unit
+    (ex-top-3 +56.7) -- bigger winners, more red days.
+
+    NOT the same as `use_partial_exit: false` (exit 100% AT the target), which is 34-42% WORSE on
+    every profile: it caps the winners while the BE-stop cohort, 87% of all loss dollars, is
+    untouched. This test pins the pairing so a config edit cannot silently reintroduce either the
+    old scale-out or the full-TP exit.
     """
-    for name in ("tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml"):
+    for name in ("tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml",
+                 "tsla_config_D1.yaml", "config.yaml"):
         p = Params.from_config(load_config(_ROOT / "config" / name))
-        assert p.use_partial_exit is True, name
+        assert p.use_partial_exit is True, name      # the TP must still ARM the runner
+        assert p.partial_qty_pct == 0.0, name        # ...but take nothing
+
+
+def test_all_runner_did_not_leak_into_the_parity_or_spcx_configs():
+    """faithful_be035 must stay a bit-exact Pine v12.4.3 reproduction, and SPCX was validated with
+    the 25% partial ON -- all-runner was never tested on that symbol, and `runner_trail` is inert
+    there without a partial. Neither may inherit the TSLA adoption."""
+    for name in ("faithful_be035.yaml", "spcx_orb.yaml"):
+        p = Params.from_config(load_config(_ROOT / "config" / name))
         assert p.partial_qty_pct == 25.0, name
-    d1 = Params.from_config(load_config(_ROOT / "config" / "tsla_config_D1.yaml"))
-    assert d1.use_partial_exit is True                 # the TP still ARMS the trail
-    assert d1.partial_qty_pct == 0.0                   # ...but takes nothing: already all-runner
