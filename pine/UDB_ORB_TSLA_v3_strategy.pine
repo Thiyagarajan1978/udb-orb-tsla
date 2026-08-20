@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.9.11 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.11 S", overlay=true,
+strategy("UDB-ORB TSLA v3.9.12 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.12 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -14,6 +14,12 @@ strategy("UDB-ORB TSLA v3.9.11 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle
      max_labels_count        = 500,
      max_lines_count         = 500)
 
+// v3.9.12 2026-08-19 - VERSION BUMP ONLY, so chart + alerts show matching names with the indicator.
+//     THIS STRATEGY NEEDED NO CHANGE. The indicator's v3.9.12 fix adds the five named "PD Level"
+//     alertcondition() rows it was missing; a strategy has no alertcondition()s -- it exits through
+//     strategy.close(comment="PD Level", alert_message=f_msg(...)), so its webhook has carried the
+//     PD-level exit correctly since v3.9.4. Trade-for-trade IDENTICAL to v3.9.11; do not re-run the
+//     Strategy Tester on account of this version.
 // v3.9.11 2026-08-12 - SYMBOL PRESET: the three TSLA-fitted gates switch off together. New input
 //     "Symbol preset" in the Symbol Portability group. TSLA (the default) resolves every effective
 //     value to the raw input, so the TSLA Strategy Tester result is bit-identical to v3.9.10.
@@ -1102,7 +1108,7 @@ if showPD
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 6, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.9.11", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.9.12", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSLS, "#.##"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
