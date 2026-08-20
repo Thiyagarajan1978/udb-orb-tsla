@@ -228,6 +228,34 @@ class Database:
         self.conn.commit()
         return ids
 
+    def replace_trades(self, run_id: int, symbol: str, trades: Iterable) -> int:
+        """Rewrite this run's trade legs from the engine's current replay (live loop).
+
+        `events` is append-only, which is right for an alert audit trail and wrong for scoring:
+        a leg logs `partial_exit` pnl AND an exit event whose pnl is the WHOLE leg including
+        that partial, so summing events double-counts; and a leg revised off a settled bar
+        leaves its superseded events behind for ever. Live runs therefore had no reliable P&L
+        at all -- 34 runs to 2026-08-19 wrote 0 trade rows, since only save_result() filled
+        this table.
+
+        The live engine replays the whole lookback every poll, so its leg list is always the
+        authoritative current view: DELETE + INSERT makes `trades` self-healing, and a revision
+        corrects the row instead of appending a second one. Read live P&L from HERE, never by
+        summing `events`.
+        """
+        rows = [(run_id, symbol, t.day, t.direction, int(t.is_reversal),
+                 _iso(t.entry_ts), t.entry_price, _iso(t.exit_ts), t.exit_price, t.qty,
+                 t.part1_pnl, t.pnl_total, t.pnl_per_unit, t.reason, t.duration_bars,
+                 t.outcome, t.risk_amount) for t in trades]
+        self.conn.execute("DELETE FROM trades WHERE run_id=?", (run_id,))
+        self.conn.executemany(
+            """INSERT INTO trades(run_id, symbol, day, direction, is_reversal, entry_ts,
+                 entry_price, exit_ts, exit_price, qty, part1_pnl, pnl_total, pnl_per_unit,
+                 reason, duration_bars, outcome, risk_amount)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
+        self.conn.commit()
+        return len(rows)
+
     def mark_alerted(self, event_ids: Iterable[int]) -> None:
         self.conn.executemany("UPDATE events SET alerted=1 WHERE id=?", [(i,) for i in event_ids])
         self.conn.commit()

@@ -145,6 +145,8 @@ alerts:
     - vwap_cross_exit
     - base_sl_exit
     - eod_exit
+    - runner_trail_exit  # added 2026-08-19: fired but never alerted
+    - pd_level_exit      # added 2026-08-19: fired but never alerted
 
 # ---- Live loop -----------------------------------------------------
 live:

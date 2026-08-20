@@ -37,6 +37,18 @@ EV_BASE_SL_EXIT = "base_sl_exit"
 EV_EOD_EXIT = "eod_exit"
 EV_PD_LEVEL_EXIT = "pd_level_exit"
 
+# THE authoritative list of every event type the engine can emit. `alerts.events` in a config is
+# an explicit ALLOW-LIST, so any type missing from it is silently never notified -- that is how
+# pd_level_exit and runner_trail_exit went unalerted from their adoption until 2026-08-19 (both
+# fired in the engine, were persisted, and never mailed). Add new EV_* constants HERE; the
+# Notifier warns at startup about anything in this list a config forgets, and
+# tests/test_alert_coverage.py fails the build if a shipped config drops one.
+ALL_EVENT_TYPES = (
+    EV_PRIMARY_ENTRY, EV_REVERSAL_ENTRY, EV_BE_RETRACE_FIRED, EV_TP_FULL, EV_PARTIAL_EXIT,
+    EV_BE_TRAIL_EXIT, EV_BE_STOP_EXIT, EV_VWAP_CROSS_EXIT, EV_TRAIL_EXIT, EV_BASE_SL_EXIT,
+    EV_EOD_EXIT, EV_PD_LEVEL_EXIT,
+)
+
 _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 

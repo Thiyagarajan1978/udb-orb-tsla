@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from ..config import get_env
+from ..engine.orb_engine import ALL_EVENT_TYPES
 
 # event type -> ([TAG], human action)
 _EVENT_META = {
@@ -22,6 +23,8 @@ _EVENT_META = {
     "vwap_cross_exit":   ("EXIT-VWAP", "Trail half closed on VWAP cross"),
     "base_sl_exit":      ("EXIT-SL", "Base stop-loss hit"),
     "eod_exit":          ("EXIT-EOD", "End-of-day forced close"),
+    "runner_trail_exit": ("EXIT-TRAIL", "Runner peak-trail close"),
+    "pd_level_exit":     ("EXIT-PDLVL", "Close at prior-day level (tag and reject)"),
 }
 
 
@@ -53,6 +56,14 @@ class Notifier:
         self.enabled = bool(alerts.get("enabled", True))
         self.channels = set(alerts.get("channels", []))
         self.events = set(alerts.get("events", []))
+        # `events` is an explicit allow-list, so a type absent from it is dropped in silence.
+        # That cost us pd_level_exit and runner_trail_exit from adoption to 2026-08-19: both
+        # fired, both were persisted to the DB, neither ever mailed. Say so at startup.
+        self.missing_events = [t for t in ALL_EVENT_TYPES if t not in self.events] if self.events else []
+        if self.missing_events:
+            who = f" [{label}]" if label else ""
+            print(f"WARNING{who}: alerts.events does not cover {len(self.missing_events)} engine "
+                  f"event type(s) -- these will NEVER alert: {', '.join(self.missing_events)}")
         self.symbol = symbol
         self.tf_min = tf_min
         self.label = label

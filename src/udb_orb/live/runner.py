@@ -182,10 +182,16 @@ def poll_once(cfg: dict[str, Any], db: Database, run_id: int, notifier: Notifier
     # today's session is still open -> its newest bar is NOT a flatten bar (see OrbEngine.run)
     result = run_engine(bars, params, enh, open_session=now.date())
 
+    # Rewrite this run's legs from the replay BEFORE the no-new-events return: `trades` is the
+    # only reliable live scoreboard (see Database.replace_trades), and it must stay current on
+    # polls that produce no new event -- e.g. when a leg is revised off a settled bar.
+    n_legs = db.replace_trades(run_id, symbol, result.trades)
+
     new_events = [e for e in result.events if _event_key(e) not in seen]
     if not new_events:
         if verbose:
-            print(f"[{tag}] {now:%H:%M:%S} up to date ({len(result.events)} events, 0 new)")
+            print(f"[{tag}] {now:%H:%M:%S} up to date ({len(result.events)} events, 0 new, "
+                  f"{n_legs} leg(s) persisted)")
         return 0
 
     # The engine needs a multi-day lookback for context, so its event stream always includes

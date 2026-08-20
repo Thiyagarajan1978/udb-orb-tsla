@@ -12,10 +12,18 @@ REM Output goes to a per-day log. Without this the runner's console is discarded
 REM is where the correction machinery reports itself -- the `!! SUPERSEDED` lines that say FMP
 REM revised a bar after we alerted on it. On 2026-08-12 two of those fired and nobody could see
 REM them after the fact; the defect had to be reconstructed from the DB instead.
+REM
+REM `python -u` is LOAD-BEARING (2026-08-19). Python block-buffers stdout when it is redirected to
+REM a file, so nothing reaches the log until the buffer fills or the process exits cleanly. This
+REM task does not exit cleanly -- Task Scheduler has reported 0xC000013A (STATUS_CONTROL_C_EXIT)
+REM every day, killing the whole cmd tree mid-session -- so the buffer was discarded and every log
+REM from 08-13 onward held exactly 2 bytes ("^C"), not even the `exited rc=` line below. The
+REM diagnostic added on 08-12 therefore never once worked. Unbuffered, the log is written as it
+REM happens and survives the kill.
 cd /d "%~dp0.."
 if not exist logs mkdir logs
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set TODAY=%%i
-python cli.py live --profiles B1,C1 >> "logs\live_%TODAY%.log" 2>&1
+python -u cli.py live --profiles B1,C1 >> "logs\live_%TODAY%.log" 2>&1
 set RC=%ERRORLEVEL%
 echo [run_live] exited rc=%RC% >> "logs\live_%TODAY%.log"
 exit /b %RC%

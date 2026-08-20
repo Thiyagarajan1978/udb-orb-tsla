@@ -161,7 +161,7 @@ def test_only_same_day_events_are_alerted(monkeypatch, db, tmp_path):
     monkeypatch.setattr(R, "fetch_5min", lambda *a, **k: bars)
     monkeypatch.setattr(R, "rth_only", lambda d: d)
     monkeypatch.setattr(R, "_closed_bars", lambda d, tf, now, settle=0: d)
-    monkeypatch.setattr(R, "run_engine", lambda *a, **k: SimpleNamespace(events=events))
+    monkeypatch.setattr(R, "run_engine", lambda *a, **k: SimpleNamespace(events=events, trades=[]))
     monkeypatch.setattr(R.Params, "from_config", staticmethod(lambda cfg: None))
 
     sent: list = []
@@ -302,14 +302,75 @@ def test_poll_once_marks_a_superseded_alert(db, monkeypatch):
     cfg = {"symbol": "TSLA", "timeframe_minutes": 5, "data": {}, "live": {}}
     seen: set = set()
 
-    monkeypatch.setattr(R, "run_engine", lambda *a, **k: SimpleNamespace(events=[first]))
+    monkeypatch.setattr(R, "run_engine", lambda *a, **k: SimpleNamespace(events=[first], trades=[]))
     R.poll_once(cfg, db, run_id, notifier, seen, verbose=False, label="B1")
     assert "CORRECTION" not in (sent[0].note or ""), "the first signal is not a correction"
 
     # FMP revises the bar; the engine now places the entry 15 minutes later
-    monkeypatch.setattr(R, "run_engine", lambda *a, **k: SimpleNamespace(events=[first, second]))
+    monkeypatch.setattr(R, "run_engine", lambda *a, **k: SimpleNamespace(events=[first, second], trades=[]))
     R.poll_once(cfg, db, run_id, notifier, seen, verbose=False, label="B1")
 
     assert len(sent) == 2, "the replacement must still be delivered"
     assert "CORRECTION" in sent[1].note and "09:45" in sent[1].note, (
         "the replacement must say which alert it supersedes, or it reads as a second entry")
+
+
+# --------------------------------------------------------------------------------------
+# Live runs must persist LEGS, not just events (added 2026-08-19).
+#
+# For its first 34 live runs the runner wrote 0 rows to `trades` -- only save_result() filled
+# that table -- so live P&L could only be rebuilt from `events`, which cannot be summed:
+#   * a leg logs `partial_exit` pnl AND an exit event whose pnl already INCLUDES that partial,
+#     so adding the events double-counts the partial;
+#   * a leg revised off a settled bar leaves its superseded events in place for ever.
+# Replaying 2026-07-28..08-18 against the live stream, only 9 of 16 B1 sessions reconciled.
+# --------------------------------------------------------------------------------------
+
+def leg(day, pnl_total, reason="EOD", direction="L", part1=0.0):
+    t = pd.Timestamp(f"{day} 09:35").tz_localize(_TZ)
+    x = pd.Timestamp(f"{day} 15:50").tz_localize(_TZ)
+    return SimpleNamespace(day=day, direction=direction, is_reversal=False, entry_ts=t,
+                           entry_price=100.0, exit_ts=x, exit_price=100.0 + pnl_total, qty=1.0,
+                           part1_pnl=part1, pnl_total=pnl_total, pnl_per_unit=pnl_total,
+                           reason=reason, duration_bars=75, outcome="success", risk_amount=5.0)
+
+
+def test_replace_trades_persists_live_legs(db):
+    run = _run(db, "B1")
+    assert db.replace_trades(run, "TSLA", [leg("2026-08-13", 7.30, part1=0.85)]) == 1
+    df = db.trades_df(run)
+    assert len(df) == 1
+    assert df.pnl_total.sum() == pytest.approx(7.30)
+
+
+def test_replace_trades_is_idempotent_and_self_healing(db):
+    """The engine replays every poll, so re-persisting must CORRECT the row, not append one."""
+    run = _run(db, "B1")
+    db.replace_trades(run, "TSLA", [leg("2026-08-14", -2.30, reason="BE Stop")])
+    # a settled bar revises the day: the leg now ends at a PD level, and a reversal follows
+    db.replace_trades(run, "TSLA", [leg("2026-08-14", -2.30, reason="BE Stop"),
+                                    leg("2026-08-14", 2.16, reason="Rev PD Level", direction="S (Rev)")])
+    df = db.trades_df(run)
+    assert len(df) == 2, "a revision must replace the run's legs, never accumulate them"
+    assert df.pnl_total.sum() == pytest.approx(-0.14)
+
+
+def test_trades_are_scoped_per_run_so_B1_and_C1_do_not_collide(db):
+    """B1 and C1 share one db_path -- replacing one profile's legs must not touch the other's."""
+    b1, c1 = _run(db, "B1"), _run(db, "C1")
+    db.replace_trades(b1, "TSLA", [leg("2026-08-18", -2.71)])
+    db.replace_trades(c1, "TSLA", [leg("2026-08-18", -2.71), leg("2026-08-18", 1.00)])
+    db.replace_trades(b1, "TSLA", [leg("2026-08-18", -3.00)])       # revise B1 only
+    assert db.trades_df(b1).pnl_total.sum() == pytest.approx(-3.00)
+    assert len(db.trades_df(c1)) == 2
+
+
+def test_summing_events_double_counts_a_partial_but_legs_do_not(db):
+    """Pin the arithmetic that made the event-stream scoreboard wrong."""
+    run = _run(db, "B1")
+    partial = ev("2026-08-13 10:40", "partial_exit"); partial.pnl = 0.85
+    final = ev("2026-08-13 15:50", "eod_exit");       final.pnl = 7.30   # WHOLE leg, incl. partial
+    db.append_events(run, "TSLA", [partial, final])
+    assert db.events_df(run).pnl.sum() == pytest.approx(8.15)           # the wrong answer
+    db.replace_trades(run, "TSLA", [leg("2026-08-13", 7.30, part1=0.85)])
+    assert db.trades_df(run).pnl_total.sum() == pytest.approx(7.30)     # the right one
