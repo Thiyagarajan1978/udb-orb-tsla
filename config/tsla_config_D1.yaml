@@ -29,7 +29,21 @@ profile:
   sl_offset: 0.0
   fixed_sl: 5.0
   tp_mode: Adaptive
-  adaptive_tp_scale: 1.0
+  adaptive_tp_scale: 0.75  # ADOPTED 2026-08-20 for D1 (was 1.0). In D1 the adaptive TP takes no
+                           # money -- its touch only ARMS the ATR trail -- so a shorter TP hands
+                           # more trades to the chandelier instead of leaving them to the BE stop,
+                           # which was 81% of all loss dollars at a 0% win rate. 2022-01-03..2026-08-11,
+                           # one run split by exit year: net/unit 493.6 -> 529.0 (+7.2%), PF 1.30 ->
+                           # 1.33, WR 44.9 -> 45.9, maxDD -86.3 -> -66.6 (-23%), net/maxDD +39%.
+                           # POSITIVE ALL 5 YEARS. Cost is 2024: 56.0 -> 38.9 (chop year; every
+                           # profile and every scale < 1.0 pays it). NOT fitted to the years it wins:
+                           # on the 2024-25 window where this knob was originally tuned the column is
+                           # flat and 0.90 wins; 0.75 wins on 2022-23 (never in any discovery set)
+                           # and on 2026. The NET column is jagged +-0.05 -- treat 0.70-0.80 as the
+                           # plateau; what is MONOTONE across 1.0->0.7, and therefore the trustworthy
+                           # part, is drawdown and win rate. TradingView: set the D1 chart's
+                           # "Adaptive TP - OR Width Multiplier" input to 0.75 (that input is GLOBAL
+                           # in Pine, so it is a per-chart setting, not a re-paste).
   adaptive_tp_min: 2.14
   fixed_tp: 2.14
   use_be_retrace: true
@@ -74,10 +88,25 @@ enhancements:
     enabled: false
     skip_below: 0.0
     skip_above: 0.0
-  time_window:            # ADOPTED 2026-07-26: no NEW entries (primary or reversal) after 12:00
-    enabled: true         # post-noon entries were a net-NEGATIVE cohort (lunch-hour chop); WR up in
-    start: 09:35          # every tested year-cell A1/B1/C1/D1 incl 2022-23 OOS, net +3-4%, worst day
-    end: '12:00'          # never worse. Pine v3.9 'Entry cutoff' input (default ON) is the twin.
+  time_window:            # ADOPTED 2026-07-26 house-wide: no NEW entries (primary or reversal) after
+    enabled: true         # 12:00 -- post-noon entries were a net-NEGATIVE cohort (lunch-hour chop).
+    start: 09:35          # D1 TIGHTENED TO 11:30 on 2026-08-20 (this file only; A1/B1/C1/C2 stay
+    end: '11:30'          # 12:00). The toxic pocket starts BEFORE noon: over 2022-01-03..2026-08-11
+                          # the 11:30-12:00 entry cohort is 28 trades worth -19.4/unit (-0.69 each)
+                          # and 11:00-11:30 is 40 trades at -8.6 (-0.22 each), while 10:30-11:00 is
+                          # still POSITIVE (+4.6 over 62). 11:30 is where the cohort turns.
+                          # With adaptive_tp_scale 0.75: net/unit 529.0 -> 548.5, PF 1.33 -> 1.36,
+                          # maxDD -66.6 -> -55.0 (-17%), net/maxDD 7.94 -> 9.97 (BEST of every
+                          # variant tested), positive all 5 years.
+                          # WHY 11:30 AND NOT 11:00/10:30: it is the only cutoff that improves all
+                          # three windows at once -- 2024-25 (the original fit window) 190.7->198.4,
+                          # 2022-23 (never in any discovery set) 149.5->160.7, and 2026 (holdout)
+                          # 188.8->189.3. 11:00 wins on net but gives back 2022-23 (148.9); 10:30
+                          # gives back 2026 (185.2).
+                          # HONEST LIMIT: the net gain is concentrated in 2022 (+21.3 of +19.4).
+                          # Over the trailing 3 years it adds only +8.2/unit and on 2025-08..2026-08
+                          # it is flat. The case rests on drawdown and on the cohort being
+                          # mechanically negative, NOT on recent net. Pine 'Entry cutoff' input.
   reversal_capture:
     enabled: true
     trigger_on_be_stop: true
