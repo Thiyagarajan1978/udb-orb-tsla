@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.9.12 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.12 S", overlay=true,
+strategy("UDB-ORB TSLA v3.9.13 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.13 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -14,6 +14,57 @@ strategy("UDB-ORB TSLA v3.9.12 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle
      max_labels_count        = 500,
      max_lines_count         = 500)
 
+// v3.9.13 2026-08-20 - D1 IS NOW THE DEFAULT PROFILE, AND THE PROFILE DROPDOWN NOW CARRIES ITS OWN
+//     TUNING. Two adopted changes plus the mechanism that keeps them from leaking.
+//
+//     1. DEFAULT PROFILE A1 -> "D1 - Adaptive + ATR-Trail (exp)" (input default only; an existing
+//        chart keeps whatever it already had saved, so switch it by hand there).
+//     2. NEW INPUT "Use each profile's ADOPTED defaults" (Profile group, default ON). While it is
+//        ticked the Adaptive-TP multiplier and the entry-cutoff time are resolved FROM THE PROFILE
+//        rather than read from their boxes:
+//            D1          -> multiplier 0.75, cutoff 11:30
+//            A1/B1/C1/C2 -> multiplier 1.00, cutoff 12:00   (unchanged from v3.9.12)
+//        Untick it and both boxes are read exactly as typed, for whatever profile is selected.
+//
+//     WHY A RESOLVER AND NOT JUST NEW DEFAULTS. Python carries one config FILE per profile, so each
+//     profile owns its own adaptive_tp_scale and time_window.end. Pine has ONE global input set
+//     behind a dropdown. Simply moving the two defaults to D1's values would have meant that
+//     switching the dropdown to B1 silently ran B1 on D1's numbers -- numbers never validated for
+//     B1, and a quiet divergence from config/tsla_best_B.yaml that the TradingView reconciliation
+//     would then be measuring against the wrong twin. Same idiom as the v3.9.11 symbol preset:
+//     resolved once, after every input is read, so the use sites cannot drift apart.
+//
+//     A1/B1/C1/C2 ARE BIT-IDENTICAL TO v3.9.12. Only D1 changes, and only with the box ticked.
+//
+//     D1 EVIDENCE (2022-01-03..2026-08-11, per unit, full-exit D1, close-stop, $0.10 slippage):
+//        multiplier 1.00 -> 0.75: net 493.6 -> 529.0 (+7.2%), PF 1.30 -> 1.33, win rate 44.9 -> 45.9,
+//        max drawdown -86.3 -> -66.6 (-23%), net/drawdown +39%, POSITIVE IN ALL FIVE YEARS. Cost is
+//        2024 (56.0 -> 38.9). MECHANISM: in full-exit mode the adaptive TP takes no money -- its
+//        touch only ARMS the ATR trail. At 1.00x OR width the trail stayed unarmed on most trades
+//        and the BE stop collected them instead; in the user's own 365-day TradingView export the
+//        BE-stop family was $14,506 = 81% of ALL loss dollars at a 0% win rate, with a median
+//        favourable excursion of $0.88/share, and only 14 of its 83 losers could ever have armed
+//        the trail. 0.75 moves 61 trades from the BE-stop cohort to the trail cohort.
+//        0.50 WAS TESTED ON REQUEST AND IS WORSE THAN 1.00 ON EVERY AXIS (2024 goes negative): the
+//        cliff sits between 0.65 and 0.55, so treat 0.70-0.80 as the plateau, not 0.75 as an optimum.
+//        cutoff 12:00 -> 11:30: the 11:30-12:00 cohort is 28 trades at -0.69/unit each; 11:00-11:30
+//        is 40 at -0.22; 10:30-11:00 is still POSITIVE. 11:30 is the only cutoff that improves the
+//        2024-25 fit window (190.7 -> 198.4), the 2022-23 out-of-sample years (149.5 -> 160.7) and
+//        the 2026 holdout (188.8 -> 189.3) simultaneously. HONEST LIMIT: its net gain concentrates
+//        in 2022 and is roughly FLAT over the trailing 3 years -- the case for it rests on drawdown.
+//        BOTH, at 60 shares: past 3 years $22,269 -> $24,053 (+8.0%) on 21 FEWER trades, PF 1.36 ->
+//        1.42, max drawdown -$3,510 -> -$3,302. Full history $29,615 -> $32,909 (+11.1%), PF 1.30 ->
+//        1.36, max drawdown -$5,180 -> -$3,302, net per dollar of drawdown 5.72 -> 9.97.
+//
+//     TESTED AND REJECTED in the same sweep, so they are not re-proposed: the chandelier multiplier
+//     2.75/3.0 (looked like a +18/unit plateau with a smaller drawdown and zero negative years over
+//     25 grid cells, but its WHOLE gain is three days -- 90 days change, 36 up vs 54 down, and
+//     excluding the top 3 winners the delta is -8.7); HHV/LLV period; ATR period; the hybrid-VWAP
+//     variant; Max OR Width 10 (more net, worse drawdown); and Reversal Dollar-Risk Cap 8 (the
+//     biggest raw number seen, +45.7/unit, and still rejected -- net/drawdown falls 7.94 -> 7.77,
+//     which is leverage, and it undoes the risk-parity decision the cap exists for).
+//     Python twin: config/tsla_config_D1.yaml, pinned by tests/test_params.py.
+//
 // v3.9.12 2026-08-19 - VERSION BUMP ONLY, so chart + alerts show matching names with the indicator.
 //     THIS STRATEGY NEEDED NO CHANGE. The indicator's v3.9.12 fix adds the five named "PD Level"
 //     alertcondition() rows it was missing; a strategy has no alertcondition()s -- it exits through
@@ -320,11 +371,12 @@ strategy("UDB-ORB TSLA v3.9.12 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle
 //=============================================================================================
 
 // ==================== PROFILE ====================
-profile = input.string("A1 · Adaptive + Peak-Trail", "Profile",
+profile = input.string("D1 · Adaptive + ATR-Trail (exp)", "Profile",
      options=["A1 · Adaptive + Peak-Trail", "B1 · Adaptive + VWAP", "C1 · ATR 0.25 + 25% Partial + VWAP", "C2 · OR-Width Full-Exit", "D1 · Adaptive + ATR-Trail (exp)"],
      group="Profile", tooltip="A1/B1 = adaptive OR-scaled target + 25% partial + runner (peak-trail vs VWAP). C1 = ATR-sized target + 25% partial + VWAP (best PF). C2 = full exit at OR-WIDTH target (open bar H-L; was fixed $2 pre-v3.5), no partial/runner. D1 (EXPERIMENTAL, not adopted) = B1 with the TRADE TASTIC ATR trail as the runner exit.")
 c2TPFormula = input.string("OR width (open bar High-Low)", "C2 Take-Profit formula", options=["OR width (open bar High-Low)", "Fixed $"], group="Profile", tooltip="ADOPTED v3.5 (default): C2's target = the OPEN BAR's High - Low (= OR width, no floor). vs the old fixed $2 (per unit, close-stop): 2024 +36.6 vs -23.1, 2025 +38.3 vs -0.3, 2026YTD +111.7 vs +49.0; 2022/23 slightly behind; 5yr ~2x and positive every year. 'Fixed $' = the pre-v3.5 C2 (uses the Fixed TP $ input).", display=display.none)
 d1ExitMode = input.string("Full exit at ATR Trail", "D1 Exit mode", options=["Full exit at ATR Trail", "Partial TP + ATR Trail"], group="Profile", tooltip="D1 only. 'Full exit at ATR Trail' (DEFAULT since 2026-07-23; the Python forward test tracks it) = NOTHING is taken at the TP — its touch only ARMS the trail; 100% exits on the flip (ONE exit alert/order — also suits platforms that cannot split exits). 'Partial TP + ATR Trail' = the original D1: 25% off at the adaptive TP, 75% rides the flip. v3.6 test (per unit, fixed trail): full-trail beats the partial in all of 2024/25/26 (+39.7/+85.2/+179.0 vs +38.4/+72.2/+162.3) at a slightly deeper 2025 worst day (-13.6 vs -12.0).", display=display.none)
+profDefaults = input.bool(true, "Use each profile's ADOPTED defaults (TP multiplier + entry cutoff)", group="Profile", tooltip="TICKED (default, v3.9.13) = the two boxes it governs are IGNORED and each profile gets the value it was actually validated at:\n  D1  -> Adaptive TP multiplier 0.75, entry cutoff 11:30\n  A1/B1/C1/C2 -> Adaptive TP multiplier 1.00, entry cutoff 12:00\n\nWHY THIS EXISTS. The Python side carries one config FILE per profile, so each profile owns its own adaptive_tp_scale and cutoff time. Pine has ONE global input set behind a Profile dropdown, so a single box cannot serve five profiles -- and before v3.9.13 switching the dropdown to B1 silently kept D1's numbers, which are not B1's validated numbers. Ticking this makes the dropdown carry its own settings, the way the config files do, and keeps every profile reconciling to its Python twin.\n\nWHAT D1's 0.75 BUYS (2022-01-03..2026-08-11, per unit, full-exit D1): net 493.6 -> 529.0, PF 1.30 -> 1.33, win rate 44.9 -> 45.9, max drawdown -86.3 -> -66.6, positive in all five years. In full-exit mode the adaptive TP takes no money -- its touch only ARMS the ATR trail -- so a target at 1.00x OR width left the trail unarmed on most trades and the BE stop (81% of all loss dollars at a 0% win rate) collected them instead. 0.50 was tested too and is WORSE than 1.00 on every axis (2024 turns negative): the cliff sits between 0.65 and 0.55, so 0.70-0.80 is the plateau.\n\nWHAT 11:30 BUYS: the 11:30-12:00 cohort is 28 trades at -0.69/unit each. It is the only cutoff that improves the 2024-25 fit window, the 2022-23 out-of-sample years AND the 2026 holdout at the same time. HONEST LIMIT: its net gain concentrates in 2022 and is roughly flat over the trailing 3 years -- the case for it rests on drawdown, not on net.\n\nBOTH TOGETHER, D1 at 60 shares: past 3 years $22,269 -> $24,053 (+8.0%) on 21 FEWER trades, PF 1.36 -> 1.42, max drawdown -$3,510 -> -$3,302. Full history $29,615 -> $32,909 (+11.1%), max drawdown -$5,180 -> -$3,302, net per dollar of drawdown 5.72 -> 9.97.\n\nUNTICK to hand-tune: the two boxes are then read exactly as typed, for whatever profile is selected.", display=display.none)
 isA1 = str.startswith(profile, "A1")
 isB1 = str.startswith(profile, "B1")
 isC1 = str.startswith(profile, "C1")
@@ -341,8 +393,8 @@ eodHour = input.int(15, "EOD Exit Hour", minval=0, maxval=23, group=grpS, displa
 eodMin  = input.int(50, "EOD Exit Minute", minval=0, maxval=59, group=grpS, display=display.none)
 orStart = input.string("09:30", "Opening Range start bar", options=["09:30", "09:45"], group=grpS, tooltip="09:30 = classic first-bar OR. 09:45 = skip the noisy opening 15 min (better 2024/25 backtest, WORSE 2026).", display=display.none)
 entryCutOn = input.bool(true, "Entry cutoff — no NEW entries after the time below", group=grpS, tooltip="ADOPTED 2026-07-26 (default ON, 12:00): entries after noon were a net-NEGATIVE cohort in 5 years of trade data — the damage concentrates in the 12:00-13:00 lunch hour. Blocking NEW entries (primary AND reversal; open positions still manage to their normal exits) after 12:00: WR up in all 7 tested year-cells on B1/D1 (+A1/C1 confirmed), net +3-4% (B1 5yr +463 vs +451/unit), worst day never worse, 2025's improves. OFF = trade all day (pre-cutoff behavior).", display=display.none)
-entryCutH  = input.int(12, "Entry Cutoff Hour", minval=9, maxval=15, group=grpS, display=display.none)
-entryCutM  = input.int(0,  "Entry Cutoff Minute", minval=0, maxval=59, group=grpS, display=display.none)
+entryCutH  = input.int(11, "Entry Cutoff Hour (manual)", minval=9, maxval=15, group=grpS, tooltip="ONLY READ WHEN \"Use each profile's ADOPTED defaults\" (Profile group) IS UNTICKED. While that box is ticked -- the default -- the cutoff is 11:30 on D1 and 12:00 on A1/B1/C1/C2. The tick-box above still switches the cutoff off entirely.", display=display.none)
+entryCutM  = input.int(30, "Entry Cutoff Minute (manual)", minval=0, maxval=59, group=grpS, display=display.none)
 
 grpR = "Risk / Regime Gates"
 maxORWidth  = input.float(8.0,  "Max OR Width ($) — skip wider days", step=0.5, group=grpR, display=display.none)
@@ -364,7 +416,7 @@ shareQty    = input.int(25,     "Share quantity (Shares mode, per 1.0-unit trade
 
 grpX = "Exit tuning (which apply depends on the Profile)"
 maxCapOverride  = input.float(0.0,  "Max Stop override ($, 0 = use profile: C1=6 else 5)", step=0.5, group=grpX, display=display.none)
-adaptiveTPScale = input.float(1.0,  "Adaptive TP — OR Width Multiplier (A1/B1)", step=0.05, group=grpX, display=display.none)
+adaptiveTPScale = input.float(0.75, "Adaptive TP - OR Width Multiplier (manual)", step=0.05, group=grpX, tooltip="ONLY READ WHEN \"Use each profile's ADOPTED defaults\" (Profile group) IS UNTICKED. While that box is ticked -- the default -- this is ignored and the multiplier is 0.75 on D1, 1.00 on A1/B1/C1/C2. Target distance from entry = max(the floor below, OR width x this).", display=display.none)
 adaptiveTPMin   = input.float(2.14, "Adaptive TP — Minimum Floor $ (A1/B1)", step=0.01, group=grpX, display=display.none)
 atrTPMult       = input.float(0.25, "ATR TP Multiplier x 14d ATR (C1)", step=0.01, group=grpX, display=display.none)
 atrTPMin        = input.float(1.0,  "ATR TP Floor $ (C1)", step=0.25, group=grpX, display=display.none)
@@ -475,6 +527,15 @@ isNonTSLA  = symPreset != "TSLA (as validated)"
 effRvolCap = isNonTSLA ? 1.0e9 : maxRvolPct   // 1e9 => `rvol20 > effRvolCap` can never be true
 effCutOn   = isNonTSLA ? false : entryCutOn
 effPdxOn   = isNonTSLA ? false : pdxOn
+
+// ==================== v3.9.13 PER-PROFILE ADOPTED DEFAULTS ====================
+// Resolved here, next to the symbol preset, so there is exactly ONE definition of each effective
+// value and the use sites cannot drift apart. Python has a config FILE per profile; Pine has one
+// input set and a dropdown, so the per-profile value has to be resolved rather than typed.
+// Untick `profDefaults` and both fall back to the raw inputs for every profile.
+effTPScale = profDefaults ? (isD1 ? 0.75 : 1.00) : adaptiveTPScale
+effCutH    = profDefaults ? (isD1 ? 11   : 12)   : entryCutH
+effCutM    = profDefaults ? (isD1 ? 30   : 0)    : entryCutM
 
 maxCapSL = maxCapOverride > 0 ? maxCapOverride : (isC1 ? 6.0 : 5.0)
 
@@ -622,8 +683,8 @@ if isORbar
 longBrk = not na(orHigh) ? orHigh + orWidth * bufferPctOR / 100.0 : na
 shortBrk = not na(orLow) ? orLow - orWidth * bufferPctOR / 100.0 : na
 // target distance by profile: Fixed (C2) / ATR (C1) / Adaptive OR-scaled (A1/B1)
-tpDist = tpModeSel == "Fixed" ? fixedTPS : tpModeSel == "ORw" ? orWidth : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMinS, atrTPMult * dailyATR) : fixedTPS) : (not na(orWidth) ? math.max(adaptiveTPMinS, orWidth * adaptiveTPScale) : na)
-canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar and (not effCutOn or hour * 60 + minute <= entryCutH * 60 + entryCutM)
+tpDist = tpModeSel == "Fixed" ? fixedTPS : tpModeSel == "ORw" ? orWidth : tpModeSel == "ATR" ? (not na(dailyATR) ? math.max(atrTPMinS, atrTPMult * dailyATR) : fixedTPS) : (not na(orWidth) ? math.max(adaptiveTPMinS, orWidth * effTPScale) : na)
+canTrade = session.ismarket and not isORbar and not daySkipped and not na(orHigh) and not isFlattenBar and (not effCutOn or hour * 60 + minute <= effCutH * 60 + effCutM)
 
 // ==================== PRIMARY ENTRY ====================
 longConfirm  = not confirmBreakout or (close[1] > longBrk and (close >= open or not requireTrendCandle))
@@ -1108,7 +1169,7 @@ if showPD
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 6, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.9.12", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.9.13", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSLS, "#.##"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)
