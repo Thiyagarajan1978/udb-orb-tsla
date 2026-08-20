@@ -102,6 +102,9 @@ profile:
   # Partial exit + VWAP trail (auto-tuned for 5m)
   use_partial_exit: true
   partial_qty_pct: 25.0      # close 25% at TP, 75% trails
+  # 0.0 = ALL-RUNNER: nothing off at the TP (its touch only ARMS the runner), 100% on one
+  # exit -- Pine v3.9.15's "All-runner exit" tick-box. Measured +11-14% over 2022-2026 on
+  # A1/B1/C1 at a LOWER win rate and more red days; not adopted. See tsla_best_B.yaml.
   partial_activation: 1.00   # profit threshold before VWAP trail arms
 
   # Reversal trades (2x size after primary SL)

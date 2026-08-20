@@ -38,6 +38,14 @@ profile:
   be_retrace_use_close: false
   use_partial_exit: true
   partial_qty_pct: 25.0
+  # ALL-RUNNER ALTERNATIVE (not adopted, measured 2026-08-20): set this to 0.0 and the adaptive
+  # TP takes NOTHING -- its touch only ARMS the runner and 100% exits on ONE runner exit, which is
+  # what D1 has shipped since 2026-07-23. Twin of Pine v3.9.15's "All-runner exit" tick-box.
+  # 2022-01-03..2026-08-19 @60 shares: B1 $31,507 -> $35,772 (+13.5%), past 3 years +11.7%
+  # Better in the 2022-23 OOS years, the 2024-25 fit window AND the 2026 holdout; trade count
+  # identical. COST: win rate falls (B1 46.0 -> 44.3%) because the banked partial no longer rescues marginal
+  # trades, and B1's day-level delta is 160 up / 185 DOWN for +71.1/unit (ex-top-3 +56.7) -- bigger
+  # winners, more red days. Left at 25.0 because that is what is live, validated and reconciled.
   partial_activation: 1.0
   use_reversal: true
   reversal_qty_mult: 2.0

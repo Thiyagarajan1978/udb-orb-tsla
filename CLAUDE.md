@@ -107,6 +107,22 @@ separate, toggleable, and default OFF.
    plateau. Pine v3.9.14 "Entry Cutoff Hour/Minute" (11/30) is the twin.
 4. **Reversal capture** (default **ON** — adopted) — `trigger_on_be_stop` + `trail_to_eod`.
 5. **Walk-forward tuning** (`tuning/`) — re-fit `adaptive_tp_scale` etc. from stored trades.
+6. **All-runner single exit** (`partial_qty_pct: 0.0` + `use_partial_exit: true`, default **OFF**;
+   Pine v3.9.15 tick-box "All-runner exit", Profile group) — nothing comes off at the target, its
+   touch only ARMS the runner, and 100% leaves on ONE exit. This is D1's shipped behaviour
+   generalised to A1/B1/C1, so D1 is bit-identical with the box on (that equality is the check
+   that the generalisation is faithful) and C2 is inert. **Measured 2026-08-20**, 2022-01-03..
+   2026-08-19 @60 shares: A1 $28,450 → $31,664 (+11.3%), B1 $31,507 → $35,772 (+13.5%),
+   C1 $31,389 → $35,754 (+13.9%); past 3 years +11.7-12.6%; better in the 2022-23 OOS years, the
+   2024-25 fit window AND the 2026 holdout simultaneously; net/DD up on all three (B1 8.23 → 9.03).
+   Trade count is IDENTICAL — this changes exit quantity, never signals. **Cost:** win rate FALLS
+   (B1 46.0 → 44.3%, C1 47.5 → 44.1%) because the banked partial no longer rescues a marginal
+   trade; B1's day-level delta is 160 up / **185 down** for +71.1/unit (ex-top-3 +56.7) — bigger
+   winners, more red days — and maxDD is slightly deeper on B1/C1. **Not adopted**: 25% is what is
+   live, reconciled and TV-validated. Do NOT confuse this with exiting **100% AT the target**
+   (`use_partial_exit: false`), tested the same day and **34-42% WORSE on all four profiles** —
+   it caps the winners while the BE-stop cohort (87% of loss dollars) is untouched, and B1's
+   PD-Level exits flip +$10,450 → −$3,976.
 
 Enable one at a time and compare to the baseline before trusting it.
 

@@ -1,6 +1,31 @@
 //@version=6
-indicator("UDB-ORB TSLA v3.9.14 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.14", overlay=true, max_labels_count=500, max_lines_count=500)
+indicator("UDB-ORB TSLA v3.9.15 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.15", overlay=true, max_labels_count=500, max_lines_count=500)
 
+// v3.9.15 2026-08-20 - ONE TICK-BOX FOR THE ALL-RUNNER SINGLE EXIT (Profile group, default OFF).
+//     "All-runner exit: take NOTHING at the target, 100% rides the runner (ONE exit)". D1 has had
+//     this since v3.6 as its "D1 Exit mode"; the box generalises that one path to A1/B1/C1, so
+//     there is now a single place to switch the whole suite between the 25% scale-out and a
+//     one-order exit. Inert on D1 (already all-runner) and on C2 (no partial, no runner).
+//     Internals: `noPartial = d1FullTrail or allRunner`, and the four sites that used to test
+//     `d1FullTrail` (partial quantity, the "TRAIL ARMED" label, and the branch that places no TP
+//     limit order at all) now test `noPartial`. No other logic moved; entries, stops, the BE
+//     machinery, the runner exits and the reversal are untouched.
+//     MEASURED 2026-08-20, Python engine, 2022-01-03..2026-08-19 @60 shares, $0.10/share slippage:
+//       A1 $28,450 -> $31,664 (+11.3%) | B1 $31,507 -> $35,772 (+13.5%)
+//       C1 $31,389 -> $35,754 (+13.9%) | D1 unchanged (bit-identical, which is the check that the
+//       generalisation is faithful -- D1 already ran this path)
+//     Past 3 years +11.7% to +12.6%; better in the 2022-23 OOS years, the 2024-25 fit window and
+//     the 2026 holdout on all three profiles at once. Trade COUNT identical (quantity changes,
+//     not signals). HONEST COST: win rate FALLS (B1 46.0 -> 44.3%, C1 47.5 -> 44.1%,
+//     A1 46.8 -> 45.6%) since the
+//     banked partial no longer rescues marginal trades; B1's day-level delta is 160 up / 185 DOWN
+//     for +71.1/unit (ex-top-3 +56.7) -- more red days, bigger winners. Max DD slightly deeper on
+//     B1/C1, but net-over-drawdown IMPROVES on all three (B1 8.23 -> 9.03, C1 7.89 -> 8.32,
+//     A1 5.76 -> 6.62). LEFT DEFAULT OFF: the 25% partial is what is validated, live and
+//     reconciled today.
+//     NOT to be confused with exiting 100% AT the target, tested the same day and 34-42% WORSE on
+//     every profile (it caps winners and leaves the BE-stop loss cohort untouched).
+//
 // v3.9.14 2026-08-20 - THE 11:30 ENTRY CUTOFF IS NOW HOUSE-WIDE (A1/B1/C1/C2/D1), NOT D1-ONLY.
 //     v3.9.13 gave D1 an 11:30 cutoff and left everything else at 12:00, resolved per profile. The
 //     same measurement has now been run on the TRADED profiles and 11:30 wins there too, so the
@@ -392,6 +417,7 @@ profile = input.string("D1 · Adaptive + ATR-Trail (exp)", "Profile",
 c2TPFormula = input.string("OR width (open bar High-Low)", "C2 Take-Profit formula", options=["OR width (open bar High-Low)", "Fixed $"], group="Profile", tooltip="ADOPTED v3.5 (default): C2's target = the OPEN BAR's High - Low (= OR width, no floor). vs the old fixed $2 (per unit, close-stop): 2024 +36.6 vs -23.1, 2025 +38.3 vs -0.3, 2026YTD +111.7 vs +49.0; 2022/23 slightly behind; 5yr ~2x and positive every year. 'Fixed $' = the pre-v3.5 C2 (uses the Fixed TP $ input).", display=display.none)
 d1ExitMode = input.string("Full exit at ATR Trail", "D1 Exit mode", options=["Full exit at ATR Trail", "Partial TP + ATR Trail"], group="Profile", tooltip="D1 only. 'Full exit at ATR Trail' (DEFAULT since 2026-07-23; the Python forward test tracks it) = NOTHING is taken at the TP — its touch only ARMS the trail; 100% exits on the flip (one alert, one order; suits platforms that cannot split exits). 'Partial TP + ATR Trail' = the original D1: 25% off at the adaptive TP, 75% rides the flip. v3.6 test (per unit, fixed trail): full-trail beats the partial in all of 2024/25/26 (+39.7/+85.2/+179.0 vs +38.4/+72.2/+162.3) at a slightly deeper 2025 worst day (-13.6 vs -12.0).", display=display.none)
 profDefaults = input.bool(true, "Use each profile's ADOPTED Adaptive-TP multiplier", group="Profile", tooltip="TICKED (default) = the \"Adaptive TP - OR Width Multiplier (manual)\" box is IGNORED and each profile gets the multiplier it was actually validated at:\n  D1 -> 0.75\n  A1/B1/C1/C2 -> 1.00\n\nWHY THIS EXISTS. The Python side carries one config FILE per profile, so each profile owns its own adaptive_tp_scale. Pine has ONE global input set behind a Profile dropdown, so a single box cannot serve five profiles -- and before v3.9.13 switching the dropdown to B1 silently kept D1's 0.75, which is not B1's validated number. Ticking this makes the dropdown carry its own setting, the way the config files do, and keeps every profile reconciling to its Python twin.\n\nWHAT D1's 0.75 BUYS (2022-01-03..2026-08-11, per unit, full-exit D1): net 493.6 -> 529.0, PF 1.30 -> 1.33, win rate 44.9 -> 45.9, max drawdown -86.3 -> -66.6, positive in all five years. In full-exit mode the adaptive TP takes no money -- its touch only ARMS the ATR trail -- so a target at 1.00x OR width left the trail unarmed on most trades and the BE stop (81% of all loss dollars at a 0% win rate) collected them instead. 0.50 was tested too and is WORSE than 1.00 on every axis (2024 turns negative): the cliff sits between 0.65 and 0.55, so 0.70-0.80 is the plateau.\n\nWHY A1/B1/C1/C2 STAY AT 1.00. 0.75 was tested on them on 2026-08-20 and REJECTED. They take a real 25% partial at the TP, so shortening it caps winners as well as arming exits sooner. B1 shows +9.3/unit in aggregate but 314 of its 383 changed days are DOWN and ex-top-3 the delta is -17.9; the 2026 holdout gets worse on both traded profiles.\n\nUNTICK to hand-tune: the multiplier box is then read exactly as typed, for whatever profile is selected.", display=display.none)
+allRunner = input.bool(false, "All-runner exit: take NOTHING at the target, 100% rides the runner (ONE exit)", group="Profile", tooltip="UNTICKED (default) = the adopted behaviour: A1/B1/C1 take the \"Partial Exit Quantity %\" (25%) off at the adaptive target and the remaining 75% rides the runner (A1 peak-trail, B1/C1 VWAP cross). TICKED = ALL-RUNNER: NOTHING is taken at the target -- its touch only ARMS the runner -- and 100% of the position leaves on ONE exit. This is exactly what D1 already does by default (see \"D1 Exit mode\"), so on D1 this box changes nothing, and on C2 it is inert (C2 has no partial and no runner).\n\nWHY YOU MIGHT WANT IT: one exit order instead of two -- no scale-out, no partial fill for the broker to net, no \"Partial\" alert.\n\nMEASURED 2026-08-20 (Python engine, 2022-01-03..2026-08-19, 60 shares, after $0.10/share slippage):\n  A1  $28,450 -> $31,664  (+11.3%)\n  B1  $31,507 -> $35,772  (+13.5%)\n  C1  $31,389 -> $35,754  (+13.9%)\n  D1  unchanged -- already all-runner\nPast 3 years: A1 +12.3%, B1 +11.7%, C1 +12.6%. It improves the 2022-23 out-of-sample years, the 2024-25 fit window AND the 2026 holdout on all three profiles. The TRADE COUNT is identical (1,098 / 1,100 / 1,099 over the full history): this changes exit QUANTITY, never entries or exit timing.\n\nWHAT IT COSTS: the win rate FALLS (B1 46.0 -> 44.3%, C1 47.5 -> 44.1%, A1 46.8 -> 45.6%) because the small banked partial no longer rescues a trade into the green; the average winner grows instead (B1 $4.19 -> $4.54/share). Day by day on B1 the delta is 160 days UP against 185 DOWN and still +71.1/unit in total (ex-top-3 +56.7) -- the gain is magnitude, not frequency, so expect MORE red days than you have now. Max drawdown is slightly deeper on B1 (-$3,829 -> -$3,962) and C1 (-$3,978 -> -$4,298), shallower on A1 (-$4,943 -> -$4,781); net/DD IMPROVES on all three (B1 8.23 -> 9.03, C1 7.89 -> 8.32, A1 5.76 -> 6.62).\n\nNOT the same thing as exiting 100% AT THE TARGET. That was tested the same day and is 34-42% WORSE on all four profiles: it caps the winners while leaving the BE-stop loss cohort (87% of all loss dollars) completely untouched.\n\nPython twin: partial_qty_pct: 0.0 with use_partial_exit: true.", display=display.none)
 isA1 = str.startswith(profile, "A1")
 isB1 = str.startswith(profile, "B1")
 isC1 = str.startswith(profile, "C1")
@@ -399,6 +425,9 @@ isC2 = str.startswith(profile, "C2")
 isD1 = str.startswith(profile, "D1")
 tpModeSel  = isC2 ? (str.startswith(c2TPFormula, "Fixed") ? "Fixed" : "ORw") : isC1 ? "ATR" : "Adaptive"
 d1FullTrail = isD1 and str.startswith(d1ExitMode, "Full")   // D1 full-trail: TP touch only arms; 100% exits on the flip
+// v3.9.15: the ONE switch for a single-exit workflow. D1's full-trail path,
+// generalised -- nothing off at the target, 100% leaves at the runner exit.
+noPartial = d1FullTrail or allRunner
 usePartial = not isC2
 runnerVWAP = isB1 or isC1              // D1 = ATR chandelier trail runner (neither VWAP nor peak-trail)
 
@@ -407,7 +436,7 @@ grpS = "Session"
 eodHour = input.int(15, "EOD Exit Hour", minval=0, maxval=23, group=grpS, display=display.none)
 eodMin  = input.int(50, "EOD Exit Minute", minval=0, maxval=59, group=grpS, display=display.none)
 orStart = input.string("09:30", "Opening Range start bar", options=["09:30", "09:45"], group=grpS, display=display.none)
-entryCutOn = input.bool(true, "Entry cutoff — no NEW entries after the time below", group=grpS, tooltip="ADOPTED 2026-07-26 (default ON, 12:00): entries after noon were a net-NEGATIVE cohort in 5 years of trade data — the damage concentrates in the 12:00-13:00 lunch hour. Blocking NEW entries (primary AND reversal; open positions still manage to their normal exits) after 12:00: WR up in all 7 tested year-cells on B1/D1 (+A1/C1 confirmed), net +3-4% (B1 5yr +463 vs +451/unit), worst day never worse, 2025's improves. OFF = trade all day (pre-cutoff behavior).", display=display.none)
+entryCutOn = input.bool(true, "Entry cutoff — no NEW entries after the time below", group=grpS, tooltip="ADOPTED 2026-07-26 (default ON; TIGHTENED to 11:30 on 2026-08-20, v3.9.14): entries late in the morning were a net-NEGATIVE cohort in 5 years of trade data — the damage concentrates in the 12:00-13:00 lunch hour. Blocking NEW entries (primary AND reversal; open positions still manage to their normal exits) after 12:00: WR up in all 7 tested year-cells on B1/D1 (+A1/C1 confirmed), net +3-4% (B1 5yr +463 vs +451/unit), worst day never worse, 2025's improves. OFF = trade all day (pre-cutoff behavior).", display=display.none)
 entryCutH  = input.int(11, "Entry Cutoff Hour", minval=9, maxval=15, group=grpS, tooltip="No NEW entries (primary or reversal) after this time; an open position still manages to its own normal exits. ADOPTED 11:30 house-wide on 2026-08-20 (v3.9.14) -- the 11:30-12:00 half hour is a losing cohort on every profile (B1 -0.52/unit average, C1 -0.46, against +0.54/+0.50 for 11:00-11:30), and moving the line lifts the fit window, the out-of-sample years and the holdout at once. The tick-box above still switches the cutoff off entirely.", display=display.none)
 entryCutM  = input.int(30, "Entry Cutoff Minute", minval=0, maxval=59, group=grpS, display=display.none)
 
@@ -891,18 +920,18 @@ if active and not na(stop) and bar_index > entryBar
         tp := na
         stop := na
     else if usePartial and tpHit and not part1
-        // D1 full-trail mode: the target touch only ARMS the trail — nothing is closed here
-        p1qty = d1FullTrail ? 0.0 : qtyTotal * partialPct / 100.0
+        // All-runner / D1 full-trail: the target touch only ARMS the runner — nothing is closed here
+        p1qty = noPartial ? 0.0 : qtyTotal * partialPct / 100.0
         pu = tdir == 1 ? (tp - entry - slippage) : (entry - tp - slippage)
         part1Pnl := pu * p1qty
         effQty := qtyTotal - p1qty
         part1 := true
-        if not d1FullTrail
+        if not noPartial
             aPart := true
             if showLabels
                 label.new(bar_index, tdir == 1 ? high : low, "PARTIAL " + str.tostring(partialPct, "#") + "% @ " + str.tostring(tp, format.mintick) + "\n+" + str.tostring(part1Pnl, "#.##"), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.rgb(7,170,75), textcolor=color.white, size=size.tiny)
         else if showLabels
-            label.new(bar_index, tdir == 1 ? high : low, "TRAIL ARMED @ " + str.tostring(tp, format.mintick), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.yellow, 30), textcolor=color.black, size=size.tiny)
+            label.new(bar_index, tdir == 1 ? high : low, (isD1 ? "TRAIL ARMED @ " : "RUNNER ARMED @ ") + str.tostring(tp, format.mintick), style=tdir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.yellow, 30), textcolor=color.black, size=size.tiny)
         tp := na
     else if (not usePartial) and tpHit
         // C2 full exit at the target
@@ -1284,7 +1313,7 @@ if barstate.islast and showTable
     wr = nTrades > 0 ? nSucc * 100.0 / nTrades : 0.0
     pf = grossL > 0 ? grossP / grossL : na
     exp = nTrades > 0 ? netPnl / nTrades : 0.0
-    table.cell(tbl, 0, 0, "UDB-ORB v3.9.14", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(tbl, 0, 0, "UDB-ORB v3.9.15", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(tbl, 1, 0, str.substring(profile, 0, 2) + " · " + tpModeSel, text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     f_row(1, "Trades", str.tostring(nTrades), color.yellow)
     f_row(2, "Win Rate", str.tostring(wr, "#.#") + "%", color.orange)

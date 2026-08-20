@@ -145,3 +145,23 @@ def test_the_other_profiles_keep_the_10_tp_scale():
     for name in ("tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml"):
         p = Params.from_config(load_config(_ROOT / "config" / name))
         assert p.adaptive_tp_scale == 1.0, name
+
+
+def test_all_runner_is_documented_but_not_adopted():
+    """Pine v3.9.15 added an "All-runner exit" tick-box (default OFF). Its Python twin is
+    `partial_qty_pct: 0.0` with `use_partial_exit: true` -- exactly what D1 already ships.
+
+    Measured 2026-08-20 over 2022-01-03..2026-08-19 @60 shares: A1 $28,450 -> $31,664 (+11.3%),
+    B1 $31,507 -> $35,772 (+13.5%), C1 $31,389 -> $35,754 (+13.9%), D1 bit-identical. Better in
+    the OOS years, the fit window and the 2026 holdout at once, and net/DD improves on all three
+    -- but the win rate FALLS (B1 46.0 -> 44.3%) and B1's day-level delta is 160 up / 185 DOWN,
+    so it trades more red days for bigger winners. NOT adopted: 25% is what is live and
+    reconciled. This test exists so a Pine-side default flip cannot silently drift the twins.
+    """
+    for name in ("tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml"):
+        p = Params.from_config(load_config(_ROOT / "config" / name))
+        assert p.use_partial_exit is True, name
+        assert p.partial_qty_pct == 25.0, name
+    d1 = Params.from_config(load_config(_ROOT / "config" / "tsla_config_D1.yaml"))
+    assert d1.use_partial_exit is True                 # the TP still ARMS the trail
+    assert d1.partial_qty_pct == 0.0                   # ...but takes nothing: already all-runner
