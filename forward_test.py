@@ -291,6 +291,7 @@ def main():
     # full-file rewrite (not append): the 2026-07-20 _bc columns must stay aligned for
     # old rows too (they get NaN there) — a raw CSV append would misalign the columns.
     # --force: repriced days REPLACE their old ledger rows instead of duplicating them.
+    n_written = len(new)   # rows for THIS run; `new` is rebound to the full ledger below
     if os.path.exists(LEDGER):
         prev = pd.read_csv(LEDGER)
         if args.force:
@@ -302,7 +303,7 @@ def main():
             ["trade_day", "profile"], kind="stable")
     new.to_csv(LEDGER, index=False)
     total = pd.read_csv(LEDGER)
-    print(f"\nAppended {len(new)} rows -> {LEDGER}  (ledger now {len(total)} rows, "
+    print(f"\nWrote {n_written} new/repriced rows -> {LEDGER}  (ledger now {len(total)} rows, "
           f"{total['trade_day'].nunique()} sessions {total['trade_day'].min()}..{total['trade_day'].max()})")
 
 
