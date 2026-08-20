@@ -163,13 +163,23 @@ enhancements:
   # 3) Time-of-day entry window (ET). Only enter within [start, end].
   #    ADOPTED 2026-07-26 @ end 12:00: post-noon entries were a net-NEGATIVE cohort across 5 years
   #    (the 12:00-13:00 lunch hour is the toxic pocket; 13:00+ mildly positive but not worth the
-  #    tail). No NEW entries (primary or reversal) after 12:00; open positions manage to their
-  #    normal exits. WR up in every tested year-cell on A1/B1/C1/D1 incl 2022-23 OOS, net +3-4%
-  #    (B1 5yr +463.4 vs +450.7/unit), worst day never worse. Pine v3.9 "Entry cutoff" = the twin.
+  #    tail). No NEW entries (primary or reversal) after the cutoff; open positions manage to their
+  #    normal exits. WR up in every tested year-cell on A1/B1/C1/D1 incl 2022-23 OOS, net +3-4%,
+  #    worst day never worse. Pine v3.9 "Entry cutoff" = the twin.
+  #    TIGHTENED 2026-08-20 to 11:30, house-wide (D1 went first @cd545a5). The 11:30-12:00 half
+  #    hour is itself a losing cohort over 2022-2026: B1 23 entries avg -0.52/unit, C1 24 entries
+  #    -0.46, against 11:00-11:30 at +0.54 / +0.50. Moving the line lifts fit(2024-25), OOS(2022-23)
+  #    and holdout(2026) at the same time on every profile, and PF falls monotonically the later the
+  #    cutoff sits (B1 1.37 @11:30 -> 1.27 with no cutoff at all).
+  #    2022-01-03..2026-08-11, per unit: B1 500.9 -> 525.1, C1 493.3 -> 515.9, A1 446.8 -> 471.0;
+  #    B1 maxDD -80.9 -> -63.8 and net/DD 6.19 -> 8.23.
+  #    LIMITS, stated: 2023 gets WORSE (B1 -10.1/unit). Breadth is 29 affected days, 19 up / 10 down,
+  #    ex-top-3 +10.1 -- and 10:30 and 11:00 both FAIL that same ex-top-3 test, so 11:30 is a spike
+  #    on that column, not a plateau. Over the last 365 days alone it is ~flat (+1.1% B1, +0.4% C1).
   time_window:
     enabled: true
     start: "09:35"
-    end:   "12:00"
+    end:   "11:30"
 
   # 4) Improved reversal capture on false-breakout days (they close opposite ~74% of the
   #    time). ADOPTED default = trigger_on_be_stop + trail_to_eod — validated train(2024-25)

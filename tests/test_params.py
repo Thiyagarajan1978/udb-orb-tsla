@@ -103,17 +103,45 @@ def test_d1_cuts_new_entries_at_1130_not_noon():
     assert str(tw["start"]) == "09:35"
 
 
-def test_the_1130_cutoff_did_not_leak_into_the_other_profiles():
-    """11:30 was measured on D1 only; every other shipped TSLA profile keeps the house 12:00."""
-    for name in ("config.yaml", "tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml"):
+def test_the_1130_cutoff_is_house_wide_on_the_tsla_profiles():
+    """Extended from D1 to A1/B1/C1 + the production default on 2026-08-20.
+
+    The 11:30-12:00 half hour is a losing cohort on the traded profiles too, over
+    2022-01-03..2026-08-11: B1 23 entries at -0.52/unit average, C1 24 at -0.46, against
+    11:00-11:30 at +0.54 / +0.50. Per unit B1 500.9 -> 525.1, C1 493.3 -> 515.9, A1 446.8 ->
+    471.0, and it lifts the 2024-25 fit, the 2022-23 OOS years and the 2026 holdout together on
+    every profile. Honest limits, recorded so a future reader does not rediscover them as a
+    surprise: 2023 gets WORSE (B1 -10.1/unit), and 10:30 and 11:00 both fail the ex-top-3 breadth
+    test that 11:30 passes (+10.1), so 11:30 is a spike on that column rather than a plateau.
+    """
+    for name in ("config.yaml", "tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml",
+                 "tsla_config_D1.yaml"):
         cfg = load_config(_ROOT / "config" / name)
-        assert str(cfg["enhancements"]["time_window"]["end"]) == "12:00", name
+        tw = cfg["enhancements"]["time_window"]
+        assert tw["enabled"] is True, name
+        assert str(tw["end"]) == "11:30", name
+        assert str(tw["start"]) == "09:35", name
+
+
+def test_the_cutoff_did_not_leak_into_the_non_tsla_or_parity_configs():
+    """SPCX drops the three TSLA-fitted gates outright, and faithful_be035 must stay a bit-exact
+    reproduction of Pine v12.4.3 -- neither may acquire an entry cutoff."""
+    for name in ("spcx_orb.yaml", "spcx_c2.yaml", "faithful_be035.yaml", "tsla_config_C.yaml"):
+        cfg = load_config(_ROOT / "config" / name)
+        assert cfg["enhancements"]["time_window"]["enabled"] is False, name
 
 
 def test_the_other_profiles_keep_the_10_tp_scale():
-    """0.75 was adopted for D1 ONLY. It also cuts B1/C1 drawdown (-80.9 -> -59.3 on B1) but that
-    is a separate decision on the TRADED profiles and has not been taken -- this asserts the D1
-    change did not leak into them."""
+    """0.75 was adopted for D1 ONLY, and TESTED AND REJECTED on A1/B1/C1 on 2026-08-20.
+
+    The mechanism does not transfer. In D1 `partial_qty_pct` is 0.0, so the adaptive TP takes no
+    money -- shortening it only ARMS the chandelier sooner. On A1/B1/C1 the TP takes a real 25%,
+    so shortening it caps winners as well. It still shows a positive aggregate (B1 +9.3/unit) but
+    fails the breadth test that D1 passes: 383 changed days, 69 up against 314 DOWN, and ex-top-3
+    the delta is -17.9. C1's equivalent knob is `atr_tp_mult` (it runs tp_mode ATR); tightening it
+    to 0.225 is 417 days, 34 up / 383 down, ex-top-3 -19.2. Both make the 2026 holdout worse
+    (B1 148.5 -> 140.3, C1 158.2 -> 131.5). Do not re-propose without a new mechanism.
+    """
     for name in ("tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml"):
         p = Params.from_config(load_config(_ROOT / "config" / name))
         assert p.adaptive_tp_scale == 1.0, name

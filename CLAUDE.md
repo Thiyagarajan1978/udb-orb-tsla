@@ -92,11 +92,19 @@ separate, toggleable, and default OFF.
 ## Enhancements (config `enhancements:`)
 1. **RVOL filter** (default OFF) — breakout bar volume ≥ `min_rvol × avg`.
 2. **OR-width regime gate** (default OFF) — skip days by opening-range width buckets.
-3. **Time-of-day window** (default **ON** since 2026-07-26, end 12:00) — no NEW entries (primary
-   or reversal) after noon; open positions manage to their normal exits. Post-noon entries were a
-   net-negative cohort over 5 years (the 12:00-13:00 lunch hour is the toxic pocket). WR up in
-   every tested year-cell on A1/B1/C1/D1 incl 2022-23 OOS, net +3-4%, worst day never worse.
-   Enabled in config.yaml + the A1/B1/C1/D1 yamls; Pine v3.9 "Entry cutoff" input is the twin.
+3. **Time-of-day window** (default **ON** since 2026-07-26, **end 11:30 since 2026-08-20**) — no
+   NEW entries (primary or reversal) after the cutoff; open positions manage to their normal exits.
+   Post-noon entries were a net-negative cohort over 5 years (the 12:00-13:00 lunch hour is the
+   toxic pocket). **TIGHTENED to 11:30 house-wide** (D1 first, then A1/B1/C1 + config.yaml): the
+   11:30-12:00 half hour is itself a losing cohort — B1 23 entries at −0.52/unit average, C1 24 at
+   −0.46, against 11:00-11:30 at +0.54/+0.50 — and PF falls monotonically the later the cutoff sits
+   (B1 1.37 @11:30 → 1.27 with no cutoff). It lifts the 2024-25 fit, the 2022-23 OOS years and the
+   2026 holdout **at the same time on every profile**. 2022-01-03..2026-08-19 @60 shares:
+   B1 $30,052 → $31,507 (maxDD −$4,856 → −$3,829, net/DD 6.19 → 8.23), C1 $29,931 → $31,389,
+   A1 $26,995 → $28,450, D1 $31,916 → $33,082. Past 3 years ≈ +3.6% on B1/C1.
+   **Limits, stated:** 2023 gets WORSE (−$605); breadth is 29 days, 19 up / 10 down, ex-top-3 +10.1
+   — and 10:30 and 11:00 both FAIL that ex-top-3 test, so 11:30 is a spike on that column, not a
+   plateau. Pine v3.9.14 "Entry Cutoff Hour/Minute" (11/30) is the twin.
 4. **Reversal capture** (default **ON** — adopted) — `trigger_on_be_stop` + `trail_to_eod`.
 5. **Walk-forward tuning** (`tuning/`) — re-fit `adaptive_tp_scale` etc. from stored trades.
 

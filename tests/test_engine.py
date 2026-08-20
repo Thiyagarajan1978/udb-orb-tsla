@@ -597,3 +597,46 @@ def test_zero_width_opening_range_does_not_crash():
     ]
     res = _run({"2024-06-03": rows})            # must not raise
     assert res is not None
+
+
+def _pd_engine(cfg_name, or_width, atr=None):
+    """An OrbEngine parked mid-trade in a long, with prior-day levels loaded, from a shipped config."""
+    from pathlib import Path
+
+    from udb_orb.config import load_config
+    from udb_orb.engine.orb_engine import OrbEngine, _DayState
+
+    cfg = load_config(Path(__file__).resolve().parents[1] / "config" / cfg_name)
+    eng = OrbEngine(Params.from_config(cfg), cfg.get("enhancements", {}))
+    eng._cur_atr = atr
+    st = _DayState()
+    st.or_width = or_width
+    st.entry_price = 100.0
+    st.pd_levels = (None, 106.0, None, None)        # pdH only
+    return eng, st
+
+
+def test_pd_tag_zone_scales_with_the_profiles_own_tp_not_the_adaptive_formula():
+    """The prior-day tag zone is `zone * TP distance` -- the PROFILE'S TP distance.
+
+    `_pd_tag_reject` used to inline the Adaptive formula, max(adaptive_tp_min, OR * scale), for
+    every profile. C1 runs `tp_mode: ATR`, where `adaptive_tp_scale` is otherwise inert, so its
+    zone was being sized off a knob it does not trade on -- a silent divergence from Pine line 808
+    (`tolPD = pdxZone * tpDist`, the profile-resolved distance) worth about +0.5% of C1's net.
+
+    Same bar, same levels, same 0.05 zone; only the TP mode differs. C1's ATR target of 0.25 * 8.0
+    = 2.00 gives a 0.10 zone, and a wick stopping 0.15 short of pdH does not reach it. A1's
+    Adaptive target of 6.00 gives a 0.30 zone and the same wick does tag. A1/B1/C2/D1 are all
+    Adaptive, so only C1's numbers moved when this was corrected.
+    """
+    bar = dict(o=105.84, c=105.80, h=105.85, l=105.60)   # small red body, wick 0.15 shy of pdH
+
+    atr_eng, atr_st = _pd_engine("tsla_config_C1.yaml", or_width=6.0, atr=8.0)
+    assert atr_eng.p.tp_mode.lower().startswith("atr")
+    assert atr_eng._tp_dist(6.0) == 2.0
+    assert atr_eng._pd_tag_reject(atr_st, 1, **bar) is False
+
+    adp_eng, adp_st = _pd_engine("tsla_best_A.yaml", or_width=6.0)
+    assert adp_eng.p.tp_mode.lower().startswith("adapt")
+    assert adp_eng._tp_dist(6.0) == 6.0
+    assert adp_eng._pd_tag_reject(adp_st, 1, **bar) is True

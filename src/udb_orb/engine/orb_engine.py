@@ -459,7 +459,12 @@ class OrbEngine:
             if abs(c - o) / rng >= mbf:
                 return False
         names = cfg.get("levels", ["pdO", "pdH", "pdL", "pdC"])
-        tp_dist = max(self.p.adaptive_tp_min, (st.or_width or 0.0) * self.p.adaptive_tp_scale)
+        # The tag zone is a fraction of the profile's OWN TP distance, so it must go through
+        # _tp_dist() -- Pine line 808 uses `tolPD = pdxZone * tpDist`, the profile-resolved one.
+        # Hardcoding the Adaptive formula here made C1 (tp_mode: ATR, where adaptive_tp_scale is
+        # otherwise inert) size its zone off a knob it does not trade on: a silent Python/Pine
+        # divergence worth ~+0.5% of C1 net. A1/B1/C2/D1 are Adaptive, so they are unaffected.
+        tp_dist = self._tp_dist(st.or_width or 0.0)
         tol = float(cfg.get("zone", 0.05)) * tp_dist
         ahead_only = bool(cfg.get("ahead_only", False))
         for name, lvl in zip(("pdO", "pdH", "pdL", "pdC"), st.pd_levels):
