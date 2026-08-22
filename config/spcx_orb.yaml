@@ -106,9 +106,9 @@ enhancements:
   pd_level_exit:            # DISABLED for SPCX: measured and TV-validated on TSLA ONLY. On SPCX it
     enabled: false          # costs ~$6.55/sh over 06-15..08-12 (B1 net 46.13 -> 52.68 with it off).
     levels: [pdO, pdH, pdL, pdC]
-    ahead_only: false       # BOTH SIDES, adopted 2026-08-11 by user call AGAINST the measurement:
-                            # B1 558.3 vs 575.9 per unit, WR 46.2->44.2, worse in 4 of 5 years
-                            # (only 2026 +17.0). See orb_engine.py `_pd_tag_reject`. Revert = true.
+    ahead_only: false       # INERT (the block above is disabled). Deliberately NOT flipped to true
+                            # with the TSLA configs on 2026-08-20 (v3.9.17): the whole pd_level_exit
+                            # knob was measured and TV-validated on TSLA only, and SPCX drops it.
     zone: 0.05              # stays 0.05 — widening it adds nothing to the motivating days.
     require_reject_candle: true
     max_body_frac: 0.25     # engine sweep on B1: +$2,983 over 5 years, up in 5 of 5. 1.0 = no filter

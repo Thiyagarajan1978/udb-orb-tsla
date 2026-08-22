@@ -106,7 +106,16 @@ enhancements:
   confirm_two_closes:
     enabled: false
   confirm_breakout:
-    enabled: false
+    enabled: false          # LEAVE OFF. Re-measured 2026-08-20 on the v3.9.17 rig (ahead_only true,
+                            # all-runner, 11:30 cutoff), 2022-01-03..2026-08-19 @60sh after $0.10:
+                            #   A1 33,445->30,463 (-8.9%)   B1 37,699->34,784 (-7.7%)
+                            #   C1 37,242->32,441 (-12.9%)  D1 33,417->25,205 (-24.6%)
+                            # The win rate RISES (B1 46.4->48.4%) on ~170 fewer trades -- it removes
+                            # winners with the losers. Regime bet: wins 2025 on all four, loses 2023
+                            # AND 2026 on all four, 1-2 of 5 years only. Breadth ~270 up / ~660 down
+                            # and ex-top-3 is negative on all four. The pre-2026-07-11 rationale
+                            # ("net-negative under the resting stop") went stale when B1/C1 adopted
+                            # stop_fill_mode: close three days later; these numbers replace it.
     require_trend_candle: true
     hold_bars: 1
   pdh_pdl_filter:
@@ -115,9 +124,17 @@ enhancements:
   pd_level_exit:            # ADOPTED 2026-08-10 (user call) — same block as tsla_config_C1.yaml and the
     enabled: true           # Pine v3.9.6 default, so the chart and the live runner agree.
     levels: [pdO, pdH, pdL, pdC]
-    ahead_only: false       # BOTH SIDES, adopted 2026-08-11 by user call AGAINST the measurement:
-                            # B1 558.3 vs 575.9 per unit, WR 46.2->44.2, worse in 4 of 5 years
-                            # (only 2026 +17.0). See orb_engine.py `_pd_tag_reject`. Revert = true.
+    ahead_only: true        # AHEAD-ONLY, re-adopted 2026-08-20 (v3.9.17) ON the measurement, reversing
+                            # the 2026-08-11 "both sides" call. Only a level the trade is moving
+                            # TOWARD can trigger the exit. Re-measured on the CURRENT rig (11:30
+                            # cutoff + all-runner), 2022-01-03..2026-08-19 @60sh after $0.10/share:
+                            #   B1 $35,772 -> $37,699 (+5.4%), per unit 596.2 -> 628.3, WR 44.3 -> 46.4%
+                            # maxDD FALLS on all four and net/DD rises (B1 9.03 -> 11.11, maxDD $3,962 -> $3,393).
+                            # Wins 2022+2023 on all four; LOSES 2026 on all four (-6.7 to -10.3/unit).
+                            # Breadth is 33 days up / 42 down -- the gain is magnitude, not
+                            # frequency -- and ex-top-3 is thin (B1 +$446 of the +$1,927). The support is the
+                            # pre-2025-08-11 slice (out of sample for this knob): B1 317.9 -> 356.9 per unit.
+                            # Revert = false.
     zone: 0.05              # stays 0.05 — widening it adds nothing to the motivating days.
     require_reject_candle: true
     max_body_frac: 0.25     # engine sweep on B1: +$2,983 over 5 years, up in 5 of 5. 1.0 = no filter

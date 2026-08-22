@@ -17,7 +17,7 @@ favorable wick. Walk-forward over 2022-2026: **+42-46% net, ~40% smaller drawdow
 loss to a profit** vs the wick/resting stop — OOS-confirmed on 2022-23 (both never part of the discovery).
 It skips the wick-fakeout stop-outs that dominate choppy years; the trend year barely notices. **TV-validated
 2026-07-15**: the wired v3 Pine strategy (Stop trigger=Close) reconciles to Python close-mode within 1.3%
-(C1) / 2.8% (B1) at zero slippage. NOTE: TV's Strategy Tester models NO slippage → haircut TV numbers ~12%
+(C1) / 2.8% (B1) at zero slippage. NOTE: TV's Strategy Tester models NO slippage unless the header sets it — **Pine v3.9.17 ships `slippage = 10`** (10 ticks = $0.10/share on TSLA, what the Python engine charges), but an EXISTING chart keeps its SAVED Properties, so check Properties > Slippage before believing a tester number and haircut ~12-13%
 for the realistic $0.10/share fills. `config/tsla_best_B.yaml` + `tsla_config_C1.yaml` carry this default;
 the v3 indicator uses `exitOnClose` (default ON), the v3 strategy a `Stop trigger: Close|Wick` input.
 
@@ -130,6 +130,33 @@ separate, toggleable, and default OFF.
    the same day and **34-42% WORSE on all four profiles** — it caps the winners while the BE-stop
    cohort (87% of loss dollars) is untouched, the win rate RISES while net collapses, and B1's
    PD-Level exits flip +$10,450 → −$3,976.
+
+7. **PD-level exit is AHEAD-ONLY again** — **RE-ADOPTED 2026-08-20 (Pine v3.9.17)**, reversing the
+   2026-08-11 "both sides" call, which had been taken by user call *against* the measurement. Only a
+   level the trade is moving TOWARD may fire the tag-and-reject exit. The reversal is justified by a
+   re-measurement, not a re-argument: the rig it was originally judged on no longer exists, because
+   the 11:30 cutoff (v3.9.14) and all-runner (v3.9.16) both landed afterwards. On the current rig,
+   2022-01-03..2026-08-19 @60 shares after $0.10/share: A1 $31,664 → **$33,445** (+5.6%),
+   B1 $35,772 → **$37,699** (+5.4%), C1 $35,754 → **$37,242** (+4.2%), D1 $33,082 → $33,417 (+1.0%).
+   maxDD FALLS on all four (B1 $3,962 → $3,393; A1 $4,781 → $3,013) and net/DD rises on all four
+   (B1 9.03 → 11.11). **Limits, stated:** it wins 2022 and 2023 on every profile but **loses 2026 on
+   every profile** (−6.7 to −10.3/unit) — and 2026 was the only year the "both sides" motivating days
+   came from; C1 also loses 2025, D1 loses 2024 and 2025. Breadth is more DOWN days than up on all
+   four (B1 33 up / 42 down of 75 changed), so the gain is magnitude not frequency, and ex-top-3 is
+   thin to negative (A1 +$300, B1 +$446, C1 +$7, **D1 −$1,006 — D1 fails that test**). What carries
+   the decision is the **pre-2025-08-11 slice**, out of sample for this knob, up on all four
+   (B1 317.9 → 356.9/unit). Trade counts move +6/+7: an earlier PD exit can change whether the 2×
+   reversal arms. SPCX is untouched (its `pd_level_exit` is off; the knob is TSLA-only). Revert =
+   `ahead_only: false` + untick the Pine box.
+8. **Confirmation candle — RE-CONFIRMED OFF 2026-08-20**, and the old note was a trap. It read
+   "re-enable only if you revert to close-fill (`stop_fill_mode: close`)" — and B1/C1 adopted
+   close-fill **three days later**, so the stated condition was met and the instruction pointed the
+   wrong way for a year. Measured under close-fill on the v3.9.17 rig, ON vs OFF: A1 $30,463 vs
+   $33,445 (−8.9%), B1 $34,784 vs $37,699 (−7.7%), C1 $32,441 vs $37,242 (−12.9%), D1 $25,205 vs
+   $33,417 (−24.6%). It is a genuine filter — ~170 fewer trades, win rate **rises** (B1 46.4 → 48.4%)
+   — which is exactly the deception: it removes winners with the losers. Wins 2025 on all four, loses
+   2023 AND 2026 on all four, 1-2 of 5 years; breadth ~270 up / ~660 down of 930 changed days;
+   ex-top-3 negative on all four. **A chart saved before v3.9 carries it TICKED — untick it there.**
 
 Enable one at a time and compare to the baseline before trusting it.
 

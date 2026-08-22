@@ -1,6 +1,25 @@
 //@version=6
-indicator("UDB-ORB TSLA v3.9.16 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.16", overlay=true, max_labels_count=500, max_lines_count=500)
+indicator("UDB-ORB TSLA v3.9.17 - A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.17", overlay=true, max_labels_count=500, max_lines_count=500)
 
+// v3.9.17 2026-08-20 - AHEAD-ONLY PD EXIT IS THE DEFAULT AGAIN, and the strategy now ships
+//     10 ticks of slippage. Three defaults were aligned with the measurement in one version:
+//       1. "Levels AHEAD of entry only" ships TICKED again, reversing the 2026-08-11 "both sides"
+//          call (which was taken against the measurement of the day). Re-measured on the CURRENT
+//          rig -- the 11:30 cutoff (v3.9.14) and all-runner (v3.9.16) both landed after that call
+//          -- over 2022-01-03..2026-08-19 at 60 shares after $0.10/share slippage:
+//          A1 $31,664 -> $33,445 (+5.6%), B1 $35,772 -> $37,699 (+5.4%),
+//          C1 $35,754 -> $37,242 (+4.2%), D1 $33,082 -> $33,417 (+1.0%).
+//          Max drawdown falls on all four and net/DD rises on all four (B1 9.03 -> 11.11).
+//       2. `slippage` in the strategy() header is now 10 ticks (= $0.10/share on TSLA), matching
+//          what the Python engine charges. It was 0, which flattered every Strategy Tester run by
+//          roughly 13%. An EXISTING chart keeps its saved Properties -- set Slippage to 10 by hand.
+//       3. "Require confirmation candle (2-candle break)" was ALREADY the default OFF and has not
+//          changed. It is called out here because charts saved before v3.9 carry it TICKED, and
+//          over full history it costs 2.2% (A1) to 21.3% (D1) and wins only 2 of 5 years.
+//     No signal or exit LOGIC moved in this version -- only defaults and header settings, so the
+//     entry stream is untouched. Trade counts move by +6/+7 because an earlier PD exit can change
+//     whether the 2x reversal arms that day.
+//
 // v3.9.16 2026-08-20 - ALL-RUNNER IS NOW THE DEFAULT (the box added in v3.9.15 ships TICKED).
 //     Nothing is taken at the adaptive target -- its touch only ARMS the runner -- and 100% of the
 //     position leaves on ONE exit. A1/B1/C1 therefore join D1, which has run this way since v3.6,
@@ -505,7 +524,7 @@ exitOnClose     = input.bool(true,  "Close-triggered stop (stop fires only when 
 beRealistic     = input.bool(true,  "Realistic resting stop: a BE-retrace can't protect its own firing bar", group=grpX, tooltip="ON (default) = matches a real broker + Python stop_fill_mode 'resting': moving the stop to break-even on the bar close only rests from the NEXT bar, so a bar that both fires the BE-retrace AND crashes to the base SL fills at the base SL. OFF = the old optimistic look-ahead (over-reports net ~40-45%).", display=display.none)
 
 grpC = "Entry Confirmation"
-confirmBreakout    = input.bool(false, "Require confirmation candle (2-candle break)", group=grpC, display=display.none)
+confirmBreakout    = input.bool(false, "Require confirmation candle (2-candle break)", group=grpC, tooltip="LEAVE THIS UNTICKED. It is the default, and re-measured on the v3.9.17 rig (2022-01-03..2026-08-19, 60 shares, after $0.10/share slippage) ticking it costs:\n  A1  $33,445 -> $30,463  (-8.9%)\n  B1  $37,699 -> $34,784  (-7.7%)\n  C1  $37,242 -> $32,441  (-12.9%)\n  D1  $33,417 -> $25,205  (-24.6%)\n\nTICKED = enter only after the NEXT candle also holds beyond the trigger, instead of on the breakout close itself. That is a real filter -- the win rate RISES (B1 46.4% to 48.4%, A1 47.6% to 52.5%) and about 170 trades disappear -- but it removes winners and losers alike and the money goes with them. A higher win rate on less net is the signature to distrust.\n\nIT IS A REGIME BET, and the per-year table is what exposes it. Per unit, ticked minus unticked: it wins 2025 on ALL FOUR profiles (+19.9 to +30.3) and loses 2023 and 2026 on all four (2026: -18.7 to -64.7). It wins only 1 of 5 years on B1 and C1, 2 of 5 on A1 and D1. Breadth over the 930 days it changes is about 270 up against 660 down on every profile, and ex-top-3 is negative AND worse than the total on three of the four (B1 -$6,599 against a -$2,915 total), so the damage is broad rather than a few bad days.\n\nWHY IT WAS EVER ON: a chart saved before v3.9 carries it ticked, and a 3-year window starting in late 2023 cannot see 2022 and sees only a third of 2023 -- the two years it hurts most. The old tooltip justified OFF by \"net-negative under the resting stop\", which went stale on 2026-07-14 when B1/C1 moved to the close-triggered stop; the numbers above replace it and were taken on the shipped rig.", display=display.none)
 requireTrendCandle = input.bool(true,  "Confirmation candle must be with-trend", group=grpC, display=display.none)
 
 grpV = "Reversal"
@@ -534,7 +553,7 @@ pdxOn      = input.bool(true, "Enable PD-level tag-and-reject exit", group=grpPX
 pdxMaxBody = input.float(0.25, "Max rejection-candle body (|C-O| / (H-L))", minval=0.01, maxval=1.0, step=0.05, group=grpPX, tooltip="THE KNOB THAT MATTERS, and it runs OPPOSITE to intuition. A big decisive candle closing back off the level is worthless — it is a trend bar that happens to touch a line, and price continues. What predicts a real rejection is a SMALL body: a doji or pin that runs into the level and cannot close through it. 5-year deltas: no filter (1.0) = -$3,796 to -$5,466 on every profile; 0.25 = +$1,248 A1 / +$2,983 B1 / +$3,487 C1 / +$755 D1. The 0.10-0.25 band is a flat plateau; 0.35 is +$207 and 0.40-0.50 are negative. A full D1 sweep (2022-2026, per unit, baseline 450.5) put 0.25 at the TOP of that plateau — 0.10 +4.9% / 0.15 +7.2% / 0.20 +7.0% / 0.25 +7.8% / 0.30 +0.6% — so 0.25 is right for all four profiles and the earlier note that D1 preferred 0.15 is withdrawn. D1 is simply the weakest beneficiary (+7.8% vs C1 +25.0 / B1 +21.1 / A1 +10.6).", display=display.none)
 pdxZone    = input.float(0.05, "Tag zone (x today's TP distance)", minval=0.0, maxval=0.50, step=0.01, group=grpPX, tooltip="How close the bar's extreme must come to the level to count as a tag, as a fraction of the adaptive TP distance shown in the stats table. 0.05 of a $3.74 TP distance = about 19 cents.", display=display.none)
 pdxLevels  = input.string("All four (PDO/PDH/PDL/PDC)", "Which levels may trigger it", options=["All four (PDO/PDH/PDL/PDC)", "PDH + PDL only", "PDC only"], group=grpPX, tooltip="All four is the validated default. PDC-only and PDH/PDL-only were both swept WITHOUT the body filter and lost on every profile; they have not been re-swept with it.", display=display.none)
-pdxAhead   = input.bool(false, "Levels AHEAD of entry only", group=grpPX, tooltip="UNTICKED IS THE DEFAULT SINCE v3.9.8 (\"both sides\"), adopted by user call AGAINST the measurement — tick it to get the v3.9.4-v3.9.7 behaviour back. TICKED: only a level the trade is moving TOWARD can trigger the exit (a rejection at the next obstacle). UNTICKED: a level BEHIND the entry counts too, so closing back through a level the trade had already won is also an exit (\"you lost the level\"). Motivation: on 2026-08-04 and 2026-08-11 the short triggered about 33 cents below PDC and was immediately reclaimed, and ahead-only cannot see that. It does fire on those days (08-04 exits 09:50 for -1.12 instead of 10:05 for -2.45). COST, measured over 2022-01-03..2026-08-10 per unit, unticked vs ticked: A1 485.6 vs 502.0, B1 558.3 vs 575.9, C1 556.4 vs 573.2, D1 480.3 vs 483.5. B1 by year: 2022 -21.2 / 2023 -5.1 / 2024 -4.8 / 2025 -3.4 / 2026 +17.0 — four of five years worse, win rate 46.2% to 44.2%. Only 2026 improves, and 2026 is also the only year the motivating days came from.", display=display.none)
+pdxAhead   = input.bool(true, "Levels AHEAD of entry only", group=grpPX, tooltip="TICKED IS THE DEFAULT AGAIN SINCE v3.9.17. TICKED: only a level the trade is moving TOWARD can trigger the exit (a rejection at the next obstacle). UNTICKED (\"both sides\"): a level BEHIND the entry counts too, so closing back through a level the trade had already won is also an exit (\"you lost the level\").\n\nHISTORY: unticked was adopted on 2026-08-11 by user call AGAINST the measurement, because on 2026-08-04 and 2026-08-11 the short triggered about 33 cents below PDC and was immediately reclaimed, which ahead-only cannot see. It does fire on those days (08-04 exits 09:50 for -1.12 instead of 10:05 for -2.45) but it never paid for itself, and the rig it was judged on is gone: the 11:30 entry cutoff (v3.9.14) and all-runner (v3.9.16) both landed afterwards.\n\nRE-MEASURED 2026-08-20 on the current rig (Python engine, 2022-01-03..2026-08-19, 60 shares, after $0.10/share slippage) -- TICKED vs unticked:\n  A1  $33,445 vs $31,664  (+5.6%)\n  B1  $37,699 vs $35,772  (+5.4%)\n  C1  $37,242 vs $35,754  (+4.2%)\n  D1  $33,417 vs $33,082  (+1.0%)\nPer unit B1 628.3 vs 596.2, win rate 44.3% -> 46.4%. Max drawdown FALLS on all four (B1 -$3,962 -> -$3,393, A1 -$4,781 -> -$3,013) and net/DD rises on all four (B1 9.03 -> 11.11, A1 6.62 -> 11.10).\n\nLIMITS, STATED: per year it wins 2022 and 2023 on EVERY profile but LOSES 2026 on every profile (-6.7 to -10.3 per unit), and 2026 is the only year the \"both sides\" motivating days came from; C1 also loses 2025, D1 loses 2024 and 2025. Breadth runs MORE DOWN DAYS THAN UP on all four (B1 33 up / 42 down of 75 changed days), so the gain is magnitude rather than frequency, and ex-top-3 is thin to negative (A1 +$300, B1 +$446, C1 +$7, D1 -$1,006 -- D1 fails that test and is the weakest of the four). What carries the decision is the pre-2025-08-11 slice, which is out of sample for this knob and is up on all four (B1 356.9 vs 317.9 per unit).", display=display.none)
 
 // ==================== v3.9.11 SYMBOL PRESET (which gates are TSLA-specific) ====================
 // Resolved once, after every input above has been read, so there is exactly ONE definition of each
@@ -894,7 +913,7 @@ if active and not na(stop) and bar_index > entryBar
             usePDO = pdxLevels == "All four (PDO/PDH/PDL/PDC)"
             usePDC = pdxLevels != "PDH + PDL only"
             usePDHL = pdxLevels != "PDC only"
-            // v3.9.8: `pdxAhead` off (the new default) drops the "level must lie ahead" guard, so a
+            // v3.9.8-v3.9.16: `pdxAhead` OFF drops the "level must lie ahead" guard, so a
             // level BEHIND the entry — one the trade had already won — also triggers on a reclaim.
             if usePDO and not na(pdO) and (not pdxAhead or (pdO - entry) * tdir > 0)
                 pdxHit := pdxHit or (tdir == 1 ? (high >= pdO - tolPD and close < pdO) : (low <= pdO + tolPD and close > pdO))
@@ -1338,7 +1357,7 @@ if barstate.islast and showTable
     wr = nTrades > 0 ? nSucc * 100.0 / nTrades : 0.0
     pf = grossL > 0 ? grossP / grossL : na
     exp = nTrades > 0 ? netPnl / nTrades : 0.0
-    table.cell(tbl, 0, 0, "UDB-ORB v3.9.16", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(tbl, 0, 0, "UDB-ORB v3.9.17", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(tbl, 1, 0, str.substring(profile, 0, 2) + " · " + tpModeSel, text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     f_row(1, "Trades", str.tostring(nTrades), color.yellow)
     f_row(2, "Win Rate", str.tostring(wr, "#.#") + "%", color.orange)

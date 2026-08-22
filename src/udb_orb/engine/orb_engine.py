@@ -398,9 +398,9 @@ class OrbEngine:
     # REJECTED off it exits the remaining position at that close. Distinct from pdh_pdl_filter
     # (an entry gate) and from a plain take-profit-at-the-level (no reversal required).
     #   levels: which of pdO/pdH/pdL/pdC may trigger it   (default all four)
-    #   ahead_only: only levels the trade is moving TOWARD (default FALSE since 2026-08-11 — see
-    #     the "both sides" note below; false also watches the level the trade broke, so LOSING a
-    #     level you were on the right side of is an exit too)
+    #   ahead_only: only levels the trade is moving TOWARD (default TRUE again since 2026-08-20 —
+    #     see the note below; set false to also watch the level the trade broke, so LOSING a level
+    #     you were on the right side of becomes an exit too)
     #   zone: tag tolerance as a fraction of the adaptive TP distance (0 = must touch)
     #   require_reject_candle: the bar must also close against the trade direction
     #   in_profit_only: arm only once the bar closes in profit (otherwise the stop owns it)
@@ -418,19 +418,31 @@ class OrbEngine:
     # (drop_pdH 493.8, drop_pdC 488.2, drop_pdO 487.3, drop_pdL 480.4, all < all4 498.4), and no
     # single level alone beats the baseline. See docs/BE_STOP_ANALYSIS.md.
     #
-    # "BOTH SIDES" (ahead_only false) — ADOPTED 2026-08-11 BY USER CALL, AGAINST THE MEASUREMENT.
-    # It also treats a level BEHIND the entry as a trigger, i.e. price closing back through a level
-    # the trade had already won is a rejection. Motivation: the 08-04 and 08-11 shorts both triggered
-    # ~$0.33 below pdC and were immediately reclaimed. It does fire on those days (08-04 exits 09:50
-    # -1.12 instead of 10:05 -2.45; 08-05 11:05 -1.29 instead of 11:15 -1.91) but the full-history
-    # cost is real and was measured before adopting, per unit 2022-01-03..2026-08-10 vs ahead_only:
-    #     A1 485.6 vs 502.0   B1 558.3 vs 575.9   C1 556.4 vs 573.2   D1 480.3 vs 483.5
-    # B1 by year: 2022 -21.2 / 2023 -5.1 / 2024 -4.8 / 2025 -3.4 / 2026 +17.0 — FOUR of five years
-    # worse, win rate 46.2% -> 44.2%, and the pre-fitting-window slice (before 2025-08-11) falls
-    # 309.9 -> 278.8. Only 2026 improves, which is the §31 regime-trap signature and also the only
-    # year the motivating days came from. Widening `zone` on top of this adds NOTHING to those days
-    # (identical at 0.05/0.10/0.20) and costs a further ~$41/unit, so the zone stays at 0.05.
-    # Revert = ahead_only true in the five yamls + the Pine "Levels ahead of entry only" box.
+    # "AHEAD ONLY" (ahead_only true) — RE-ADOPTED 2026-08-20 (v3.9.17) ON THE MEASUREMENT.
+    # This REVERSES the 2026-08-11 "both sides" call, which the user took against the measurement of
+    # the day. Both sides also treated a level BEHIND the entry as a trigger — price closing back
+    # through a level the trade had already won counted as a rejection. Its motivation was real (the
+    # 08-04 and 08-11 shorts triggered ~$0.33 below pdC and were immediately reclaimed, and ahead-only
+    # cannot see that) but it never paid for itself, and the rig it was judged on no longer exists:
+    # the 11:30 cutoff (v3.9.14) and all-runner (v3.9.16) both landed afterwards.
+    # RE-MEASURED on the current rig, 2022-01-03..2026-08-19, $0.10/share, @60 shares —
+    # ahead_only TRUE vs FALSE:
+    #     A1 33,445 vs 31,664 (+5.6%)    B1 37,699 vs 35,772 (+5.4%)
+    #     C1 37,242 vs 35,754 (+4.2%)    D1 33,417 vs 33,082 (+1.0%)
+    # Per unit B1 628.3 vs 596.2, WR 44.3% -> 46.4%. maxDD FALLS on all four (B1 3,962 -> 3,393;
+    # A1 4,781 -> 3,013) and net/DD rises on all four (B1 9.03 -> 11.11).
+    # Per year, per unit, true minus false — 2022 +18.3/+21.3 and 2023 +5.1/+13.3 on every profile;
+    # 2026 is NEGATIVE on all four (-6.7 to -10.3), and 2026 was the only year the "both sides"
+    # motivating days came from. C1 also loses 2025, D1 loses 2024 and 2025.
+    # LIMITS, STATED: breadth runs MORE DOWN DAYS THAN UP on all four (B1 33 up / 42 down of 75
+    # changed) — the gain is magnitude, not frequency — and ex-top-3 is thin to negative
+    # (A1 +$300, B1 +$446, C1 +$7, D1 -$1,006, so D1 FAILS that test and is the weakest case).
+    # What carries the decision instead is the pre-2025-08-11 slice, which is out of sample for this
+    # knob (the body/zone tuning was fitted around then): per unit true vs false, A1 319.9 vs 283.3,
+    # B1 356.9 vs 317.9, C1 334.6 vs 297.5, D1 289.5 vs 270.6 — up on all four.
+    # Trade counts move by +6/+7 because an earlier PD exit can change whether the reversal arms.
+    # SPCX is untouched: its pd_level_exit is disabled outright and this knob is TSLA-only.
+    # Revert = ahead_only false in the five yamls + untick the Pine "Levels AHEAD of entry only" box.
     @property
     def _pdx_cfg(self) -> dict[str, Any]:
         return self.enh.get("pd_level_exit", {})
@@ -466,7 +478,7 @@ class OrbEngine:
         # divergence worth ~+0.5% of C1 net. A1/B1/C2/D1 are Adaptive, so they are unaffected.
         tp_dist = self._tp_dist(st.or_width or 0.0)
         tol = float(cfg.get("zone", 0.05)) * tp_dist
-        ahead_only = bool(cfg.get("ahead_only", False))
+        ahead_only = bool(cfg.get("ahead_only", True))
         for name, lvl in zip(("pdO", "pdH", "pdL", "pdC"), st.pd_levels):
             if lvl is None or name not in names:
                 continue

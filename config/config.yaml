@@ -265,12 +265,20 @@ enhancements:
   #     — green for longs / red for shorts). If it snaps back inside, wait for a fresh break.
   #     Enters at the confirmation candle's close. Avoids chasing an extended first-break bar that
   #     immediately reverses (e.g. 2026-07-09 10:00 break -> 10:05 back inside).
-  # DISABLED 2026-07-11 (§24, "Config A"): confirmation was adopted (§20) under the CLOSE-FILL
-  # model to lift win rate. Under the RESTING STOP it is net-NEGATIVE — the resting stop already
-  # caps whipsaws at $5, so confirmation's benefit vanished while its cost (later, worse entries
-  # that miss the move) remained. Turning it OFF lifts 3yr net +298 -> +469 (+57%), BETTER in all
-  # three years, PF 1.39 -> 1.65, worst day ~unchanged, WR ~2pt lower (49->48%). Re-enable only
-  # if you revert to close-fill (stop_fill_mode: close). See BE_STOP_ANALYSIS §24.
+  # DISABLED 2026-07-11 (§24, "Config A") and RE-CONFIRMED 2026-08-20 (v3.9.17) — LEAVE IT OFF.
+  # ⚠ The 2026-07-11 note used to end "Re-enable only if you revert to close-fill
+  # (stop_fill_mode: close)". That became a TRAP: B1/C1 adopted stop_fill_mode: close on
+  # 2026-07-14, three days later, so the stated condition was met and the instruction pointed the
+  # wrong way for over a year. It has now been measured under close-fill and it LOSES.
+  # Re-measured on the v3.9.17 rig (ahead_only true + all-runner + 11:30 cutoff),
+  # 2022-01-03..2026-08-19 @60 shares after $0.10/share slippage, confirm ON vs OFF:
+  #     A1 30,463 vs 33,445 (-8.9%)    B1 34,784 vs 37,699 (-7.7%)
+  #     C1 32,441 vs 37,242 (-12.9%)   D1 25,205 vs 33,417 (-24.6%)
+  # It IS a real filter — ~170 fewer trades and the win rate RISES (B1 46.4->48.4%) — but it
+  # removes winners with the losers. Regime bet: wins 2025 on all four profiles, loses 2023 AND
+  # 2026 on all four, 1-2 of 5 years only. Breadth ~270 up / ~660 down of 930 changed days, and
+  # ex-top-3 is negative on all four (B1 -$6,599 against a -$2,915 total), so the damage is broad.
+  # A chart saved before v3.9 carries this TICKED — untick it there. See BE_STOP_ANALYSIS §24.
   confirm_breakout:
     enabled: false
     require_trend_candle: true
@@ -349,14 +357,19 @@ enhancements:
   pd_level_exit:
     enabled: true
     levels: [pdO, pdH, pdL, pdC]   # which prior-day areas may trigger the exit
-    ahead_only: false              # BOTH SIDES — adopted 2026-08-11 by user call, AGAINST the
-                                   # measurement. false also watches the level the trade BROKE, so
-                                   # closing back through it is an exit ("you lost the level").
-                                   # Cost, per unit 2022-01-03..2026-08-10 vs ahead_only true:
-                                   #   A1 485.6/502.0  B1 558.3/575.9  C1 556.4/573.2  D1 480.3/483.5
-                                   # B1 by year: 22 -21.2 / 23 -5.1 / 24 -4.8 / 25 -3.4 / 26 +17.0.
-                                   # 4 of 5 years worse, WR 46.2->44.2, pre-fit slice 309.9->278.8.
-                                   # Only 2026 gains — the regime-trap signature. Revert = true.
+    ahead_only: true               # AHEAD-ONLY — re-adopted 2026-08-20 (v3.9.17) ON the measurement,
+                                   # reversing the 2026-08-11 "both sides" call. Only a level the
+                                   # trade is moving TOWARD may trigger the exit; a level BEHIND the
+                                   # entry (one the trade had already won) no longer counts.
+                                   # Re-measured on the CURRENT rig (11:30 cutoff + all-runner),
+                                   # 2022-01-03..2026-08-19 @60 shares after $0.10/share slippage:
+                                   #   A1 31,664->33,445  B1 35,772->37,699
+                                   #   C1 35,754->37,242  D1 33,082->33,417   (+1.0 to +5.6%)
+                                   # maxDD falls on all four (B1 3,962->3,393) and net/DD rises
+                                   # (B1 9.03->11.11). Wins 2022+2023 on all four, LOSES 2026 on all
+                                   # four. Breadth runs more DOWN days than up and ex-top-3 is thin
+                                   # (C1 +$7, D1 -$1,006) — the support is the pre-2025-08-11 slice,
+                                   # out of sample for this knob, up on all four. Revert = false.
     zone: 0.05                     # tag tolerance as a fraction of the adaptive TP distance
     require_reject_candle: true    # the bar must also close against the trade direction
     max_body_frac: 0.25            # |close-open| / (high-low) must be BELOW this; 1.0 = no filter.

@@ -184,3 +184,74 @@ def test_all_runner_did_not_leak_into_the_parity_or_spcx_configs():
     for name in ("faithful_be035.yaml", "spcx_orb.yaml"):
         p = Params.from_config(load_config(_ROOT / "config" / name))
         assert p.partial_qty_pct == 25.0, name
+
+
+def test_pd_level_exit_is_ahead_only():
+    """RE-ADOPTED 2026-08-20 (Pine v3.9.17), reversing the 2026-08-11 "both sides" call.
+
+    Only a level the trade is moving TOWARD may trigger the tag-and-reject exit. The 2026-08-11
+    call to also watch levels BEHIND the entry was taken against the measurement of the day, and
+    the rig it was judged on no longer exists -- the 11:30 cutoff (v3.9.14) and all-runner
+    (v3.9.16) both landed afterwards.
+
+    Re-measured on the current rig, 2022-01-03..2026-08-19 @60 shares after $0.10/share:
+    A1 $31,664 -> $33,445 (+5.6%), B1 $35,772 -> $37,699 (+5.4%), C1 $35,754 -> $37,242 (+4.2%),
+    D1 $33,082 -> $33,417 (+1.0%). Max drawdown falls on all four (B1 $3,962 -> $3,393) and
+    net/DD rises on all four (B1 9.03 -> 11.11).
+
+    LIMITS, on the record: it wins 2022 and 2023 on every profile but LOSES 2026 on every profile
+    (-6.7 to -10.3/unit), and 2026 is the only year the "both sides" motivating days came from;
+    C1 also loses 2025 and D1 loses 2024 and 2025. Breadth is more DOWN days than up on all four
+    (B1 33 up / 42 down) and ex-top-3 is thin to negative (C1 +$7, D1 -$1,006, so D1 fails that
+    test). What carries it is the pre-2025-08-11 slice, out of sample for this knob, which is up
+    on all four (B1 317.9 -> 356.9/unit).
+
+    SPCX is deliberately excluded: its pd_level_exit is disabled outright and the knob was
+    measured and TV-validated on TSLA only.
+    """
+    for name in ("tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml",
+                 "tsla_config_D1.yaml", "config.yaml"):
+        cfg = load_config(_ROOT / "config" / name)
+        pdx = cfg["enhancements"]["pd_level_exit"]
+        assert pdx["enabled"] is True, name
+        assert pdx["ahead_only"] is True, name
+
+
+def test_confirmation_candle_stays_off():
+    """The confirmation candle must not creep back on.
+
+    It was disabled 2026-07-11 with the note "re-enable only if you revert to close-fill
+    (stop_fill_mode: close)" -- and B1/C1 adopted close-fill three days later, so that instruction
+    became an argument FOR ticking it. Measured under close-fill on the v3.9.17 rig,
+    2022-01-03..2026-08-19 @60 shares after $0.10/share, ON vs OFF: A1 $30,463 vs $33,445 (-8.9%),
+    B1 $34,784 vs $37,699 (-7.7%), C1 $32,441 vs $37,242 (-12.9%), D1 $25,205 vs $33,417 (-24.6%).
+
+    It is a genuine filter -- ~170 fewer trades and the win rate RISES (B1 46.4 -> 48.4%) -- which
+    is exactly why it deceives: it removes winners with the losers. Per year it wins 2025 on all
+    four profiles and loses 2023 AND 2026 on all four, 1-2 of 5 years. Breadth is ~270 up against
+    ~660 down over the 930 days it changes, and ex-top-3 is negative on all four.
+    """
+    for name in ("tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml",
+                 "tsla_config_D1.yaml", "config.yaml"):
+        cfg = load_config(_ROOT / "config" / name)
+        assert cfg["enhancements"]["confirm_breakout"]["enabled"] is False, name
+
+
+def test_pine_v3_defaults_track_the_configs():
+    """The Pine headers are the one place a default can drift with nothing to catch it.
+
+    A TradingView chart keeps its SAVED inputs across a paste, so a stale setting is invisible
+    unless something compares the two lists -- which is how the exported v3.9.16 charts turned out
+    to be running `confirmBreakout` ON and `pdxAhead` ON against configs that said otherwise. This
+    pins the three defaults adopted in v3.9.17 to the Pine sources themselves.
+    """
+    ind = (_ROOT / "pine" / "UDB_ORB_TSLA_v3.pine").read_text(encoding="utf-8")
+    strat = (_ROOT / "pine" / "UDB_ORB_TSLA_v3_strategy.pine").read_text(encoding="utf-8")
+
+    for src, label in ((ind, "indicator"), (strat, "strategy")):
+        assert 'pdxAhead   = input.bool(true,' in src, label
+        assert 'confirmBreakout    = input.bool(false,' in src, label
+
+    # The Strategy Tester models no slippage unless the header sets it; 10 ticks = $0.10/share on
+    # TSLA, matching what the Python engine charges. At 0 every tester run reads ~13% high.
+    assert "slippage                = 10," in strat
