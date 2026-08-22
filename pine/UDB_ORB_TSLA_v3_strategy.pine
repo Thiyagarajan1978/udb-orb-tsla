@@ -1,5 +1,5 @@
 //@version=6
-strategy("UDB-ORB TSLA v3.9.17 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.17 S", overlay=true,
+strategy("UDB-ORB TSLA v3.9.18 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle="UDB-ORB v3.9.18 S", overlay=true,
      process_orders_on_close = true,      // market orders fill at the SIGNAL BAR'S CLOSE (alerts-only realism)
      calc_on_every_tick      = false,
      pyramiding              = 0,
@@ -18,6 +18,18 @@ strategy("UDB-ORB TSLA v3.9.17 STRATEGY — A1/B1/C1/C2/D1 Profiles", shorttitle
      max_labels_count        = 500,
      max_lines_count         = 500)
 
+// v3.9.18 2026-08-21 - "Levels AHEAD of entry only" is now PER-PROFILE: D1 is hard-wired to "both
+//     sides" (effectively unticked) regardless of the checkbox, while A1/B1/C1 still read the
+//     checkbox (default ticked). D1 was already the flagged weak case in v3.9.17's own numbers --
+//     its gain from ticking was the thinnest of the four (+1.0% vs +4.2-5.6%), it was the ONLY
+//     profile to fail the ex-top-3 robustness check (-$1,006), and it LOSES net in 2024, 2025 AND
+//     2026 under ticked -- three of five years -- so its whole aggregate gain rides on 2022-2023
+//     alone. A direct v3.9.11-vs-v3.9.17 D1 chart compare found v3.9.11 (unticked) reading better
+//     net/win-rate/PF, which is consistent with that record rather than a fluke. The checkbox
+//     itself is unchanged (still ticked by default, still governs A1/B1/C1); D1 just no longer
+//     listens to it -- same pattern as D1's own `adaptive_tp_scale` (0.75 vs 1.00) already being
+//     branched off the Profile dropdown instead of a single shared box. No entry logic moved.
+//
 // v3.9.17 2026-08-20 - AHEAD-ONLY PD EXIT IS THE DEFAULT AGAIN, and the strategy now ships
 //     10 ticks of slippage. Three defaults were aligned with the measurement in one version:
 //       1. "Levels AHEAD of entry only" ships TICKED again, reversing the 2026-08-11 "both sides"
@@ -625,7 +637,7 @@ pdxOn      = input.bool(true, "Enable PD-level tag-and-reject exit", group=grpPX
 pdxMaxBody = input.float(0.25, "Max rejection-candle body (|C-O| / (H-L))", minval=0.01, maxval=1.0, step=0.05, group=grpPX, tooltip="THE KNOB THAT MATTERS, and it runs OPPOSITE to intuition. A big decisive candle closing back off the level is worthless — it is a trend bar that happens to touch a line, and price continues. What predicts a real rejection is a SMALL body: a doji or pin that runs into the level and cannot close through it. 5-year deltas: no filter (1.0) = -$3,796 to -$5,466 on every profile; 0.25 = +$1,248 A1 / +$2,983 B1 / +$3,487 C1 / +$755 D1. The 0.10-0.25 band is a flat plateau; 0.35 is +$207 and 0.40-0.50 are negative. A full D1 sweep (2022-2026, per unit, baseline 450.5) put 0.25 at the TOP of that plateau — 0.10 +4.9% / 0.15 +7.2% / 0.20 +7.0% / 0.25 +7.8% / 0.30 +0.6% — so 0.25 is right for all four profiles and the earlier note that D1 preferred 0.15 is withdrawn. D1 is simply the weakest beneficiary (+7.8% vs C1 +25.0 / B1 +21.1 / A1 +10.6).", display=display.none)
 pdxZone    = input.float(0.05, "Tag zone (x today's TP distance)", minval=0.0, maxval=0.50, step=0.01, group=grpPX, tooltip="How close the bar's extreme must come to the level to count as a tag, as a fraction of the adaptive TP distance. 0.05 of a $3.74 TP distance = about 19 cents.", display=display.none)
 pdxLevels  = input.string("All four (PDO/PDH/PDL/PDC)", "Which levels may trigger it", options=["All four (PDO/PDH/PDL/PDC)", "PDH + PDL only", "PDC only"], group=grpPX, tooltip="All four is the validated default. PDC-only and PDH/PDL-only were swept WITHOUT the body filter and lost on every profile; they have not been re-swept with it.", display=display.none)
-pdxAhead   = input.bool(true, "Levels AHEAD of entry only", group=grpPX, tooltip="TICKED IS THE DEFAULT AGAIN SINCE v3.9.17. TICKED: only a level the trade is moving TOWARD can trigger the exit (a rejection at the next obstacle). UNTICKED (\"both sides\"): a level BEHIND the entry counts too, so closing back through a level the trade had already won is also an exit (\"you lost the level\").\n\nHISTORY: unticked was adopted on 2026-08-11 by user call AGAINST the measurement (the 08-04 and 08-11 shorts both triggered about 33 cents below PDC and were immediately reclaimed, which ahead-only cannot see). It never paid for itself, and the rig it was judged on is gone: the 11:30 entry cutoff (v3.9.14) and all-runner (v3.9.16) both landed afterwards.\n\nRE-MEASURED 2026-08-20 on the current rig (Python engine, 2022-01-03..2026-08-19, 60 shares, after $0.10/share slippage) -- TICKED vs unticked:\n  A1  $33,445 vs $31,664  (+5.6%)\n  B1  $37,699 vs $35,772  (+5.4%)\n  C1  $37,242 vs $35,754  (+4.2%)\n  D1  $33,417 vs $33,082  (+1.0%)\nPer unit B1 628.3 vs 596.2, win rate 44.3% -> 46.4%. Max drawdown FALLS on all four (B1 -$3,962 -> -$3,393, A1 -$4,781 -> -$3,013) and net/DD rises on all four (B1 9.03 -> 11.11, A1 6.62 -> 11.10).\n\nLIMITS, STATED: per year it wins 2022 and 2023 on EVERY profile but LOSES 2026 on every profile (-6.7 to -10.3 per unit), and 2026 is the only year the \"both sides\" motivating days came from; C1 also loses 2025, D1 loses 2024 and 2025. Breadth runs MORE DOWN DAYS THAN UP on all four (B1 33 up / 42 down of 75 changed days), so the gain is magnitude rather than frequency, and ex-top-3 is thin to negative (A1 +$300, B1 +$446, C1 +$7, D1 -$1,006 -- D1 fails that test and is the weakest of the four). What carries the decision is the pre-2025-08-11 slice, which is out of sample for this knob and is up on all four (B1 356.9 vs 317.9 per unit).", display=display.none)
+pdxAhead   = input.bool(true, "Levels AHEAD of entry only", group=grpPX, tooltip="TICKED IS THE DEFAULT SINCE v3.9.17. TICKED: only a level the trade is moving TOWARD can trigger the exit (a rejection at the next obstacle). UNTICKED (\"both sides\"): a level BEHIND the entry counts too, so closing back through a level the trade had already won is also an exit (\"you lost the level\").\n\nD1 IGNORES THIS BOX since v3.9.18 -- it is hard-wired to \"both sides\" regardless of the checkbox. It was the flagged weak case in the measurement below (thinnest gain, fails ex-top-3, loses net in 2024/2025/2026), and a direct v3.9.11-vs-v3.9.17 D1 chart compare read better on v3.9.11 (unticked). This box still governs A1/B1/C1.\n\nHISTORY: unticked was adopted on 2026-08-11 by user call AGAINST the measurement (the 08-04 and 08-11 shorts both triggered about 33 cents below PDC and were immediately reclaimed, which ahead-only cannot see). It never paid for itself, and the rig it was judged on is gone: the 11:30 entry cutoff (v3.9.14) and all-runner (v3.9.16) both landed afterwards.\n\nRE-MEASURED 2026-08-20 on the current rig (Python engine, 2022-01-03..2026-08-19, 60 shares, after $0.10/share slippage) -- TICKED vs unticked:\n  A1  $33,445 vs $31,664  (+5.6%)\n  B1  $37,699 vs $35,772  (+5.4%)\n  C1  $37,242 vs $35,754  (+4.2%)\n  D1  $33,417 vs $33,082  (+1.0%)\nPer unit B1 628.3 vs 596.2, win rate 44.3% -> 46.4%. Max drawdown FALLS on all four (B1 -$3,962 -> -$3,393, A1 -$4,781 -> -$3,013) and net/DD rises on all four (B1 9.03 -> 11.11, A1 6.62 -> 11.10).\n\nLIMITS, STATED: per year it wins 2022 and 2023 on EVERY profile but LOSES 2026 on every profile (-6.7 to -10.3 per unit), and 2026 is the only year the \"both sides\" motivating days came from; C1 also loses 2025, D1 loses 2024 and 2025. Breadth runs MORE DOWN DAYS THAN UP on all four (B1 33 up / 42 down of 75 changed days), so the gain is magnitude rather than frequency, and ex-top-3 is thin to negative (A1 +$300, B1 +$446, C1 +$7, D1 -$1,006 -- D1 fails that test and is the weakest of the four, which is why D1 now ignores this box). What carries the decision for A1/B1/C1 is the pre-2025-08-11 slice, which is out of sample for this knob and is up on all four (B1 356.9 vs 317.9 per unit).", display=display.none)
 
 // ==================== v3.9.11 SYMBOL PRESET (which gates are TSLA-specific) ====================
 // Resolved once, after every input above has been read, so there is exactly ONE definition of each
@@ -644,6 +656,14 @@ effPdxOn   = isNonTSLA ? false : pdxOn
 // directly again and only the Adaptive-TP multiplier still differs by profile.
 // Untick `profDefaults` and the multiplier falls back to the raw input for every profile.
 effTPScale = profDefaults ? (isD1 ? 0.75 : 1.00) : adaptiveTPScale
+// D1-ONLY REVERT 2026-08-21. Unconditional isD1 branch (like `runnerVWAP` below), NOT gated behind
+// `profDefaults` -- that checkbox's own tooltip only promises to govern the TP multiplier, and
+// piggybacking ahead_only on it would silently change this too when a user unticks it to hand-tune
+// TP scale. `ahead_only` shipped house-wide TRUE in v3.9.17, but D1 was already the flagged weak case
+// (thinnest gain +1.0%, fails the ex-top-3 test, loses net in 2024/2025/2026) and a direct
+// v3.9.11-vs-v3.9.17 D1 chart compare read better on v3.9.11 (false), consistent with that record.
+// A1/B1/C1 keep the `pdxAhead` checkbox (default true). See its tooltip below for the full numbers.
+effAhead = isD1 ? false : pdxAhead
 
 maxCapSL = maxCapOverride > 0 ? maxCapOverride : (isC1 ? 6.0 : 5.0)
 
@@ -953,13 +973,14 @@ if active and not na(stop) and bar_index >= entryBar
                 usePDHL = pdxLevels != "PDC only"
                 // v3.9.8-v3.9.16: `pdxAhead` OFF drops the "level must lie ahead" guard, so a
                 // level BEHIND the entry — one the trade had already won — also triggers on a reclaim.
-                if usePDO and not na(pdO) and (not pdxAhead or (pdO - entry) * tdir > 0)
+                // v3.9.18: uses `effAhead`, not the raw checkbox -- D1 is hard-wired to "both sides".
+                if usePDO and not na(pdO) and (not effAhead or (pdO - entry) * tdir > 0)
                     pdxHit := pdxHit or (tdir == 1 ? (high >= pdO - tolPD and close < pdO) : (low <= pdO + tolPD and close > pdO))
-                if usePDHL and not na(pdH) and (not pdxAhead or (pdH - entry) * tdir > 0)
+                if usePDHL and not na(pdH) and (not effAhead or (pdH - entry) * tdir > 0)
                     pdxHit := pdxHit or (tdir == 1 ? (high >= pdH - tolPD and close < pdH) : (low <= pdH + tolPD and close > pdH))
-                if usePDHL and not na(pdL) and (not pdxAhead or (pdL - entry) * tdir > 0)
+                if usePDHL and not na(pdL) and (not effAhead or (pdL - entry) * tdir > 0)
                     pdxHit := pdxHit or (tdir == 1 ? (high >= pdL - tolPD and close < pdL) : (low <= pdL + tolPD and close > pdL))
-                if usePDC and not na(pdC) and (not pdxAhead or (pdC - entry) * tdir > 0)
+                if usePDC and not na(pdC) and (not effAhead or (pdC - entry) * tdir > 0)
                     pdxHit := pdxHit or (tdir == 1 ? (high >= pdC - tolPD and close < pdC) : (low <= pdC + tolPD and close > pdC))
         if usePartial
             // Step 3: mirror the 25% partial fill (P1 limit does the actual fill)
@@ -1278,7 +1299,7 @@ if showPD
 // ==================== INFO TABLE ====================
 var table t = table.new(position.top_right, 2, 6, border_width=1)
 if barstate.islast
-    table.cell(t, 0, 0, "UDB-ORB v3.9.17", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
+    table.cell(t, 0, 0, "UDB-ORB v3.9.18", text_color=color.white, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 1, 0, str.substring(profile, 0, 2), text_color=color.aqua, bgcolor=color.rgb(30,30,50), text_size=size.small)
     table.cell(t, 0, 1, "TP mode / Max Stop", text_color=color.white, bgcolor=color.rgb(25,25,25), text_size=size.small)
     table.cell(t, 1, 1, tpModeSel + " / $" + str.tostring(maxCapSLS, "#.##"), text_color=color.aqua, bgcolor=color.rgb(25,25,25), text_size=size.small)

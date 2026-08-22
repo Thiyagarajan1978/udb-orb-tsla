@@ -442,7 +442,16 @@ class OrbEngine:
     # B1 356.9 vs 317.9, C1 334.6 vs 297.5, D1 289.5 vs 270.6 — up on all four.
     # Trade counts move by +6/+7 because an earlier PD exit can change whether the reversal arms.
     # SPCX is untouched: its pd_level_exit is disabled outright and this knob is TSLA-only.
-    # Revert = ahead_only false in the five yamls + untick the Pine "Levels AHEAD of entry only" box.
+    #
+    # D1-ONLY REVERT 2026-08-21: D1 was already the flagged weak case above (thinnest gain +1.0%,
+    # the only profile that fails ex-top-3, and the only one that loses net in THREE of five years
+    # — 2024, 2025 AND 2026 — with its whole aggregate gain riding on 2022-2023 alone). The user's
+    # own TV compare of v3.9.11 vs v3.9.17 D1 exports found v3.9.11 (ahead_only false) reading
+    # better net/WR/PF, consistent with that record rather than a fluke. `tsla_config_D1.yaml` now
+    # sets `ahead_only: false`; A1/B1/C1/config.yaml keep true. The Pine twin mirrors this the same
+    # way it already branches D1's `adaptive_tp_scale` (0.75 vs 1.00) off `isD1`. This fallback
+    # default stays True — it only applies when a config omits the key outright.
+    # Revert to house-wide true = flip the D1 yaml back to true + drop the isD1 branch in Pine.
     @property
     def _pdx_cfg(self) -> dict[str, Any]:
         return self.enh.get("pd_level_exit", {})

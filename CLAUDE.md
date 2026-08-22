@@ -148,6 +148,15 @@ separate, toggleable, and default OFF.
    (B1 317.9 → 356.9/unit). Trade counts move +6/+7: an earlier PD exit can change whether the 2×
    reversal arms. SPCX is untouched (its `pd_level_exit` is off; the knob is TSLA-only). Revert =
    `ahead_only: false` + untick the Pine box.
+   **D1-ONLY REVERT 2026-08-21 (Pine v3.9.18):** D1 was already the flagged weak case above — the
+   thinnest gain of the four (+1.0%), the only one that fails ex-top-3, and the only one that loses
+   net in **three of five years (2024, 2025, 2026)**, so its whole aggregate gain rides on 2022-2023
+   alone. The user's own TradingView compare of v3.9.11 (ahead_only false) vs v3.9.17 D1 exports read
+   better on v3.9.11 — consistent with that record, not a fluke. `tsla_config_D1.yaml` now sets
+   `ahead_only: false`; A1/B1/C1/config.yaml keep `true`. Pine branches this off `isD1` the same way
+   D1's `adaptive_tp_scale` (0.75 vs 1.00) already is — one shared checkbox no longer serves all four
+   profiles, so `effAhead = isD1 ? false : pdxAhead` replaces the raw `pdxAhead` at all four PD-level
+   check sites; the checkbox itself is unchanged and still governs A1/B1/C1.
 8. **Confirmation candle — RE-CONFIRMED OFF 2026-08-20**, and the old note was a trap. It read
    "re-enable only if you revert to close-fill (`stop_fill_mode: close`)" — and B1/C1 adopted
    close-fill **three days later**, so the stated condition was met and the instruction pointed the

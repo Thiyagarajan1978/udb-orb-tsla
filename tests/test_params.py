@@ -208,13 +208,31 @@ def test_pd_level_exit_is_ahead_only():
 
     SPCX is deliberately excluded: its pd_level_exit is disabled outright and the knob was
     measured and TV-validated on TSLA only.
+
+    D1 is excluded too as of 2026-08-21 -- see test_d1_ahead_only_is_profile_specific below.
     """
-    for name in ("tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml",
-                 "tsla_config_D1.yaml", "config.yaml"):
+    for name in ("tsla_best_A.yaml", "tsla_best_B.yaml", "tsla_config_C1.yaml", "config.yaml"):
         cfg = load_config(_ROOT / "config" / name)
         pdx = cfg["enhancements"]["pd_level_exit"]
         assert pdx["enabled"] is True, name
         assert pdx["ahead_only"] is True, name
+
+
+def test_d1_ahead_only_is_profile_specific():
+    """D1 reverted to ahead_only: false on 2026-08-21; A1/B1/C1 keep true.
+
+    D1 was already the flagged weak case in the 2026-08-20 measurement: its aggregate gain from
+    ticking was the thinnest of the four (+1.0% vs +4.2-5.6%), it was the ONLY profile to fail the
+    ex-top-3 robustness check (-$1,006), and it loses net in 2024, 2025 AND 2026 under true -- three
+    of five years -- so its whole gain rides on 2022-2023 alone. The user's own TradingView compare
+    of v3.9.11 (ahead_only false) vs v3.9.17 (ahead_only true) D1 exports read better on v3.9.11,
+    consistent with that record. Reverted per-profile rather than house-wide, the same pattern as
+    D1's own adaptive_tp_scale (0.75 vs 1.00 -- see d1-tp-scale-075-and-1130-cutoff.md).
+    """
+    cfg = load_config(_ROOT / "config" / "tsla_config_D1.yaml")
+    pdx = cfg["enhancements"]["pd_level_exit"]
+    assert pdx["enabled"] is True
+    assert pdx["ahead_only"] is False
 
 
 def test_confirmation_candle_stays_off():
@@ -251,6 +269,9 @@ def test_pine_v3_defaults_track_the_configs():
     for src, label in ((ind, "indicator"), (strat, "strategy")):
         assert 'pdxAhead   = input.bool(true,' in src, label
         assert 'confirmBreakout    = input.bool(false,' in src, label
+        # v3.9.18: D1 is hard-wired to "both sides", A1/B1/C1 still read the checkbox -- matches
+        # tsla_config_D1.yaml's ahead_only: false against the other three profiles' true.
+        assert "effAhead = isD1 ? false : pdxAhead" in src, label
 
     # The Strategy Tester models no slippage unless the header sets it; 10 ticks = $0.10/share on
     # TSLA, matching what the Python engine charges. At 0 every tester run reads ~13% high.

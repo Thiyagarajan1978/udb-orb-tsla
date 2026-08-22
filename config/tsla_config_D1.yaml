@@ -142,17 +142,27 @@ enhancements:
   pd_level_exit:            # ADOPTED 2026-08-10; added to D1 2026-08-11 after the v3.9.6 TV validation
     enabled: true           # found this file was the odd one out  the TV chart runs D1 with the rule
     levels: [pdO, pdH, pdL, pdC]   # ON while forward_test.py loaded this yaml with it silently OFF.
-    ahead_only: true        # AHEAD-ONLY, re-adopted 2026-08-20 (v3.9.17) ON the measurement, reversing
-                            # the 2026-08-11 "both sides" call. Only a level the trade is moving
-                            # TOWARD can trigger the exit. Re-measured on the CURRENT rig (11:30
-                            # cutoff + all-runner), 2022-01-03..2026-08-19 @60sh after $0.10/share:
-                            #   D1 $33,082 -> $33,417 (+1.0%), per unit 551.4 -> 557.0, WR 46.0 -> 47.9%
-                            # maxDD FALLS on all four and net/DD rises (D1 10.02 -> 10.96, maxDD $3,302 -> $3,049).
-                            # Wins 2022+2023 on all four; LOSES 2026 on all four (-6.7 to -10.3/unit).
-                            # Breadth is 26 days up / 40 down -- the gain is magnitude, not
-                            # frequency -- and ex-top-3 is thin (D1 -$1,006 -- D1 FAILS the ex-top-3 test, the weakest case of the four). The support is the
-                            # pre-2025-08-11 slice (out of sample for this knob): D1 270.6 -> 289.5 per unit.
-                            # Revert = false.
+    ahead_only: false       # D1-ONLY REVERT 2026-08-21 -- v3.9.17 shipped this TRUE house-wide,
+                            # but D1 is the one profile where it was already flagged the weakest
+                            # case (see the v3.9.17 rig numbers below) and the user's own TV compare
+                            # of the v3.9.11 vs v3.9.17 D1 exports found v3.9.11 (ahead_only false)
+                            # reading better net/WR/PF. That matches the record, not a fluke:
+                            #   D1 aggregate gain from true was only +1.0% ($33,082 -> $33,417),
+                            #   vs +4.2-5.6% for A1/B1/C1 -- by far the thinnest of the four.
+                            #   D1 is the ONLY profile that fails the ex-top-3 robustness check
+                            #   (true vs false delta -$1,006).
+                            #   D1 LOSES net in 2024, 2025, AND 2026 under true -- three of five
+                            #   years -- so the whole +1.0% is carried by 2022+2023 alone; any TV
+                            #   compare that isn't the full 2022-2026 window (or runs mismatched
+                            #   slippage between the two chart versions) will show v3.9.11 ahead.
+                            # A1/B1/C1 KEEP ahead_only true -- their gain is larger and consistent
+                            # (wins the fit window, both OOS years and the 2026 holdout together).
+                            # This is now per-profile, same pattern as D1's own adaptive_tp_scale
+                            # 0.75 (see d1-tp-scale-075-and-1130-cutoff.md) -- one Pine "Profile"
+                            # dropdown, one Python config file per profile, so the two knobs the
+                            # profiles disagree on both branch off `isD1` rather than living as a
+                            # single global switch. Revert to house-wide true = set this back to
+                            # true (matches A1/B1/C1) and drop the isD1 branch in Pine's `effAhead`.
     zone: 0.05
     require_reject_candle: true
     max_body_frac: 0.25     # Engine sweep on D1 2022-2026 (per unit): off 450.5 -> 0.10 +4.9% /
